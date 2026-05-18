@@ -130,27 +130,30 @@ export const useTuningStore = create<TuningStore>()(
         return
       }
 
-      // Verifica se algum log tem logId inválido (backend offline durante restore)
-      const invalidLogs = activeLogs.filter((l) => !l.logId)
-      if (invalidLogs.length > 0) {
-        set({ lastError: 'Alguns logs não foram enviados ao servidor. O backend pode estar indisponível.' })
-        return
-      }
-
       const { config, selectedEngineId } = get()
       const timeRange = useTimeStore.getState().selection   // null = usar tudo
 
       // ── Monta a requisição ──────────────────────────────────────────────────
       const request = {
-        engineId:  selectedEngineId,
+        engineId:   selectedEngineId,
         mapId,
-        logIds:    activeLogs.map((l) => l.logId),
+        logHashes:  activeLogs.map((l) => l.hash),
         timeRange,
         config,
       }
 
       // ── Executa ──────────────────────────────────────────────────────────────
       set({ isRunning: true, lastError: null })
+
+      // Envia os logs ao backend antes de rodar o tuning.
+      // O envio só ocorre aqui — não em addLog nem no restore de sessão.
+      // O cache por hash no backend faz com que uploads repetidos retornem cached: true rapidamente.
+      try {
+        await useLogStore.getState().ensureLogsOnBackend(request.logHashes)
+      } catch (uploadErr) {
+        set({ isRunning: false, lastError: formatTuningError(uploadErr) })
+        return
+      }
 
       let output: TuningOutput
       try {
@@ -215,7 +218,7 @@ export const useTuningStore = create<TuningStore>()(
 function formatTuningError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 404) {
-      return 'Mapa ou log não encontrado no servidor. Pode ser necessário recarregar a página.'
+      return 'Mapa não encontrado no servidor. Recarregue a página para restaurar a sessão.'
     }
     if (err.status === 422) {
       return `Configuração inválida: ${err.detail}`
@@ -245,17 +248,18 @@ runTuning() chamado (ex.: clique no botão)
        ├── Validação 2: activeLogs.length > 0?
        │       └── não → set lastError, return
        │
-       ├── Validação 3: todos os logs têm logId válido?
-       │       └── não → set lastError, return (backend estava offline no restore)
-       │
        ├── Monta TuningRunRequest:
-       │       engineId:  selectedEngineId
-       │       mapId:     mapStore.mapId
-       │       logIds:    activeLogs.map(l => l.logId)
-       │       timeRange: timeStore.selection (null = usar tudo)
-       │       config:    config atual
+       │       engineId:   selectedEngineId
+       │       mapId:      mapStore.mapId
+       │       logHashes:  activeLogs.map(l => l.hash)
+       │       timeRange:  timeStore.selection (null = usar tudo)
+       │       config:     config atual
        │
        ├── set({ isRunning: true, lastError: null })
+       │
+       ├── logStore.ensureLogsOnBackend(logHashes)
+       │       │   (envia cada log ao backend; cache por hash = no-op se já estiver lá)
+       │       └── erro → set lastError, return
        │
        ├── await apiRunTuning(request)   [timeout 120s]
        │       │

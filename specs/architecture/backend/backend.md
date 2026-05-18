@@ -69,8 +69,12 @@ backend/
 │   ├── registry/
 │   │   └── default_registry.py          # DefaultEngineRegistry — registra todos os engines
 │   │
+│   ├── datalog/
+│   │   ├── disk_store.py                # DatalogDiskStore: lê/escreve JSON por hash no disco
+│   │   └── cleanup.py                   # task de limpeza: remove arquivos com mtime < now−3600s
+│   │
 │   └── session/
-│       └── store.py                     # in-memory store (MapStore, DatalogStore) com UUIDs
+│       └── map_store.py                 # in-memory MapStore: mapId → MapModel (uuid → model)
 │
 ├── tests/
 │   ├── engines/ve_lambda/
@@ -324,17 +328,27 @@ Gera e retorna o CSV atualizado com os valores do mapa editável.
 
 #### `POST /api/datalog/upload`
 
-Upload e parsing de um CSV de datalog.
+Upload e parsing de um CSV de datalog. Suporta cache por hash para evitar re-parsing de arquivos já conhecidos.
 
-**Request:** `multipart/form-data` — campo `file` (`.csv`)
+**Request:**
+- `multipart/form-data` — campo `file` (`.csv`)
+- Header `X-Content-Hash: sha1:<hexdigest>` — digest SHA-1 do conteúdo do arquivo, calculado pelo frontend antes do upload
+
+**Comportamento:**
+1. Lê o header `X-Content-Hash`; extrai `<algorithm>:<hexdigest>` (ex.: `sha1:a3f2b1c4...`)
+2. Verifica se `{CACHE_DIR}/{hexdigest}.json` existe no disco
+   - **Cache hit:** toca o `mtime` do arquivo (atualiza para agora) e retorna o modelo salvo com `"cached": true` — sem re-parsing do CSV
+   - **Cache miss:** parseia o CSV, salva o modelo como `{CACHE_DIR}/{hexdigest}.json` e retorna com `"cached": false`
+3. O `CACHE_DIR` é configurável via variável de ambiente `MFT_CACHE_DIR` (default: `/tmp/mft_datalogs`)
 
 **Response `200`:**
 ```json
 {
-  "log_id": "uuid-...",
+  "hash": "sha1:a3f2b1c4...",
   "filename": "log_stream_20260516_155239.csv",
   "duration_ms": 754320,
   "signals": ["RPM", "MAP", "Lambda 1", "Lambda Target", "CLT", "Pedal", ...],
+  "cached": false,
   "rows": [
     {
       "timestamp_ms": 0,
@@ -353,7 +367,10 @@ Upload e parsing de um CSV de datalog.
 }
 ```
 
-**Nota:** `rows` pode ser omitido da resposta inicial para economizar banda (apenas metadados + `signals`). O frontend já recebe o modelo completo apenas se necessário — na v1, o parsing acontece server-side e o modelo completo é retornado.
+`"cached": true` indica que o arquivo foi reconhecido pelo hash e o parsing foi ignorado. O corpo da resposta é idêntico ao caso normal.
+
+**Response `400`:** Header `X-Content-Hash` ausente ou malformado.  
+**Response `422`:** CSV inválido ou estrutura de datalog não reconhecida.
 
 ---
 
@@ -363,12 +380,19 @@ Upload e parsing de um CSV de datalog.
 
 Executa o motor de tuning selecionado.
 
+**Comportamento:**
+1. Carrega o mapa do `MapStore` em memória pelo `map_id`
+2. Para cada hash em `log_hashes`: carrega o `DatalogModel` do `DatalogDiskStore` e toca o `mtime` do arquivo (reinicia o TTL)
+3. Se qualquer hash não existir no disco → responde 404 com `missing_hashes`
+4. Executa o engine selecionado com os dados carregados
+5. Retorna o `TuningOutput` completo
+
 **Request body:**
 ```json
 {
   "engine_id": "ve_lambda",
   "map_id": "uuid-...",
-  "log_ids": ["uuid-...", "uuid-..."],
+  "log_hashes": ["sha1:a3f2b1...", "sha1:c4d5e6..."],
   "time_range": { "start_ms": 252000, "end_ms": 1125000 },
   "config": {
     "min_clt": 80,
@@ -427,46 +451,117 @@ Executa o motor de tuning selecionado.
 }
 ```
 
-**Response `404`:** map_id ou log_id não encontrado no session store.  
+**Response `404` (mapa):** `{ "detail": "Mapa não encontrado" }` — mapId inválido ou processo backend reiniciado.  
+**Response `404` (logs):** `{ "detail": "Logs não encontrados no disco", "missing_hashes": ["sha1:a3f2...", ...] }` — um ou mais log hashes não existem ou expiraram (TTL 1h). O frontend deve re-enviar os logs faltantes via `POST /api/datalog/upload` e repetir o tuning.  
 **Response `422`:** config inválida para o engine selecionado.
 
 ---
 
-## Session Store
+## Session Store (MapStore)
 
-O `SessionStore` mantém os dados uploadados em memória durante a vida do processo. Implementação simples com dicts em memória:
+O `MapStore` mantém os **mapas** uploadados em memória durante a vida do processo. Os datalogs não ficam em memória — são persistidos em disco por hash e lidos sob demanda.
 
 ```python
-# session/store.py
+# session/map_store.py
 from uuid import uuid4
 
-class SessionStore:
+class MapStore:
     def __init__(self):
-        self._maps:     dict[str, MapModel]     = {}
-        self._datalogs: dict[str, DatalogModel] = {}
+        self._maps: dict[str, MapModel] = {}
 
-    def save_map(self, model: MapModel) -> str:
+    def save(self, model: MapModel) -> str:
         id = str(uuid4())
         self._maps[id] = model
         return id
 
-    def get_map(self, id: str) -> MapModel:
+    def get(self, id: str) -> MapModel:
         if id not in self._maps:
             raise KeyError(id)
         return self._maps[id]
-
-    def save_datalog(self, model: DatalogModel) -> str:
-        id = str(uuid4())
-        self._datalogs[id] = model
-        return id
-
-    def get_datalog(self, id: str) -> DatalogModel:
-        if id not in self._datalogs:
-            raise KeyError(id)
-        return self._datalogs[id]
 ```
 
 Uma única instância compartilhada é injetada via `Depends()` em todas as rotas. Sem locking explícito na v1 (FastAPI com uvicorn single-worker).
+
+---
+
+## DatalogDiskStore
+
+Os datalogs são armazenados em disco como JSON indexado pelo hash SHA-1 do arquivo CSV original. Isso permite:
+- Evitar re-parsing quando o mesmo arquivo é enviado novamente (cache por hash)
+- O frontend envia o log apenas quando o tuning é necessário — não no carregamento inicial
+
+```python
+# datalog/disk_store.py
+import json
+import os
+from pathlib import Path
+
+CACHE_DIR = Path(os.environ.get("MFT_CACHE_DIR", "/tmp/mft_datalogs"))
+
+class DatalogDiskStore:
+
+    def __init__(self):
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, hash: str) -> Path:
+        # hash = "sha1:a3f2..." — usar apenas a parte hex como nome de arquivo
+        hex_part = hash.split(":", 1)[-1]
+        return CACHE_DIR / f"{hex_part}.json"
+
+    def exists(self, hash: str) -> bool:
+        return self._path(hash).exists()
+
+    def get(self, hash: str) -> DatalogModel:
+        path = self._path(hash)
+        if not path.exists():
+            raise KeyError(hash)
+        path.touch()   # atualiza mtime para reiniciar o TTL
+        return DatalogModel(**json.loads(path.read_text(encoding="utf-8")))
+
+    def save(self, hash: str, model: DatalogModel) -> None:
+        self._path(hash).write_text(model.model_dump_json(), encoding="utf-8")
+        # mtime = now (automático na escrita)
+
+    def touch(self, hash: str) -> None:
+        path = self._path(hash)
+        if path.exists():
+            path.touch()
+```
+
+---
+
+## Cleanup de Datalogs (TTL = 1h)
+
+Task assíncrona iniciada no `startup` do FastAPI. Executa a cada 10 minutos e remove arquivos cujo `mtime` é anterior a `now − 3600s`.
+
+```python
+# datalog/cleanup.py
+import asyncio
+import time
+from datalog.disk_store import CACHE_DIR
+
+TTL_SECONDS      = 3600   # 1 hora
+INTERVAL_SECONDS = 600    # verificar a cada 10 minutos
+
+async def cleanup_loop() -> None:
+    while True:
+        await asyncio.sleep(INTERVAL_SECONDS)
+        now = time.time()
+        for f in CACHE_DIR.glob("*.json"):
+            try:
+                if f.stat().st_mtime < now - TTL_SECONDS:
+                    f.unlink(missing_ok=True)
+            except OSError:
+                pass  # arquivo já removido por race condition
+```
+
+Registro em `main.py`:
+
+```python
+@app.on_event("startup")
+async def start_cleanup():
+    asyncio.create_task(cleanup_loop())
+```
 
 ---
 

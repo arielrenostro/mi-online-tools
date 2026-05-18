@@ -83,6 +83,11 @@ frontend/src/
 │       └── data/
 │           └── DataTab.tsx               # tabela virtualizada de dados brutos
 │
+├── parsers/                    # Parsers client-side (sem dependência de backend)
+│   └── datalogParser.ts        # parseDatalogClient(file): Promise<DatalogModel>
+│                               # Parseia o CSV MasterInjection e converte raw→real
+│                               # Usado em addLog() — o backend é acionado apenas pelo tuning
+│
 ├── types/                      # Tipos TypeScript compartilhados (ver types.md)
 │   ├── map.ts
 │   ├── datalog.ts

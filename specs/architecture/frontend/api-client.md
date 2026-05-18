@@ -130,7 +130,7 @@ export async function apiFetch<T>(
     } catch {
       // Corpo não é JSON — mantém mensagem genérica
     }
-    throw new ApiError(response.status, detail)
+    throw new ApiError(response.status, detail, body)
   }
 
   // 204 No Content — retornar undefined
@@ -154,7 +154,8 @@ export async function apiFetch<T>(
 export async function apiUpload<T>(
   path: string,
   file: File,
-  fieldName: string = 'file'
+  fieldName: string = 'file',
+  extraHeaders?: Record<string, string>
 ): Promise<T> {
   const formData = new FormData()
   formData.append(fieldName, file)
@@ -162,9 +163,26 @@ export async function apiUpload<T>(
   return apiFetch<T>(path, {
     method: 'POST',
     body: formData,
+    headers: extraHeaders,
     timeoutMs: UPLOAD_TIMEOUT_MS,
     // Não definir Content-Type manualmente — o browser gera o boundary correto
   })
+}
+
+/**
+ * Calcula o hash SHA-1 de um arquivo usando a SubtleCrypto API do browser.
+ * Retorna no formato "sha1:<hexdigest>" (ex.: "sha1:a3f2b1c4...").
+ *
+ * Usado antes do upload de datalogs para permitir cache server-side.
+ * SHA-1 é adequado aqui — o objetivo é identificar arquivos idênticos,
+ * não segurança criptográfica.
+ */
+export async function computeHash(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer()
+  const hashBuffer = await crypto.subtle.digest('SHA-1', buffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  const hex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('')
+  return `sha1:${hex}`
 }
 ```
 
@@ -258,10 +276,11 @@ import { apiUpload } from './client'
 import type { DatalogModel, DatalogRow } from '@/types/datalog'
 
 interface UploadDatalogResponse {
-  log_id:       string
+  hash:         string
   filename:     string
   duration_ms:  number
   signals:      string[]
+  cached:       boolean
   rows: {
     timestamp_ms:    number
     rpm:             number
@@ -278,17 +297,24 @@ interface UploadDatalogResponse {
 
 /**
  * Faz upload do CSV de datalog ao backend.
- * Retorna o DatalogModel completo (com todas as linhas) e o logId.
+ * Envia o hash do arquivo no header X-Content-Hash para permitir cache server-side.
+ * Se o backend já conhece o hash, retorna o modelo cacheado sem re-parsing.
  *
- * O modelo já vem com os valores convertidos para unidades reais pelo backend.
- * O frontend não precisa converter — apenas exibir.
+ * @param file  - arquivo CSV
+ * @param hash  - hash SHA-1 no formato "sha1:<hex>" — calcular via computeHash() antes de chamar
+ * @returns DatalogModel completo, hash do arquivo e flag `cached` (true = backend usou cache)
  *
  * @throws {ApiError} status 422 se o CSV não for reconhecido como datalog da MasterInjection
  * @throws {NetworkError} se o backend estiver inacessível
  * @throws {TimeoutError} se ultrapassar 120s (logs grandes podem demorar)
  */
-export async function uploadDatalog(file: File): Promise<{ logId: string; model: DatalogModel }> {
-  const raw = await apiUpload<UploadDatalogResponse>('/datalog/upload', file)
+export async function uploadDatalog(
+  file: File,
+  hash: string,
+): Promise<{ hash: string; model: DatalogModel; cached: boolean }> {
+  const raw = await apiUpload<UploadDatalogResponse>('/datalog/upload', file, 'file', {
+    'X-Content-Hash': hash,
+  })
 
   const rows: DatalogRow[] = raw.rows.map((r) => ({
     timestamp_ms:    r.timestamp_ms,
@@ -304,14 +330,14 @@ export async function uploadDatalog(file: File): Promise<{ logId: string; model:
   }))
 
   const model: DatalogModel = {
-    logId:       raw.log_id,
+    hash:        raw.hash,
     filename:    raw.filename,
     rows,
     duration_ms: raw.duration_ms,
     signals:     raw.signals,
   }
 
-  return { logId: raw.log_id, model }
+  return { hash: raw.hash, model, cached: raw.cached }
 }
 ```
 
@@ -392,7 +418,7 @@ import type { TuningRunRequest, TuningOutput } from '@/types/tuning'
 interface TuningRunRequestRaw {
   engine_id:   string
   map_id:      string
-  log_ids:     string[]
+  log_hashes:  string[]
   time_range:  { start_ms: number; end_ms: number } | null
   config:      Record<string, unknown>
 }
@@ -433,7 +459,7 @@ interface TuningOutputRaw {
  * A requisição é síncrona — o backend processa e retorna o TuningOutput completo.
  * Não há polling de progresso na v1.
  *
- * @throws {ApiError} status 404 se mapId ou algum logId não estiver no session store
+ * @throws {ApiError} status 404 se mapId não encontrado ou se algum hash de log não existir no disco do backend
  * @throws {ApiError} status 422 se a config for inválida para o engine selecionado
  * @throws {NetworkError} se o backend estiver inacessível
  * @throws {TimeoutError} se ultrapassar 120s
@@ -441,11 +467,11 @@ interface TuningOutputRaw {
 export async function runTuning(req: TuningRunRequest): Promise<TuningOutput> {
   // Converte camelCase do frontend para snake_case do backend
   const body: TuningRunRequestRaw = {
-    engine_id:  req.engineId,
-    map_id:     req.mapId,
-    log_ids:    req.logIds,
-    time_range: req.timeRange,
-    config:     req.config as Record<string, unknown>,
+    engine_id:   req.engineId,
+    map_id:      req.mapId,
+    log_hashes:  req.logHashes,
+    time_range:  req.timeRange,
+    config:      req.config as Record<string, unknown>,
   }
 
   const raw = await apiFetch<TuningOutputRaw>('/tuning/run', {

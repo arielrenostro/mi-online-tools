@@ -26,9 +26,14 @@ interface LogState {
 
 interface LogActions {
   addLog(file: File): Promise<void>
-  removeLog(logId: string): Promise<void>
-  toggleLog(logId: string): void
-  reorder(orderedIds: string[]): void
+  removeLog(hash: string): Promise<void>
+  toggleLog(hash: string): void
+  reorder(orderedHashes: string[]): void
+
+  /** Garante que todos os logs com os hashes fornecidos estão no disco do backend.
+   *  Chamado por tuningStore.runTuning() antes de executar o tuning.
+   *  Usa o cache por hash — se o arquivo já estiver no disco do backend, o upload retorna cached: true e é uma no-op rápida. */
+  ensureLogsOnBackend(hashes: string[]): Promise<void>
 
   /** Usado pelo sessionRestorer para popular o store sem re-executar uploads. */
   hydrate(entries: LogEntry[]): void
@@ -100,6 +105,8 @@ export const selectAllSignals = (state: LogState): string[] => {
 ```typescript
 // src/store/logStore.ts (continuação)
 import { uploadDatalog }          from '@/api/datalog'
+import { computeHash }            from '@/api/client'
+import { parseDatalogClient }     from '@/parsers/datalogParser'
 import { ApiError, NetworkError, TimeoutError } from '@/api/client'
 import * as logPersistence        from '@/persistence/logPersistence'
 import { lsSet }                  from '@/persistence/localStorage'
@@ -112,12 +119,23 @@ export const useLogStore = create<LogStore>()(
 
     // ── addLog ────────────────────────────────────────────────────────────────
     async addLog(file: File): Promise<void> {
+      // Calcula hash antes do upload para detecção de duplicatas e cache server-side
+      const hash = await computeHash(file)
+
+      // Verifica duplicata localmente antes de fazer qualquer requisição
+      if (get().logs.some((l) => l.hash === hash)) {
+        set({ lastError: `Log já carregado: ${file.name}` })
+        return
+      }
+
       set({ isUploading: true, lastError: null })
       try {
-        const { logId, model } = await uploadDatalog(file)
+        // Parseia o CSV localmente — sem envio ao backend neste momento.
+        // O upload ocorre apenas em ensureLogsOnBackend(), chamado pelo tuningStore.
+        const model = await parseDatalogClient(file)
 
         const entry: LogEntry = {
-          logId,
+          hash,
           filename:    file.name,
           model,
           enabled:     true,
@@ -128,8 +146,9 @@ export const useLogStore = create<LogStore>()(
         set({ logs: newLogs, isUploading: false })
 
         // Persiste modelo + blob CSV no IndexedDB
+        // O blob é necessário para enviar ao backend quando o tuning for executado
         await logPersistence.saveLog({
-          logId,
+          hash,
           filename: file.name,
           model,
           csvBlob:  file,
@@ -145,18 +164,18 @@ export const useLogStore = create<LogStore>()(
     },
 
     // ── removeLog ─────────────────────────────────────────────────────────────
-    async removeLog(logId: string): Promise<void> {
+    async removeLog(hash: string): Promise<void> {
       const { logs } = get()
-      const entry = logs.find((l) => l.logId === logId)
+      const entry = logs.find((l) => l.hash === hash)
       if (!entry) return
 
       const wasActive = entry.enabled
-      const newLogs = logs.filter((l) => l.logId !== logId)
+      const newLogs = logs.filter((l) => l.hash !== hash)
       set({ logs: newLogs })
 
       // Remove do IndexedDB
       try {
-        await logPersistence.deleteLog(logId)
+        await logPersistence.deleteLog(hash)
       } catch (err) {
         console.warn('[mft] Falha ao remover log do IndexedDB:', err)
       }
@@ -177,14 +196,14 @@ export const useLogStore = create<LogStore>()(
     },
 
     // ── toggleLog ─────────────────────────────────────────────────────────────
-    toggleLog(logId: string): void {
+    toggleLog(hash: string): void {
       const { logs } = get()
-      const entry = logs.find((l) => l.logId === logId)
+      const entry = logs.find((l) => l.hash === hash)
       if (!entry) return
 
       const wasEnabled = entry.enabled
       const newLogs = logs.map((l) =>
-        l.logId === logId ? { ...l, enabled: !l.enabled } : l
+        l.hash === hash ? { ...l, enabled: !l.enabled } : l
       )
       set({ logs: newLogs })
 
@@ -207,27 +226,41 @@ export const useLogStore = create<LogStore>()(
     },
 
     // ── reorder ───────────────────────────────────────────────────────────────
-    reorder(orderedIds: string[]): void {
+    reorder(orderedHashes: string[]): void {
       const { logs } = get()
 
       // Reconstrói a lista na nova ordem, preservando entradas não listadas no final
-      const mapped = new Map(logs.map((l) => [l.logId, l]))
-      const reordered = orderedIds
-        .map((id) => mapped.get(id))
+      const mapped = new Map(logs.map((l) => [l.hash, l]))
+      const reordered = orderedHashes
+        .map((h) => mapped.get(h))
         .filter((l): l is LogEntry => l !== undefined)
 
-      // Adiciona entradas que por algum motivo não estavam em orderedIds
-      const inOrdered = new Set(orderedIds)
-      const remaining = logs.filter((l) => !inOrdered.has(l.logId))
+      // Adiciona entradas que por algum motivo não estavam em orderedHashes
+      const inOrdered = new Set(orderedHashes)
+      const remaining = logs.filter((l) => !inOrdered.has(l.hash))
 
       const newLogs = [...reordered, ...remaining]
       set({ logs: newLogs })
       persistLogOrder(newLogs)
     },
 
+    // ── ensureLogsOnBackend ───────────────────────────────────────────────────
+    async ensureLogsOnBackend(hashes: string[]): Promise<void> {
+      for (const hash of hashes) {
+        const saved = await logPersistence.getLog(hash)
+        if (!saved?.csvBlob) {
+          throw new Error(`Blob do log ${hash} não encontrado no IndexedDB. Reimporte o arquivo.`)
+        }
+        // Cache por hash: se o arquivo já estiver no disco do backend, retorna cached: true rapidamente
+        await uploadDatalog(saved.csvBlob as File, hash)
+      }
+    },
+
     // ── hydrate (sessionRestorer) ─────────────────────────────────────────────
     hydrate(entries: LogEntry[]): void {
       set({ logs: entries, isUploading: false, lastError: null })
+      // Nota: o sessionRestorer NÃO faz upload ao backend na restauração.
+      // O upload ocorre apenas em ensureLogsOnBackend(), chamado pelo tuningStore.
     },
   }))
 )
@@ -236,8 +269,8 @@ export const useLogStore = create<LogStore>()(
 
 function persistLogOrder(logs: LogEntry[]): void {
   lsSet('mft:log-order', {
-    orderedIds: logs.map((l) => l.logId),
-    enabledIds: logs.filter((l) => l.enabled).map((l) => l.logId),
+    orderedHashes: logs.map((l) => l.hash),
+    enabledHashes: logs.filter((l) => l.enabled).map((l) => l.hash),
   })
 }
 
@@ -302,11 +335,13 @@ Ver a spec completa em `stores/time-store.md`. Em resumo:
 | Dado | Onde | Quando |
 |------|------|--------|
 | `model` + `csvBlob` de cada log | IndexedDB (`logs`) | Imediatamente após `addLog()` bem-sucedido |
-| Ordem dos logs (`orderedIds`) | localStorage (`mft:log-order`) | Após `addLog()`, `removeLog()`, `reorder()` |
-| Estado `enabled` de cada log | localStorage (`mft:log-order.enabledIds`) | Após `toggleLog()` |
+| Ordem dos logs (`orderedHashes`) | localStorage (`mft:log-order`) | Após `addLog()`, `removeLog()`, `reorder()` |
+| Estado `enabled` de cada log | localStorage (`mft:log-order.enabledHashes`) | Após `toggleLog()` |
 | Remoção de log | IndexedDB (`logs`) | Dentro de `removeLog()` |
 
-O model completo do log (com todas as linhas) fica no IndexedDB. O localStorage armazena apenas os IDs e o estado `enabled` — dados pequenos que precisam estar disponíveis sincronamente na restauração para determinar a ordem antes mesmo de ler o IndexedDB.
+O model completo do log (com todas as linhas, parseado client-side) fica no IndexedDB. O localStorage armazena apenas os hashes e o estado `enabled` — dados pequenos disponíveis sincronamente na restauração. O blob CSV também fica no IndexedDB, necessário para o envio ao backend em `ensureLogsOnBackend()`.
+
+**Nota importante:** o `sessionRestorer` NÃO faz upload dos logs ao backend na restauração. O upload ocorre somente em `ensureLogsOnBackend()`, chamado por `tuningStore.runTuning()` imediatamente antes de executar o tuning.
 
 ---
 
@@ -329,7 +364,7 @@ const availableSignals = useLogStore(selectAllSignals)
 const isUploading = useLogStore((s) => s.isUploading)
 const lastError   = useLogStore((s) => s.lastError)
 
-// Para o guard RequireLog
+// Para o guard RequireLog (habilitado por hash, não por logId)
 const hasActiveLogs = useLogStore((s) => s.logs.some((l) => l.enabled))
 ```
 

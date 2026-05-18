@@ -96,8 +96,9 @@ export interface DatalogRow {
  * Inclui todas as linhas, metadados e a lista de sinais disponíveis.
  */
 export interface DatalogModel {
-  /** UUID gerado pelo backend. Válido apenas enquanto o processo backend estiver rodando. */
-  logId:        string
+  /** Hash SHA-1 do arquivo CSV original. Formato: "sha1:<hexdigest>".
+   *  Persiste entre sessões — identifica o log de forma estável independente do backend. */
+  hash:         string
 
   /** Nome do arquivo CSV original. */
   filename:     string
@@ -118,8 +119,9 @@ export interface DatalogModel {
  * Entrada de log no store — agrega metadados de UI ao DatalogModel.
  */
 export interface LogEntry {
-  /** ID no backend — re-obtido a cada restore via re-upload. */
-  logId:       string
+  /** Hash SHA-1 do arquivo CSV. Formato: "sha1:<hexdigest>".
+   *  Identificador estável — não muda entre sessões nem após restore. */
+  hash:        string
 
   /** Nome do arquivo original. */
   filename:    string
@@ -140,7 +142,7 @@ export interface LogEntry {
  * Evita passar o modelo completo (com centenas de miles de linhas) para componentes de UI.
  */
 export interface ActiveLog {
-  logId:       string
+  hash:        string
   filename:    string
   duration_ms: number
   enabled:     boolean
@@ -355,8 +357,10 @@ export interface TuningRunRequest {
   /** ID do mapa no backend (obtido no último upload ou re-upload do restore). */
   mapId:      string
 
-  /** IDs dos logs a incluir na análise (apenas logs com enabled=true). */
-  logIds:     string[]
+  /** Hashes SHA-1 dos logs a incluir na análise (apenas logs com enabled=true).
+   *  Formato: ["sha1:<hex>", ...]. O backend localiza os datalogs em disco por hash.
+   *  Os logs são enviados ao backend em logStore.ensureLogsOnBackend() antes desta chamada. */
+  logHashes:  string[]
 
   /** Intervalo de tempo para análise. Se null, usa todos os pontos de todos os logs. */
   timeRange:  TimeSelection | null
