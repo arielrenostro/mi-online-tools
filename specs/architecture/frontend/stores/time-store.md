@@ -272,7 +272,7 @@ function TimeRailContainer() {
   return (
     <TimeRail
       logs={activeLogs.map(l => ({
-        logId:       l.logId,
+        hash:        l.hash,
         filename:    l.filename,
         duration_ms: l.duration_ms,
         enabled:     l.enabled,

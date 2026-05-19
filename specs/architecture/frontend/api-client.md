@@ -9,11 +9,12 @@ Camada de comunicação com o backend FastAPI. Responsável exclusivamente por H
 ```
 src/api/
 ├── client.ts       # fetch base, tratamento de erros, tipos de erro
-├── map.ts          # uploadMap, exportMap
 ├── datalog.ts      # uploadDatalog
 ├── engines.ts      # listEngines, getEngine
 └── tuning.ts       # runTuning
 ```
+
+> **Nota:** não existe `api/map.ts`. O parsing do CSV do mapa é feito em `parsers/mapParser.ts` e a exportação em `utils/mapExporter.ts`.
 
 ---
 
@@ -188,82 +189,6 @@ export async function computeHash(file: File): Promise<string> {
 
 ---
 
-## `api/map.ts`
-
-### `uploadMap(file: File)`
-
-Faz o upload do CSV do mapa da MasterInjection. O backend parseia o arquivo e retorna o modelo completo com breakpoints e células.
-
-```typescript
-// src/api/map.ts
-import { apiUpload, apiFetch } from './client'
-import type { MapModel } from '@/types/map'
-
-interface UploadMapResponse {
-  map_id:           string
-  name:             string
-  rpm_breakpoints:  number[]
-  map_breakpoints:  number[]
-  cells:            number[][]
-}
-
-/**
- * Faz upload do CSV do mapa ao backend.
- * Retorna o MapModel com os breakpoints e células parseadas, e o mapId para uso futuro.
- *
- * @throws {ApiError} status 422 se o CSV for inválido ou formato não reconhecido
- * @throws {NetworkError} se o backend estiver inacessível
- * @throws {TimeoutError} se ultrapassar 120s
- */
-export async function uploadMap(file: File): Promise<{ mapId: string; model: MapModel }> {
-  const raw = await apiUpload<UploadMapResponse>('/map/upload', file)
-
-  // Converte snake_case do backend para camelCase do frontend
-  const model: MapModel = {
-    mapId:           raw.map_id,
-    name:            raw.name,
-    rpmBreakpoints:  raw.rpm_breakpoints,
-    mapBreakpoints:  raw.map_breakpoints,
-    cells:           raw.cells,
-  }
-
-  return { mapId: raw.map_id, model }
-}
-```
-
-### `exportMap(mapId: string, cells: number[][])`
-
-Solicita ao backend a geração do CSV atualizado com os valores do mapa editável. O backend preserva todas as linhas do CSV original e substitui apenas as linhas `#F01`–`#F16`.
-
-```typescript
-/**
- * Solicita o CSV exportado com as células do mapa editável.
- * Retorna um Blob pronto para download.
- *
- * @throws {ApiError} status 404 se mapId não encontrado no session store do backend
- * @throws {NetworkError} se o backend estiver inacessível
- */
-export async function exportMap(mapId: string, cells: number[][]): Promise<Blob> {
-  const params = new URLSearchParams({ cells: JSON.stringify(cells) })
-  const url = `/map/${encodeURIComponent(mapId)}/export?${params}`
-
-  // apiFetch padrão não serve para Blob — fazer fetch direto com tratamento de erro
-  const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
-  const response = await fetch(`${BASE_URL}/api${url}`)
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}))
-    throw new ApiError(response.status, body.detail ?? `Erro ${response.status}`)
-  }
-
-  return response.blob()
-}
-```
-
-> Nota: `exportMap` usa `fetch` diretamente porque precisa retornar um `Blob` em vez de JSON. A `apiFetch` genérica retorna JSON; neste caso, fazer a chamada manualmente com tratamento de erro equivalente é mais limpo do que adaptar a função genérica.
-
----
-
 ## `api/datalog.ts`
 
 ### `uploadDatalog(file: File)`
@@ -416,11 +341,13 @@ import { apiFetch } from './client'
 import type { TuningRunRequest, TuningOutput } from '@/types/tuning'
 
 interface TuningRunRequestRaw {
-  engine_id:   string
-  map_id:      string
-  log_hashes:  string[]
-  time_range:  { start_ms: number; end_ms: number } | null
-  config:      Record<string, unknown>
+  engine_id:        string
+  rpm_breakpoints:  number[]
+  map_breakpoints:  number[]
+  cells:            number[][]
+  log_hashes:       string[]
+  time_range:       { start_ms: number; end_ms: number } | null
+  config:           Record<string, unknown>
 }
 
 interface TuningOutputRaw {
@@ -459,7 +386,7 @@ interface TuningOutputRaw {
  * A requisição é síncrona — o backend processa e retorna o TuningOutput completo.
  * Não há polling de progresso na v1.
  *
- * @throws {ApiError} status 404 se mapId não encontrado ou se algum hash de log não existir no disco do backend
+ * @throws {ApiError} status 404 se algum hash de log não existir no disco do backend
  * @throws {ApiError} status 422 se a config for inválida para o engine selecionado
  * @throws {NetworkError} se o backend estiver inacessível
  * @throws {TimeoutError} se ultrapassar 120s
@@ -467,11 +394,13 @@ interface TuningOutputRaw {
 export async function runTuning(req: TuningRunRequest): Promise<TuningOutput> {
   // Converte camelCase do frontend para snake_case do backend
   const body: TuningRunRequestRaw = {
-    engine_id:   req.engineId,
-    map_id:      req.mapId,
-    log_hashes:  req.logHashes,
-    time_range:  req.timeRange,
-    config:      req.config as Record<string, unknown>,
+    engine_id:        req.engineId,
+    rpm_breakpoints:  req.rpmBreakpoints,
+    map_breakpoints:  req.mapBreakpoints,
+    cells:            req.cells,
+    log_hashes:       req.logHashes,
+    time_range:       req.timeRange,
+    config:           req.config as Record<string, unknown>,
   }
 
   const raw = await apiFetch<TuningOutputRaw>('/tuning/run', {
@@ -531,7 +460,7 @@ export async function runTuning(req: TuningRunRequest): Promise<TuningOutput> {
 
 O `api/` **não gerencia loading state**. Essa é responsabilidade dos stores e hooks que chamam as funções:
 
-- `useMapStore.loadMap()` define `isLoading = true` antes de chamar `uploadMap()` e `isLoading = false` após.
+- `useMapStore.loadMap()` define `isLoading = true` antes de chamar `parseMapClient()` e `isLoading = false` após.
 - `useTuningStore.runTuning()` define `isRunning = true` antes de chamar `api/tuning.runTuning()`.
 - Os componentes leem `isLoading`/`isRunning` dos stores para exibir spinners e desabilitar botões.
 
@@ -567,28 +496,17 @@ Isso garante uma única fonte de verdade para os tipos e facilita a geração au
 ## Exemplo de uso correto em um store
 
 ```typescript
-// Em useMapStore.ts — exemplo de como o store chama o api/
-import { uploadMap } from '@/api/map'
-import { ApiError, NetworkError, TimeoutError } from '@/api/client'
+// Em useMapStore.ts — exemplo de como o store chama o parser client-side
+import { parseMapClient } from '@/parsers/mapParser'
 
 async loadMap(file: File): Promise<void> {
   set({ isLoading: true, lastError: null })
   try {
-    const { mapId, model } = await uploadMap(file)
-    set({ mapId, originalModel: model, editableMap: model.cells, isLoading: false })
+    const model = await parseMapClient(file)
+    set({ originalMap: model, editableMap: model.cells.map(row => [...row]), isLoading: false })
     // ... persiste no IndexedDB
   } catch (err) {
-    let message = 'Erro desconhecido'
-    if (err instanceof ApiError) {
-      message = err.status === 422
-        ? `CSV inválido: ${err.detail}`
-        : `Erro do servidor: ${err.detail}`
-    } else if (err instanceof NetworkError) {
-      message = 'Sem conexão com o servidor. Verifique se o backend está rodando.'
-    } else if (err instanceof TimeoutError) {
-      message = 'O upload demorou muito. Tente novamente com um arquivo menor.'
-    }
-    set({ isLoading: false, lastError: message })
+    set({ isLoading: false, lastError: err instanceof Error ? err.message : 'Erro ao parsear o mapa.' })
   }
 }
 ```

@@ -38,9 +38,9 @@ interface MiFuelTunerDB extends DBSchema {
     value: MapDBEntry
   }
 
-  // Armazena os logs individualmente (indexados por logId)
+  // Armazena os logs individualmente (indexados por hash)
   'logs': {
-    key: string            // logId (UUID gerado pelo backend)
+    key: string            // hash SHA-1 do arquivo CSV (formato "sha1:<hex>")
     value: LogDBEntry
     indexes: { 'by-filename': string }
   }
@@ -53,17 +53,17 @@ interface MiFuelTunerDB extends DBSchema {
 }
 
 interface MapDBEntry {
-  originalModel: MapModel           // modelo parseado pelo backend
+  originalModel: MapModel           // modelo parseado client-side
   editableCells: number[][] | null  // cópia editável (pode diferir do original)
-  csvBlob: Blob                     // arquivo CSV original para re-upload
+  csvBlob: Blob                     // arquivo CSV original (para exportação client-side)
   savedAt: number                   // Date.now() — para diagnóstico
 }
 
 interface LogDBEntry {
-  logId: string
+  hash: string                      // SHA-1 do arquivo CSV ("sha1:<hex>")
   filename: string
   model: DatalogModel               // modelo completo com todas as linhas
-  csvBlob: Blob                     // arquivo CSV original para re-upload
+  csvBlob: Blob                     // arquivo CSV original
   savedAt: number
 }
 
@@ -79,7 +79,7 @@ export async function getDB(): Promise<IDBPDatabase<MiFuelTunerDB>> {
   _db = await openDB<MiFuelTunerDB>('mi-fuel-tuner-db', 1, {
     upgrade(db) {
       db.createObjectStore('map')
-      const logStore = db.createObjectStore('logs', { keyPath: 'logId' })
+      const logStore = db.createObjectStore('logs', { keyPath: 'hash' })
       logStore.createIndex('by-filename', 'filename')
       db.createObjectStore('tuning-output')
     },
@@ -143,9 +143,14 @@ export async function loadAllLogs(): Promise<LogDBEntry[]> {
   return db.getAll('logs')
 }
 
-export async function deleteLog(logId: string): Promise<void> {
+export async function getLog(hash: string): Promise<LogDBEntry | undefined> {
   const db = await getDB()
-  await db.delete('logs', logId)
+  return db.get('logs', hash)
+}
+
+export async function deleteLog(hash: string): Promise<void> {
+  const db = await getDB()
+  await db.delete('logs', hash)
 }
 ```
 
@@ -180,7 +185,7 @@ export async function clearTuningOutput(): Promise<void> {
 |-------|----------|------|-------|
 | `mft:config` | `TuningConfig` serializada | JSON object | `useTuningStore` |
 | `mft:engine-id` | ID do engine selecionado | string | `useTuningStore` |
-| `mft:log-order` | `{ orderedIds: string[]; enabledIds: string[] }` | JSON object | `useLogStore` |
+| `mft:log-order` | `{ orderedHashes: string[]; enabledHashes: string[] }` | JSON object | `useLogStore` |
 | `mft:ui` | `UIState` completo | JSON object | `useUIStore` |
 | `mft:time` | `{ cursor_ms: number \| null; selection: TimeSelection \| null; sparklineSensor: string }` | JSON object | `useTimeStore` |
 
@@ -232,8 +237,6 @@ import * as mapPersistence    from './mapPersistence'
 import * as logPersistence    from './logPersistence'
 import * as tuningPersistence from './tuningPersistence'
 import { lsGet }              from './localStorage'
-import { uploadMap }          from '@/api/map'
-import { uploadDatalog }      from '@/api/datalog'
 
 export async function restore(): Promise<void> {
   // Sinaliza que a restauração está em andamento (guards aguardam)
@@ -246,14 +249,6 @@ export async function restore(): Promise<void> {
     await restoreStep_Logs()
     await restoreStep_TuningOutput()
     await restoreStep_Time()
-
-    // Marca como offline se o backend não respondeu em nenhuma etapa
-    const anyUploadFailed = useSessionStore.getState().backendUnavailable
-    if (anyUploadFailed) {
-      // Modo offline parcial: dados exibidos, auto-tuning desabilitado
-      useSessionStore.getState().setOfflineMode(true)
-    }
-
   } catch (err) {
     // Erro inesperado no restorer — não deve travar o app
     console.error('[mft] sessionRestorer falhou:', err)
@@ -308,21 +303,7 @@ async function restoreStep_Map() {
 
   if (!mapEntry) return   // nenhum mapa salvo
 
-  // Tenta re-upload silencioso ao backend para obter novo mapId
-  let mapId: string | null = null
-  try {
-    const csvFile = new File([mapEntry.csvBlob], mapEntry.originalModel.name, { type: 'text/csv' })
-    const result = await uploadMap(csvFile)
-    mapId = result.mapId
-  } catch (err) {
-    // Backend indisponível — modo offline
-    console.warn('[mft] Re-upload de mapa falhou (backend offline):', err)
-    useSessionStore.getState().setBackendUnavailable(true)
-    // Continua sem mapId — dados exibidos mas auto-tuning desabilitado
-  }
-
   useMapStore.getState().hydrate({
-    mapId,
     originalModel: mapEntry.originalModel,
     editableCells: mapEntry.editableCells ?? mapEntry.originalModel.cells,
   })
@@ -333,8 +314,7 @@ async function restoreStep_Map() {
 
 ```typescript
 async function restoreStep_Logs() {
-  // Lê ordem e estado enabled do localStorage
-  const logOrder = lsGet<{ orderedIds: string[]; enabledIds: string[] }>('mft:log-order')
+  const logOrder = lsGet<{ orderedHashes: string[]; enabledHashes: string[] }>('mft:log-order')
 
   let logEntries: LogDBEntry[]
   try {
@@ -346,45 +326,18 @@ async function restoreStep_Logs() {
 
   if (logEntries.length === 0) return
 
-  // Ordena conforme a ordem salva no localStorage (se disponível)
-  const orderedLogs = sortLogsByOrder(logEntries, logOrder?.orderedIds ?? [])
+  const orderedLogs = sortLogsByOrder(logEntries, logOrder?.orderedHashes ?? [])
+  const enabledHashes = new Set(logOrder?.enabledHashes ?? [])
 
-  // Re-upload de cada log ao backend (em paralelo, com timeout individual)
-  const restored: LogEntry[] = []
-  await Promise.allSettled(
-    orderedLogs.map(async (entry) => {
-      let logId: string = entry.logId
-      try {
-        const csvFile = new File([entry.csvBlob], entry.filename, { type: 'text/csv' })
-        const result = await uploadDatalog(csvFile)
-        logId = result.logId   // novo ID do backend
-      } catch (err) {
-        console.warn(`[mft] Re-upload do log "${entry.filename}" falhou:`, err)
-        useSessionStore.getState().setBackendUnavailable(true)
-        // Mantém o modelo com logId inválido — exibição funciona, tuning não
-      }
+  const entries: LogEntry[] = orderedLogs.map((entry) => ({
+    hash:        entry.hash,
+    filename:    entry.filename,
+    model:       entry.model,
+    enabled:     enabledHashes.size === 0 ? true : enabledHashes.has(entry.hash),
+    duration_ms: entry.model.duration_ms,
+  }))
 
-      const enabled = logOrder?.enabledIds.includes(entry.logId) ?? true
-      restored.push({
-        logId,
-        filename: entry.filename,
-        model: entry.model,
-        enabled,
-        duration_ms: entry.model.duration_ms,
-      })
-    })
-  )
-
-  // Salva novos IDs no IndexedDB (substitui entradas antigas se IDs mudaram)
-  for (const entry of restored) {
-    const dbEntry = logEntries.find(e => e.filename === entry.filename)
-    if (dbEntry && entry.logId !== dbEntry.logId) {
-      await logPersistence.deleteLog(dbEntry.logId)
-      await logPersistence.saveLog({ ...dbEntry, logId: entry.logId })
-    }
-  }
-
-  useLogStore.getState().hydrate(restored)
+  useLogStore.getState().hydrate(entries)
 }
 ```
 
@@ -419,10 +372,10 @@ async function restoreStep_Time() {
 
 ### Toast de confirmação
 
-Após a restauração bem-sucedida (pelo menos mapa ou logs encontrados), exibir um toast discreto:
+Após a restauração bem-sucedida (pelo menos mapa ou logs encontrados), exibir um toast discreto. Colocar após o bloco `try/catch/finally`, fora do escopo de `restore()`:
 
 ```typescript
-// No final de restore(), antes do finally:
+// Após restore() concluir (isRestoring já é false):
 const hasData = useMapStore.getState().originalMap !== null
              || useLogStore.getState().logs.length > 0
 
@@ -430,24 +383,6 @@ if (hasData) {
   toast({ title: 'Sessão restaurada', description: 'Seus dados foram carregados automaticamente.' })
 }
 ```
-
----
-
-## Modo offline parcial
-
-Quando o backend não está disponível durante o restore, a aplicação entra em **modo offline parcial**:
-
-| Funcionalidade | Modo offline |
-|----------------|-------------|
-| Visualização do mapa original | Funciona (dados no IndexedDB) |
-| Visualização do mapa editável | Funciona |
-| Visualização dos logs | Funciona (dados no IndexedDB) |
-| Gráficos de datalog | Funciona |
-| Aba Dados | Funciona |
-| Auto-tuning (`runTuning`) | Desabilitado — botão cinza com tooltip "Backend indisponível" |
-| Exportação do mapa | Desabilitado — requer `mapId` válido no backend |
-
-O estado `backendUnavailable` é lido pelos componentes que precisam desabilitar funcionalidades. Um banner de aviso é exibido no topo da aplicação.
 
 ---
 
@@ -492,7 +427,7 @@ Os stores Zustand usam um padrão de **subscriber manual**: após cada mutação
 
 1. O `persist` middleware salva/carrega o store **inteiro** atomicamente, mas precisamos de controle granular (ex.: persistir `editableCells` debounced e `originalModel` imediato).
 2. O IndexedDB é assíncrono e o middleware `persist` padrão foi projetado para localStorage síncrono.
-3. A lógica de restauração (re-upload ao backend) é complexa demais para encapsular em um rehydrator genérico.
+3. A lógica de restauração exige controle granular sobre a ordem e o timing de cada store — difícil de encapsular em um rehydrator genérico.
 
 ### Padrão de subscriber
 
@@ -520,9 +455,9 @@ useMapStore.subscribe(
 
 | Store | Dado | Mecanismo | Timing |
 |-------|------|-----------|--------|
-| `useMapStore` | `originalModel` + `csvBlob` | IndexedDB | Imediato (após upload bem-sucedido) |
+| `useMapStore` | `originalModel` + `csvBlob` | IndexedDB | Imediato após `loadMap()` bem-sucedido |
 | `useMapStore` | `editableCells` | IndexedDB | Debounced 300ms após `updateCell` ou `applyTuningOutput` |
-| `useLogStore` | `model` + `csvBlob` por log | IndexedDB | Imediato (após upload bem-sucedido) |
+| `useLogStore` | `model` + `csvBlob` por log | IndexedDB | Imediato após `addLog()` bem-sucedido |
 | `useLogStore` | ordem e `enabled` | localStorage | Imediato após `reorder` ou `toggleLog` |
 | `useTuningStore` | `config` | localStorage | Imediato após `updateConfig` |
 | `useTuningStore` | `selectedEngineId` | localStorage | Imediato após `setEngine` |

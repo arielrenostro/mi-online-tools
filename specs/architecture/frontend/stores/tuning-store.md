@@ -118,8 +118,8 @@ export const useTuningStore = create<TuningStore>()(
     // ── runTuning ─────────────────────────────────────────────────────────────
     async runTuning(): Promise<void> {
       // ── Pré-validação de pré-requisitos ─────────────────────────────────────
-      const mapId = useMapStore.getState().mapId
-      if (!mapId) {
+      const { originalMap, editableMap } = useMapStore.getState()
+      if (!originalMap || !editableMap) {
         set({ lastError: 'Nenhum mapa carregado. Importe um mapa antes de rodar o auto-tuning.' })
         return
       }
@@ -135,9 +135,11 @@ export const useTuningStore = create<TuningStore>()(
 
       // ── Monta a requisição ──────────────────────────────────────────────────
       const request = {
-        engineId:   selectedEngineId,
-        mapId,
-        logHashes:  activeLogs.map((l) => l.hash),
+        engineId:       selectedEngineId,
+        rpmBreakpoints: originalMap.rpmBreakpoints,
+        mapBreakpoints: originalMap.mapBreakpoints,
+        cells:          editableMap,
+        logHashes:      activeLogs.map((l) => l.hash),
         timeRange,
         config,
       }
@@ -145,9 +147,6 @@ export const useTuningStore = create<TuningStore>()(
       // ── Executa ──────────────────────────────────────────────────────────────
       set({ isRunning: true, lastError: null })
 
-      // Envia os logs ao backend antes de rodar o tuning.
-      // O envio só ocorre aqui — não em addLog nem no restore de sessão.
-      // O cache por hash no backend faz com que uploads repetidos retornem cached: true rapidamente.
       try {
         await useLogStore.getState().ensureLogsOnBackend(request.logHashes)
       } catch (uploadErr) {
@@ -218,7 +217,7 @@ export const useTuningStore = create<TuningStore>()(
 function formatTuningError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 404) {
-      return 'Mapa não encontrado no servidor. Recarregue a página para restaurar a sessão.'
+      return 'Um ou mais logs não foram encontrados no servidor. Tente rodar o auto-tuning novamente.'
     }
     if (err.status === 422) {
       return `Configuração inválida: ${err.detail}`
@@ -242,18 +241,20 @@ function formatTuningError(err: unknown): string {
 ```
 runTuning() chamado (ex.: clique no botão)
        │
-       ├── Validação 1: mapId !== null?
+       ├── Validação 1: originalMap !== null?
        │       └── não → set lastError, return
        │
        ├── Validação 2: activeLogs.length > 0?
        │       └── não → set lastError, return
        │
        ├── Monta TuningRunRequest:
-       │       engineId:   selectedEngineId
-       │       mapId:      mapStore.mapId
-       │       logHashes:  activeLogs.map(l => l.hash)
-       │       timeRange:  timeStore.selection (null = usar tudo)
-       │       config:     config atual
+       │       engineId:       selectedEngineId
+       │       rpmBreakpoints: originalMap.rpmBreakpoints
+       │       mapBreakpoints: originalMap.mapBreakpoints
+       │       cells:          editableMap  ← mapa atual editável
+       │       logHashes:      activeLogs.map(l => l.hash)
+       │       timeRange:      timeStore.selection (null = usar tudo)
+       │       config:         config atual
        │
        ├── set({ isRunning: true, lastError: null })
        │
@@ -286,12 +287,12 @@ O `useTuningStore` precisa ler dados de `useMapStore`, `useLogStore` e `useTimeS
 
 ```typescript
 // Correto: acesso direto ao estado
-const mapId = useMapStore.getState().mapId
+const { originalMap, editableMap } = useMapStore.getState()
 const activeLogs = selectActiveLogs(useLogStore.getState())
 const timeRange = useTimeStore.getState().selection
 
 // Incorreto: nunca usar hooks dentro de stores
-const mapId = useMapStore((s) => s.mapId)  // ← ERRO: hook fora de componente
+const originalMap = useMapStore((s) => s.originalMap)  // ← ERRO: hook fora de componente
 ```
 
 ---

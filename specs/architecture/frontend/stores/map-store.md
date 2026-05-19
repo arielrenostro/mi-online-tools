@@ -1,6 +1,6 @@
 # Store: `useMapStore`
 
-Store Zustand responsável por todo o ciclo de vida do mapa: upload, armazenamento, edição manual e aplicação de resultados do auto-tuning.
+Store Zustand responsável por todo o ciclo de vida do mapa: importação, armazenamento, edição manual e aplicação de resultados do auto-tuning.
 
 ---
 
@@ -13,11 +13,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 import type { MapModel } from '@/types/map'
 
 interface MapState {
-  /** ID do mapa no backend. null antes do upload ou se o re-upload de restore falhou.
-   *  Inválido após reload — o sessionRestorer faz re-upload e obtém novo ID. */
-  mapId:        string | null
-
-  /** Modelo completo parseado pelo backend. Fonte de verdade imutável do mapa original.
+  /** Modelo completo parseado client-side. Fonte de verdade imutável do mapa original.
    *  null = nenhum mapa carregado. */
   originalMap:  MapModel | null
 
@@ -30,7 +26,7 @@ interface MapState {
    *  Computed — derivado da comparação profunda. Não armazenado diretamente. */
   isDirty:      boolean
 
-  /** true durante o upload ou re-upload (restore). Controla spinners na UI. */
+  /** true durante o parsing do CSV (client-side). Controla spinners na UI. */
   isLoading:    boolean
 
   /** Mensagem de erro do último upload ou operação. null = sem erro. */
@@ -44,9 +40,8 @@ interface MapActions {
   applyTuningOutput(suggested: number[][]): void
   clear(): void
 
-  /** Usado pelo sessionRestorer para popular o store sem re-executar o upload. */
+  /** Usado pelo sessionRestorer para popular o store sem re-executar o parsing. */
   hydrate(data: {
-    mapId:         string | null
     originalModel: MapModel
     editableCells: number[][]
   }): void
@@ -59,7 +54,6 @@ type MapStore = MapState & MapActions
 
 ```typescript
 const initialState: MapState = {
-  mapId:       null,
   originalMap: null,
   editableMap: null,
   isDirty:     false,
@@ -74,8 +68,7 @@ const initialState: MapState = {
 
 ```typescript
 // src/store/mapStore.ts (continuação)
-import { uploadMap }              from '@/api/map'
-import { ApiError, NetworkError, TimeoutError } from '@/api/client'
+import { parseMapClient }         from '@/parsers/mapParser'
 import * as mapPersistence        from '@/persistence/mapPersistence'
 import { useTuningStore }         from './tuningStore'
 import { deepEqual }              from '@/utils/deepEqual'
@@ -89,26 +82,25 @@ export const useMapStore = create<MapStore>()(
     async loadMap(file: File): Promise<void> {
       set({ isLoading: true, lastError: null })
       try {
-        const { mapId, model } = await uploadMap(file)
+        const model = await parseMapClient(file)
 
         const editableCells = model.cells.map(row => [...row])  // deep copy
 
         set({
-          mapId,
           originalMap:  model,
           editableMap:  editableCells,
           isDirty:      false,
           isLoading:    false,
         })
 
-        // Persiste no IndexedDB imediatamente após upload bem-sucedido
+        // Persiste no IndexedDB imediatamente após parsing bem-sucedido
         await mapPersistence.saveMap(model, editableCells, file)
 
         // Limpa o output do tuning anterior — mapa novo, output desatualizado
         useTuningStore.getState().clearOutput()
 
       } catch (err) {
-        set({ isLoading: false, lastError: formatError(err) })
+        set({ isLoading: false, lastError: err instanceof Error ? err.message : 'Erro ao parsear o mapa.' })
       }
     },
 
@@ -167,10 +159,10 @@ export const useMapStore = create<MapStore>()(
     },
 
     // ── hydrate (usado pelo sessionRestorer) ──────────────────────────────────
-    hydrate({ mapId, originalModel, editableCells }): void {
+    // Restaura o estado do store a partir do IndexedDB sem re-parsear o CSV.
+    hydrate({ originalModel, editableCells }): void {
       const isDirty = !deepEqual(editableCells, originalModel.cells)
       set({
-        mapId,
         originalMap:  originalModel,
         editableMap:  editableCells,
         isDirty,
@@ -239,7 +231,7 @@ export function setupMapSubscribers(): void {
 
 | Dado | Quando é salvo | Como |
 |------|---------------|------|
-| `originalMap` + `csvBlob` | Imediatamente após `loadMap()` bem-sucedido | `mapPersistence.saveMap()` dentro de `loadMap()` |
+| `originalMap` + `csvBlob` | Imediatamente após `loadMap()` bem-sucedido | `mapPersistence.saveMap(model, editableCells, file)` dentro de `loadMap()` |
 | `editableMap` | 300ms após a última chamada a `updateCell()` ou `applyTuningOutput()` | Subscriber debounced |
 | Limpeza total | Quando `clear()` é chamado | `mapPersistence.clearMap()` dentro de `clear()` |
 
@@ -278,7 +270,6 @@ const editableMap      = useMapStore((s) => s.editableMap)
 const isDirty          = useMapStore((s) => s.isDirty)
 
 // Para o botão "Exportar" na TopBar
-const mapId            = useMapStore((s) => s.mapId)
 const mapName          = useMapStore((s) => s.originalMap?.name ?? null)
 
 // Para spinners de loading

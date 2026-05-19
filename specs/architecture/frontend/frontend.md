@@ -33,7 +33,6 @@
 frontend/src/
 ├── api/                        # Camada de comunicação com o backend
 │   ├── client.ts               # fetch base, tratamento de erros, timeout
-│   ├── map.ts                  # uploadMap, exportMap
 │   ├── datalog.ts              # uploadDatalog
 │   ├── tuning.ts               # runTuning
 │   └── engines.ts              # listEngines, getEngine
@@ -84,15 +83,23 @@ frontend/src/
 │           └── DataTab.tsx               # tabela virtualizada de dados brutos
 │
 ├── parsers/                    # Parsers client-side (sem dependência de backend)
-│   └── datalogParser.ts        # parseDatalogClient(file): Promise<DatalogModel>
-│                               # Parseia o CSV MasterInjection e converte raw→real
-│                               # Usado em addLog() — o backend é acionado apenas pelo tuning
+│   ├── datalogParser.ts        # parseDatalogClient(file): Promise<DatalogModel>
+│   │                           # Parseia o CSV de datalog e converte raw→real
+│   │                           # Usado em addLog() — backend acionado apenas pelo tuning
+│   └── mapParser.ts            # parseMapClient(file): Promise<MapModel>
+│                               # Parseia o CSV MasterInjection (#I20/#I21/#F01–#F16)
+│                               # O backend nunca recebe o arquivo do mapa
 │
 ├── types/                      # Tipos TypeScript compartilhados (ver types.md)
 │   ├── map.ts
 │   ├── datalog.ts
 │   ├── engine.ts
 │   └── tuning.ts
+│
+├── utils/                      # Utilitários puros (sem estado, sem React)
+│   ├── mapExporter.ts          # exportMapCsv(originalCsv, editableCells): string
+│   │                           # Substitui linhas #F01–#F16 no CSV original preservando o resto
+│   └── deepEqual.ts            # deepEqual(a, b): boolean — comparação de matrizes 2D
 │
 ├── hooks/                      # Hooks utilitários genéricos
 │   ├── useFileUpload.ts        # drag-and-drop + seletor nativo

@@ -30,9 +30,9 @@ interface LogActions {
   toggleLog(hash: string): void
   reorder(orderedHashes: string[]): void
 
-  /** Garante que todos os logs com os hashes fornecidos estão no disco do backend.
-   *  Chamado por tuningStore.runTuning() antes de executar o tuning.
-   *  Usa o cache por hash — se o arquivo já estiver no disco do backend, o upload retorna cached: true e é uma no-op rápida. */
+  /** Garante que todos os logs com os hashes fornecidos estão disponíveis no backend.
+   *  Usa o cache por hash — se o arquivo já estiver no disco do backend, retorna imediatamente.
+   *  Chamado por tuningStore.runTuning() antes de cada execução. */
   ensureLogsOnBackend(hashes: string[]): Promise<void>
 
   /** Usado pelo sessionRestorer para popular o store sem re-executar uploads. */
@@ -130,8 +130,6 @@ export const useLogStore = create<LogStore>()(
 
       set({ isUploading: true, lastError: null })
       try {
-        // Parseia o CSV localmente — sem envio ao backend neste momento.
-        // O upload ocorre apenas em ensureLogsOnBackend(), chamado pelo tuningStore.
         const model = await parseDatalogClient(file)
 
         const entry: LogEntry = {
@@ -146,7 +144,6 @@ export const useLogStore = create<LogStore>()(
         set({ logs: newLogs, isUploading: false })
 
         // Persiste modelo + blob CSV no IndexedDB
-        // O blob é necessário para enviar ao backend quando o tuning for executado
         await logPersistence.saveLog({
           hash,
           filename: file.name,
@@ -259,8 +256,6 @@ export const useLogStore = create<LogStore>()(
     // ── hydrate (sessionRestorer) ─────────────────────────────────────────────
     hydrate(entries: LogEntry[]): void {
       set({ logs: entries, isUploading: false, lastError: null })
-      // Nota: o sessionRestorer NÃO faz upload ao backend na restauração.
-      // O upload ocorre apenas em ensureLogsOnBackend(), chamado pelo tuningStore.
     },
   }))
 )
@@ -339,9 +334,7 @@ Ver a spec completa em `stores/time-store.md`. Em resumo:
 | Estado `enabled` de cada log | localStorage (`mft:log-order.enabledHashes`) | Após `toggleLog()` |
 | Remoção de log | IndexedDB (`logs`) | Dentro de `removeLog()` |
 
-O model completo do log (com todas as linhas, parseado client-side) fica no IndexedDB. O localStorage armazena apenas os hashes e o estado `enabled` — dados pequenos disponíveis sincronamente na restauração. O blob CSV também fica no IndexedDB, necessário para o envio ao backend em `ensureLogsOnBackend()`.
-
-**Nota importante:** o `sessionRestorer` NÃO faz upload dos logs ao backend na restauração. O upload ocorre somente em `ensureLogsOnBackend()`, chamado por `tuningStore.runTuning()` imediatamente antes de executar o tuning.
+O model completo do log (com todas as linhas, parseado client-side) fica no IndexedDB. O localStorage armazena apenas os hashes e o estado `enabled` — dados pequenos disponíveis sincronamente na restauração. O blob CSV também fica no IndexedDB, necessário para `ensureLogsOnBackend()`.
 
 ---
 
@@ -364,7 +357,7 @@ const availableSignals = useLogStore(selectAllSignals)
 const isUploading = useLogStore((s) => s.isUploading)
 const lastError   = useLogStore((s) => s.lastError)
 
-// Para o guard RequireLog (habilitado por hash, não por logId)
+// Para o guard RequireLog
 const hasActiveLogs = useLogStore((s) => s.logs.some((l) => l.enabled))
 ```
 

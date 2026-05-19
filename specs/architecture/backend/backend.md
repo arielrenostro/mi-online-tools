@@ -8,7 +8,7 @@
 
 | Princípio | Aplicação concreta |
 |-----------|-------------------|
-| **S** Single Responsibility | `parsers/` só parseia; `engines/` só executa tuning; `api/` só expõe HTTP; `exporters/` só gera arquivo |
+| **S** Single Responsibility | `parsers/` só parseia; `engines/` só executa tuning; `api/` só expõe HTTP |
 | **O** Open/Closed | Novo motor (ignição, boost…) = nova pasta em `engines/` + registro no `EngineRegistry`. Nenhuma linha existente é alterada |
 | **L** Liskov | Todo `TuningEngine` concreto pode substituir a interface abstraia sem quebrar o caller |
 | **I** Interface Segregation | `TuningEngine` define apenas o contrato mínimo. Engines que precisam de etapas extras criam seus próprios protocolos internos |
@@ -25,7 +25,6 @@ backend/
 │   │
 │   ├── api/                             # Camada HTTP — sem lógica de negócio
 │   │   ├── engines.py                   # GET /api/engines, GET /api/engines/{id}
-│   │   ├── map.py                       # POST /api/map/upload, GET /api/map/{id}/export
 │   │   ├── datalog.py                   # POST /api/datalog/upload
 │   │   └── tuning.py                    # POST /api/tuning/run
 │   │
@@ -38,9 +37,8 @@ backend/
 │   │       └── tuning_output.py         # TuningOutput, FilterStats, CellExtrapolation, etc.
 │   │
 │   ├── models/                          # Pydantic models (request/response da API)
-│   │   ├── map_model.py                 # MapModel, FuelMap
 │   │   ├── datalog_model.py             # DatalogModel
-│   │   └── engine_model.py              # EngineInfo, TuningRunRequest
+│   │   └── engine_model.py              # EngineInfo, TuningRunRequest (inclui dados do mapa inline)
 │   │
 │   ├── engines/                         # Implementações concretas dos motores
 │   │   └── ve_lambda/
@@ -60,21 +58,14 @@ backend/
 │   │       └── schema.py                # JSON Schema da config (para o endpoint de engines)
 │   │
 │   ├── parsers/
-│   │   ├── map_parser.py                # parse CSV MasterInjection → MapModel
 │   │   └── datalog_parser.py            # parse CSV datalog → DatalogModel + conversão raw→real
-│   │
-│   ├── exporters/
-│   │   └── map_exporter.py              # gera CSV com #F01–#F16 atualizados, demais intactos
 │   │
 │   ├── registry/
 │   │   └── default_registry.py          # DefaultEngineRegistry — registra todos os engines
 │   │
-│   ├── datalog/
-│   │   ├── disk_store.py                # DatalogDiskStore: lê/escreve JSON por hash no disco
-│   │   └── cleanup.py                   # task de limpeza: remove arquivos com mtime < now−3600s
-│   │
-│   └── session/
-│       └── map_store.py                 # in-memory MapStore: mapId → MapModel (uuid → model)
+│   └── datalog/
+│       ├── disk_store.py                # DatalogDiskStore: lê/escreve JSON por hash no disco
+│       └── cleanup.py                   # task de limpeza: remove arquivos com mtime < now−3600s
 │
 ├── tests/
 │   ├── engines/ve_lambda/
@@ -86,10 +77,8 @@ backend/
 │   │   ├── test_interpolator.py
 │   │   └── test_postprocessor.py
 │   ├── parsers/
-│   │   ├── test_map_parser.py
 │   │   └── test_datalog_parser.py
 │   └── api/
-│       ├── test_map_api.py
 │       └── test_tuning_api.py
 │
 └── requirements.txt
@@ -260,6 +249,8 @@ Cada etapa do pipeline é uma classe com responsabilidade única, testável isol
 
 ## API REST
 
+**Responsabilidade do backend:** armazenar datalogs temporariamente e executar o tuner engine. O parsing e exportação do CSV do mapa são responsabilidade exclusiva do frontend.
+
 Base URL: `/api`
 
 ### Engines
@@ -288,39 +279,6 @@ Lista todos os motores registrados.
 Retorna detalhes de um motor específico. Mesmo formato acima, objeto único.
 
 **Response `404`:** `{ "detail": "Engine 've_lambda' não encontrado" }`
-
----
-
-### Mapa
-
-#### `POST /api/map/upload`
-
-Upload e parsing do CSV do mapa da MasterInjection.
-
-**Request:** `multipart/form-data` — campo `file` (`.csv`)
-
-**Response `200`:**
-```json
-{
-  "map_id": "uuid-...",
-  "name": "4bar - 1.csv",
-  "rpm_breakpoints": [400, 800, 1200, ...],
-  "map_breakpoints": [20, 30, 40, ...],
-  "cells": [[100, 120, ...], ...]
-}
-```
-
-**Response `422`:** CSV inválido ou estrutura de mapa não reconhecida.
-
-#### `GET /api/map/{map_id}/export`
-
-Gera e retorna o CSV atualizado com os valores do mapa editável.
-
-**Query params:** `cells` — JSON do mapa editável (`number[][]` serializado)
-
-**Response `200`:** `Content-Type: text/csv` + `Content-Disposition: attachment; filename="<nome>_tuned.csv"`
-
-**Comportamento:** linhas `#F01`–`#F16` são substituídas com os valores de `cells`; todas as demais linhas do CSV original são preservadas bit-a-bit.
 
 ---
 
@@ -381,17 +339,21 @@ Upload e parsing de um CSV de datalog. Suporta cache por hash para evitar re-par
 Executa o motor de tuning selecionado.
 
 **Comportamento:**
-1. Carrega o mapa do `MapStore` em memória pelo `map_id`
-2. Para cada hash em `log_hashes`: carrega o `DatalogModel` do `DatalogDiskStore` e toca o `mtime` do arquivo (reinicia o TTL)
-3. Se qualquer hash não existir no disco → responde 404 com `missing_hashes`
-4. Executa o engine selecionado com os dados carregados
+1. Para cada hash em `log_hashes`: carrega o `DatalogModel` do `DatalogDiskStore` e toca o `mtime` do arquivo (reinicia o TTL)
+2. Se qualquer hash não existir no disco → responde 404 com `missing_hashes`
+3. Monta o `TuningInput` com os dados do mapa recebidos inline (`rpm_breakpoints`, `map_breakpoints`, `cells`) e os datalogs carregados
+4. Executa o engine selecionado
 5. Retorna o `TuningOutput` completo
+
+O mapa é enviado pelo frontend a cada requisição — o backend não armazena mapas entre chamadas.
 
 **Request body:**
 ```json
 {
   "engine_id": "ve_lambda",
-  "map_id": "uuid-...",
+  "rpm_breakpoints": [400, 800, 1200, 1600, 2000, 2400, 2800, 3200, 3600, 4000, 4400, 4800, 5200, 5600, 6200, 6800],
+  "map_breakpoints": [20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 140, 160, 180, 200, 220],
+  "cells": [[100, 120, ...], ...],
   "log_hashes": ["sha1:a3f2b1...", "sha1:c4d5e6..."],
   "time_range": { "start_ms": 252000, "end_ms": 1125000 },
   "config": {
@@ -451,40 +413,14 @@ Executa o motor de tuning selecionado.
 }
 ```
 
-**Response `404` (mapa):** `{ "detail": "Mapa não encontrado" }` — mapId inválido ou processo backend reiniciado.  
-**Response `404` (logs):** `{ "detail": "Logs não encontrados no disco", "missing_hashes": ["sha1:a3f2...", ...] }` — um ou mais log hashes não existem ou expiraram (TTL 1h). O frontend deve re-enviar os logs faltantes via `POST /api/datalog/upload` e repetir o tuning.  
-**Response `422`:** config inválida para o engine selecionado.
-
----
-
-## Session Store (MapStore)
-
-O `MapStore` mantém os **mapas** uploadados em memória durante a vida do processo. Os datalogs não ficam em memória — são persistidos em disco por hash e lidos sob demanda.
-
-```python
-# session/map_store.py
-from uuid import uuid4
-
-class MapStore:
-    def __init__(self):
-        self._maps: dict[str, MapModel] = {}
-
-    def save(self, model: MapModel) -> str:
-        id = str(uuid4())
-        self._maps[id] = model
-        return id
-
-    def get(self, id: str) -> MapModel:
-        if id not in self._maps:
-            raise KeyError(id)
-        return self._maps[id]
-```
-
-Uma única instância compartilhada é injetada via `Depends()` em todas as rotas. Sem locking explícito na v1 (FastAPI com uvicorn single-worker).
+**Response `404`:** `{ "detail": "Logs não encontrados no disco", "missing_hashes": ["sha1:a3f2...", ...] }` — um ou mais log hashes não existem ou expiraram (TTL 1h). O frontend deve re-enviar os logs faltantes via `POST /api/datalog/upload` e repetir o tuning.  
+**Response `422`:** config inválida ou breakpoints/células inconsistentes.
 
 ---
 
 ## DatalogDiskStore
+
+O backend não armazena mapas. Os dados do mapa (`rpm_breakpoints`, `map_breakpoints`, `cells`) são enviados pelo frontend em cada requisição de tuning.
 
 Os datalogs são armazenados em disco como JSON indexado pelo hash SHA-1 do arquivo CSV original. Isso permite:
 - Evitar re-parsing quando o mesmo arquivo é enviado novamente (cache por hash)

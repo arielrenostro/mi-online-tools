@@ -242,6 +242,102 @@ Dois heatmaps exibidos lado a lado, sempre refletindo o **mapa editável** atual
 
 ---
 
+---
+
+## Atalhos de teclado — Mapa Editável
+
+A tabela do mapa editável replica o comportamento do Excel/Calc. Os atalhos funcionam quando a tabela tem foco (clique na tabela para ativá-la).
+
+### Navegação
+
+| Atalho | Ação |
+|--------|------|
+| `↑` `↓` `←` `→` | Move o cursor para a célula adjacente |
+| `Shift` + Seta | Estende a seleção (range) sem mover o âncora |
+| `Tab` | Confirma edição e move para a próxima coluna |
+| `Shift+Tab` | Confirma edição e move para a coluna anterior |
+| `Enter` | Célula única: abre edição inline; Range: move para baixo |
+| `Shift+Enter` | Move para cima |
+
+### Edição inline (célula única)
+
+| Atalho | Ação |
+|--------|------|
+| Duplo clique | Entra em edição inline com o valor atual selecionado |
+| `0`–`9`, `-`, `.` | Inicia edição substituindo o valor pelo caractere digitado |
+| `Enter` (dentro da edição) | Confirma e move para a linha abaixo |
+| `Tab` (dentro da edição) | Confirma e move para a próxima coluna |
+| `Shift+Tab` (dentro da edição) | Confirma e move para a coluna anterior |
+| `↓` / `↑` (dentro da edição) | Confirma e navega para a linha abaixo / acima |
+| `Escape` | Cancela a edição, restaura o valor anterior |
+
+### Edição em massa — F2
+
+| Atalho | Ação |
+|--------|------|
+| `F2` | Abre a modal de edição em massa para as células selecionadas |
+
+A modal oferece **dois campos alternativos** (preencher um limpa o outro automaticamente):
+
+- **Percentual (%)** — ajusta cada célula individualmente pelo percentual informado.  
+  Exemplos: `+5` aumenta 5%; `-10` reduz 10%. Fórmula: `novo = round(atual × (1 + pct/100))`.
+- **Valor fixo** — define todas as células do range para o mesmo valor inteiro.
+
+Prioridade quando aplicado: valor fixo > percentual.  
+Confirmar com `Enter` ou o botão **Aplicar**. Cancelar com `Escape` ou clique fora.  
+O resultado é registrado como **uma única entrada no histórico** (Ctrl+Z desfaz tudo de uma vez).
+
+### Seleção
+
+| Atalho | Ação |
+|--------|------|
+| Clique | Seleciona a célula (nova âncora) |
+| `Shift+Clique` | Estende a seleção até a célula clicada |
+| Clicar e arrastar | Seleciona um range arrastando o mouse |
+| `Shift` + Seta | Estende o range a partir do âncora atual |
+
+A célula âncora é indicada por um contorno azul (`box-shadow` inset). O restante do range selecionado recebe fundo azul semitransparente.
+
+### Área de transferência
+
+| Atalho | Ação |
+|--------|------|
+| `Ctrl+C` | Copia a seleção como TSV — compatível com Excel e Google Sheets |
+| `Ctrl+V` | Cola TSV a partir da célula âncora (aceita colagem direta do Excel) |
+
+### Histórico (undo/redo)
+
+| Atalho | Ação |
+|--------|------|
+| `Ctrl+Z` | Desfaz a última alteração |
+| `Ctrl+Shift+Z` | Refaz |
+| `Ctrl+Y` | Refaz (alternativa Windows) |
+
+**Funcionam globalmente na página** — não requerem foco na tabela.  
+Não agem quando o foco está num campo de texto (`<input>` / `<textarea>`), para não interferir com o undo nativo do navegador.
+
+Ações que criam entrada no histórico (todas desfeitas por `Ctrl+Z`):
+
+| Ação | Entradas no histórico |
+|------|-----------------------|
+| Edição de célula individual | 1 por célula confirmada |
+| Edição em massa via F2 | 1 (range inteiro como único passo) |
+| Cola via `Ctrl+V` | 1 (paste inteiro) |
+| Delete / Backspace em range | 1 |
+| Rodar Auto-tuning | 1 |
+| Resetar mapa | 1 |
+
+Limite: 50 passos. Histórico é apenas de sessão (não persiste ao recarregar a página).
+
+### Limpar células
+
+| Atalho | Ação |
+|--------|------|
+| `Delete` / `Backspace` (célula única) | Abre edição inline com campo vazio |
+| `Delete` / `Backspace` (range) | Zera todas as células do range (valor → 0, clamped para 100 no backend) |
+
+---
+
 ## Overlay de pontos do log (quando logs estão carregados)
 
 Quando há logs e seleção de tempo, os pontos do log são plotados sobre os gráficos como scatter:

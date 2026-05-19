@@ -18,7 +18,7 @@ import type { ActiveLog, TimeSelection } from '@/types/datalog'
  * Contém apenas os metadados necessários para renderizar o rail — não inclui as linhas do log.
  */
 export interface LogSegment {
-  logId: string
+  hash: string
   filename: string
   /** Deslocamento em ms relativo ao início da timeline concatenada. */
   startOffset_ms: number
@@ -153,7 +153,7 @@ export function TimeRail({
           {/* Camada 2: segmentos desabilitados */}
           {segments.filter(s => !s.enabled).map(seg => (
             <DisabledSegmentOverlay
-              key={seg.logId}
+              key={seg.hash}
               segment={seg}
               totalDuration_ms={totalDuration_ms}
             />
@@ -171,7 +171,7 @@ export function TimeRail({
           {/* Camada 4: separadores de log */}
           {segments.slice(0, -1).map(seg => (
             <LogSeparator
-              key={seg.logId}
+              key={seg.hash}
               positionMs={seg.startOffset_ms + seg.duration_ms}
               nextFilename={segments[segments.indexOf(seg) + 1]?.filename ?? ''}
               totalDuration_ms={totalDuration_ms}
@@ -722,7 +722,7 @@ function TimeRailContainer() {
     let offset = 0
     return activeLogs.map(log => {
       const seg = {
-        logId: log.logId,
+        hash: log.hash,
         filename: log.filename,
         startOffset_ms: offset,
         duration_ms: log.duration_ms,

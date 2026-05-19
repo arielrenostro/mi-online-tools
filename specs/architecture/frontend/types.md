@@ -14,10 +14,6 @@ Definições completas de todos os tipos compartilhados entre stores, componente
  * Fonte de verdade imutável — o usuário edita apenas uma cópia em `editableMap`.
  */
 export interface MapModel {
-  /** UUID gerado pelo backend. Válido apenas enquanto o processo backend estiver rodando.
-   *  Não persiste entre reloads — o sessionRestorer faz re-upload e obtém novo ID. */
-  mapId:           string
-
   /** Nome do arquivo CSV original (ex.: "4bar - 1.csv") */
   name:            string
 
@@ -32,8 +28,7 @@ export interface MapModel {
   mapBreakpoints:  number[]
 
   /** Valores das células: cells[map_i][rpm_j] = valor raw (100–9999).
-   *  Índice 0 da dimensão 0 = maior MAP (200 kPa = boost máximo).
-   *  Índice 0 da dimensão 1 = menor RPM (400 RPM = idle).
+   *  Índice 0 = menor MAP; índice (n_map-1) = maior MAP. Mesma convenção do backend.
    *  Shape: (n_map × n_rpm). */
   cells:           number[][]
 }
@@ -352,21 +347,27 @@ export const DEFAULT_TUNING_CONFIG: TuningConfig = {
  */
 export interface TuningRunRequest {
   /** ID do engine de tuning a executar. Ex.: "ve_lambda". */
-  engineId:   string
+  engineId:        string
 
-  /** ID do mapa no backend (obtido no último upload ou re-upload do restore). */
-  mapId:      string
+  /** Breakpoints de RPM do mapa atual (ascending). */
+  rpmBreakpoints:  number[]
+
+  /** Breakpoints de MAP (kPa) do mapa atual (ascending). */
+  mapBreakpoints:  number[]
+
+  /** Células do mapa editável: cells[map_i][rpm_j] = valor raw (100–9999). Índice 0 = menor MAP. */
+  cells:           number[][]
 
   /** Hashes SHA-1 dos logs a incluir na análise (apenas logs com enabled=true).
    *  Formato: ["sha1:<hex>", ...]. O backend localiza os datalogs em disco por hash.
    *  Os logs são enviados ao backend em logStore.ensureLogsOnBackend() antes desta chamada. */
-  logHashes:  string[]
+  logHashes:       string[]
 
   /** Intervalo de tempo para análise. Se null, usa todos os pontos de todos os logs. */
-  timeRange:  TimeSelection | null
+  timeRange:       TimeSelection | null
 
   /** Configuração de parâmetros do engine. */
-  config:     TuningConfig
+  config:          TuningConfig
 }
 ```
 
