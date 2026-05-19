@@ -14,7 +14,7 @@ Tela inicial da aplicação. Ponto de entrada após o carregamento. Apresenta as
 │  [TopBar]                                                                    │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                               │
-│   mi-fuel-tuner                                                              │
+│   Master Injection Online Tools                                              │
 │   Importe um mapa e/ou logs para começar.                                    │
 │                                                                               │
 │   ┌────────────────────────────┐   ┌────────────────────────────┐           │

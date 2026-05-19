@@ -1,4 +1,4 @@
-# mi-fuel-tuner
+# Master Injection Online Tools
 
 Aplicação web de auto-tuning de mapas de ECU MasterInjection. O usuário importa o mapa atual e datalogs de estrada; a aplicação analisa desvios de lambda e sugere correções no mapa de combustível (VE).
 
@@ -42,7 +42,7 @@ docker compose build --build-arg VITE_API_URL=https://api.exemplo.com frontend
 
 | Variável | Padrão | Onde |
 |----------|--------|------|
-| `MFT_CACHE_DIR` | `/tmp/mft_datalogs` | Backend — diretório de cache dos datalogs |
+| `MIOT_CACHE_DIR` | `/tmp/mft_datalogs` | Backend — diretório de cache dos datalogs |
 | `VITE_API_URL` | `http://localhost:8000` | Frontend — URL base da API (build-time) |
 
 ## Decisões arquiteturais importantes

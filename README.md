@@ -1,4 +1,4 @@
-# mi-fuel-tuner
+# Master Injection Online Tools
 
 Ferramenta web de auto-tuning para mapas de combustível da ECU **MasterInjection**. Importa o mapa atual e datalogs de estrada, analisa os desvios de lambda célula a célula e sugere (ou aplica automaticamente) correções no mapa de VE — com visualização em heatmap, diagnósticos e exportação no formato original da ECU.
 
@@ -91,7 +91,7 @@ O frontend abre em `http://localhost:5173` e aponta para o backend em `http://lo
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `MFT_CACHE_DIR` | `/tmp/mft_datalogs` | Diretório de cache dos datalogs no backend (TTL 1h) |
+| `MIOT_CACHE_DIR` | `/tmp/mft_datalogs` | Diretório de cache dos datalogs no backend (TTL 1h) |
 | `VITE_API_URL` | `http://localhost:8000` | URL base da API (definida em build-time no frontend) |
 
 ---

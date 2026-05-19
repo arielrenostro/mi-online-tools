@@ -13,7 +13,7 @@ from app.api import engines, datalog, tuning
 _registry = DefaultEngineRegistry()
 _registry.register(VELambdaEngine())
 
-app = FastAPI(title="mi-fuel-tuner", version="0.1.0")
+app = FastAPI(title="Master Injection Online Tools", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,

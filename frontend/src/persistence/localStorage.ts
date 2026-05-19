@@ -2,7 +2,7 @@ export function lsSet<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value))
   } catch {
-    console.warn('[mft] localStorage write failed:', key)
+    console.warn('[miot] localStorage write failed:', key)
   }
 }
 

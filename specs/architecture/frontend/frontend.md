@@ -1,6 +1,6 @@
 # Arquitetura — Frontend
 
-**Stack:** React 18 + TypeScript + Vite + Tailwind CSS + shadcn/ui + ECharts + Zustand + React Router v6
+**Stack:** React 18 + TypeScript + Vite + Tailwind CSS + ECharts + Zustand + React Router v6
 
 ---
 
@@ -18,7 +18,11 @@
 | `useTimeStore` | [stores/time-store.md](stores/time-store.md) |
 | `useTuningStore` | [stores/tuning-store.md](stores/tuning-store.md) |
 | `useUIStore` | [stores/ui-store.md](stores/ui-store.md) |
+| `useSessionStore` | estado de restauração de sessão — ver [components/guards.md](components/guards.md) |
 | **Componentes compartilhados** | |
+| `TopBar` | [components/top-bar.md](components/top-bar.md) |
+| `TuningTabLink` | [components/tuning-tab-link.md](components/tuning-tab-link.md) |
+| Guards (`RequireMap`, `RequireLog`, `SessionRestoringSpinner`) | [components/guards.md](components/guards.md) |
 | `HeatmapTable` | [components/heatmap-table.md](components/heatmap-table.md) |
 | `MapChart` | [components/map-chart.md](components/map-chart.md) |
 | `TimeRail` | [components/time-rail.md](components/time-rail.md) |
@@ -38,6 +42,12 @@ frontend/src/
 │   └── engines.ts              # listEngines, getEngine
 │
 ├── components/                 # Componentes compartilhados entre telas
+│   ├── TopBar.tsx              # Barra superior global com navegação (Home / Tuning / Datalog)
+│   ├── TuningTabLink.tsx       # Aba de navegação com suporte a estado bloqueado
+│   ├── guards/
+│   │   ├── RequireMap.tsx      # Guard: se sem mapa, exibe tela de upload inline (não redireciona)
+│   │   ├── RequireLog.tsx      # Guard: exige ao menos 1 log ativo
+│   │   └── SessionRestoringSpinner.tsx  # Spinner exibido durante restauração
 │   ├── HeatmapTable/           # Tabela N×M com heatmap, editável ou somente leitura
 │   ├── MapChart/               # Heatmap ECharts MAP×RPM / RPM×MAP
 │   ├── TimeRail/               # Cursor de tempo + seleção de intervalo + sparkline
@@ -46,33 +56,40 @@ frontend/src/
 │   └── ui/                     # Wrappers de shadcn/ui (Button, Modal, Select, etc.)
 │
 ├── store/                      # Zustand stores
-│   ├── mapStore.ts             # mapa original, editável, isDirty
+│   ├── mapStore.ts             # mapa original + editável (VE, ignição, lambda); histórico e undo/redo por mapa
 │   ├── logStore.ts             # lista de logs, enabled, ordem
 │   ├── timeStore.ts            # cursor_ms, selection, sparklineSensor
 │   ├── tuningStore.ts          # config, engine selecionado, lastOutput, isRunning
+│   ├── sessionStore.ts         # isRestoring — controla guards durante restore inicial
 │   └── uiStore.ts              # estado visual (abas, colunas, layout de gráficos)
 │
 ├── persistence/                # Persistência entre sessões do browser
-│   ├── db.ts                   # IndexedDB setup (Dexie ou idb)
+│   ├── db.ts                   # IndexedDB setup (idb)
 │   ├── mapPersistence.ts       # salvar/restaurar mapa + blob CSV
 │   ├── logPersistence.ts       # salvar/restaurar logs + blobs CSV
-│   └── sessionRestorer.ts      # orquestra restauração completa na inicialização
+│   ├── tuningPersistence.ts    # salvar/restaurar último TuningOutput
+│   └── sessionRestorer.ts      # orquestra restauração; chama sessionStore.setRestoringDone()
 │
 ├── pages/
+│   ├── RootLayout.tsx          # TopBar + <Outlet> — layout raiz do router
 │   ├── HomePage.tsx            # Cards de acesso a Tuning e Datalog
-│   ├── TuningPage.tsx          # Layout + abas VE / Ignition 🔒 / Lambda 🔒
-│   └── DatalogPage.tsx         # Layout + TimeRail + abas Dashboard / Gráficos / Dados
+│   ├── TuningPage.tsx          # Abas VE / Ignition / Lambda + menu importar/exportar + Ctrl+Z route-aware
+│   └── DatalogPage.tsx         # TimeRail + abas Dashboard / Gráficos / Dados
 │
 ├── features/                   # Lógica e subcomponentes específicos de cada tela
 │   ├── tuning/
 │   │   ├── ve/
-│   │   │   ├── VETab.tsx
-│   │   │   ├── OriginalMapSection.tsx    # Seção 1: mapa original colapsável
-│   │   │   ├── EditableMapSection.tsx    # Seção 2: mapa editável + botões
-│   │   │   ├── AnalysisSection.tsx       # Seção 3: heatmaps diagnósticos + warnings + filtros
-│   │   │   └── MapChartsSection.tsx      # Seção 4: MAP×RPM e RPM×MAP
-│   │   └── hooks/
-│   │       └── useTuningRun.ts           # orquestra o auto-tuning + feedback de UI
+│   │   │   └── VETab.tsx                 # Aba VE: mapa original + editável + análise + auto-tuning
+│   │   ├── ignition/
+│   │   │   └── IgnitionTab.tsx           # Aba Ignition: mapa original + editável (sem auto-tuning)
+│   │   ├── lambda/
+│   │   │   └── LambdaTab.tsx             # Aba Lambda: mapa original + editável; escala ÷1000 para exibição
+│   │   ├── OriginalMapSection.tsx        # Mapa original colapsável (somente leitura) — props-based
+│   │   ├── EditableMapSection.tsx        # Mapa editável + botão Resetar — props-based; auto-tuning opcional
+│   │   ├── AnalysisSection.tsx           # Heatmaps diagnósticos + warnings + filtros (VE only)
+│   │   ├── AutoTuningModal.tsx           # Modal wizard de auto-tuning (seleção de logs + upload inline)
+│   │   ├── BulkEditModal.tsx             # Modal F2: edição em massa — percentual, acrescentar, definir valor
+│   │   └── TuningConfigModal.tsx         # Modal de configuração via JSON Schema
 │   └── datalog/
 │       ├── dashboard/
 │       │   └── DashboardTab.tsx
@@ -84,11 +101,7 @@ frontend/src/
 │
 ├── parsers/                    # Parsers client-side (sem dependência de backend)
 │   ├── datalogParser.ts        # parseDatalogClient(file): Promise<DatalogModel>
-│   │                           # Parseia o CSV de datalog e converte raw→real
-│   │                           # Usado em addLog() — backend acionado apenas pelo tuning
 │   └── mapParser.ts            # parseMapClient(file): Promise<MapModel>
-│                               # Parseia o CSV MasterInjection (#I20/#I21/#F01–#F16)
-│                               # O backend nunca recebe o arquivo do mapa
 │
 ├── types/                      # Tipos TypeScript compartilhados (ver types.md)
 │   ├── map.ts
@@ -97,16 +110,12 @@ frontend/src/
 │   └── tuning.ts
 │
 ├── utils/                      # Utilitários puros (sem estado, sem React)
-│   ├── mapExporter.ts          # exportMapCsv(originalCsv, editableCells): string
-│   │                           # Substitui linhas #F01–#F16 no CSV original preservando o resto
-│   └── deepEqual.ts            # deepEqual(a, b): boolean — comparação de matrizes 2D
+│   ├── mapExporter.ts          # exportMapCsv(rawLines, veCells, ignCells?, lambdaCells?): string
+│   ├── deepEqual.ts            # deepEqual(a, b): boolean — comparação de matrizes 2D
+│   └── debounce.ts             # debounce genérico
 │
-├── hooks/                      # Hooks utilitários genéricos
-│   ├── useFileUpload.ts        # drag-and-drop + seletor nativo
-│   └── useLocalStorage.ts      # wrapper tipado para localStorage
-│
-├── App.tsx                     # Router raiz + layout (TopBar sempre visível)
-└── main.tsx                    # sessionRestorer → ReactDOM.render
+├── App.tsx                     # createBrowserRouter — define todas as rotas e guards
+└── main.tsx                    # render imediato + restoreSession() em paralelo
 ```
 
 ---

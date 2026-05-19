@@ -7,7 +7,7 @@ import { ApiError, NetworkError, TimeoutError } from '@/api/client'
 import * as tuningPersistence from '@/persistence/tuningPersistence'
 import { lsSet } from '@/persistence/localStorage'
 import { useMapStore } from './mapStore'
-import { useLogStore, selectActiveLogs } from './logStore'
+import { useLogStore } from './logStore'
 import { useTimeStore } from './timeStore'
 
 interface TuningState {
@@ -16,13 +16,12 @@ interface TuningState {
   lastOutput:       TuningOutput | null
   isRunning:        boolean
   lastError:        string | null
-  configDirty:      boolean
 }
 interface TuningActions {
   updateConfig(partial: Partial<TuningConfig>): void
   resetConfig(): void
   setEngine(engineId: string): void
-  runTuning(): Promise<void>
+  runTuning(params: { logHashes: string[]; config: TuningConfig; engineId?: string }): Promise<TuningOutput>
   clearOutput(): void
   hydrateConfig(config: TuningConfig): void
   hydrateEngineId(engineId: string): void
@@ -31,7 +30,7 @@ interface TuningActions {
 
 const initial: TuningState = {
   config: DEFAULT_TUNING_CONFIG, selectedEngineId: 've_lambda',
-  lastOutput: null, isRunning: false, lastError: null, configDirty: false,
+  lastOutput: null, isRunning: false, lastError: null,
 }
 
 export const useTuningStore = create<TuningState & TuningActions>()(
@@ -40,74 +39,72 @@ export const useTuningStore = create<TuningState & TuningActions>()(
 
     updateConfig(partial) {
       const newConfig = { ...get().config, ...partial }
-      set({ config: newConfig, configDirty: true })
-      lsSet('mft:config', newConfig)
+      set({ config: newConfig })
+      lsSet('miot:config', newConfig)
     },
 
     resetConfig() {
-      set({ config: DEFAULT_TUNING_CONFIG, configDirty: true })
-      lsSet('mft:config', DEFAULT_TUNING_CONFIG)
+      set({ config: DEFAULT_TUNING_CONFIG })
+      lsSet('miot:config', DEFAULT_TUNING_CONFIG)
     },
 
     setEngine(engineId) {
-      set({ selectedEngineId: engineId, configDirty: true })
+      set({ selectedEngineId: engineId })
       lsSet('mft:engine-id', engineId)
       get().clearOutput()
     },
 
-    async runTuning() {
+    async runTuning({ logHashes, config, engineId }) {
       const { originalMap, editableMap } = useMapStore.getState()
       if (!originalMap || !editableMap) {
-        set({ lastError: 'Nenhum mapa carregado. Importe um mapa antes de rodar o auto-tuning.' })
-        return
-      }
-      const activeLogs = selectActiveLogs(useLogStore.getState())
-      if (!activeLogs.length) {
-        set({ lastError: 'Nenhum log ativo. Importe ao menos um log antes de rodar o auto-tuning.' })
-        return
+        const msg = 'Nenhum mapa carregado.'
+        set({ lastError: msg })
+        throw new Error(msg)
       }
 
-      const { config, selectedEngineId } = get()
-      const timeRange = useTimeStore.getState().selection
+      const resolvedEngineId = engineId ?? get().selectedEngineId
+      const timeRange        = useTimeStore.getState().selection
 
       set({ isRunning: true, lastError: null })
 
       try {
-        await useLogStore.getState().ensureLogsOnBackend(activeLogs.map(l => l.hash))
+        await useLogStore.getState().ensureLogsOnBackend(logHashes)
       } catch (err) {
-        set({ isRunning: false, lastError: fmtError(err) })
-        return
+        const msg = fmtError(err)
+        set({ isRunning: false, lastError: msg })
+        throw new Error(msg)
       }
 
       let output: TuningOutput
       try {
         output = await apiRunTuning({
-          engineId:       selectedEngineId,
+          engineId:       resolvedEngineId,
           rpmBreakpoints: originalMap.rpmBreakpoints,
           mapBreakpoints: originalMap.mapBreakpoints,
           cells:          editableMap,
-          logHashes:      activeLogs.map(l => l.hash),
+          logHashes,
           timeRange,
           config,
         })
       } catch (err) {
-        set({ isRunning: false, lastError: fmtError(err) })
-        return
+        const msg = fmtError(err)
+        set({ isRunning: false, lastError: msg })
+        throw new Error(msg)
       }
 
-      set({ lastOutput: output, isRunning: false, lastError: null, configDirty: false })
+      set({ lastOutput: output, isRunning: false, lastError: null })
       tuningPersistence.saveTuningOutput(output).catch(() => { /* non-fatal */ })
-      useMapStore.getState().applyTuningOutput(output.suggestedMap)
+      return output
     },
 
     clearOutput() {
-      set({ lastOutput: null, configDirty: false })
+      set({ lastOutput: null })
       tuningPersistence.clearTuningOutput().catch(() => { /* non-fatal */ })
     },
 
     hydrateConfig(config)    { set({ config }) },
     hydrateEngineId(engineId){ set({ selectedEngineId: engineId }) },
-    hydrateOutput(output)    { set({ lastOutput: output, configDirty: false }) },
+    hydrateOutput(output)    { set({ lastOutput: output }) },
   }))
 )
 

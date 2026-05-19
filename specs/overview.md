@@ -1,4 +1,4 @@
-# mi-fuel-tuner — Visão Geral do Projeto
+# Master Injection Online Tools — Visão Geral do Projeto
 
 ## Objetivo
 
@@ -17,13 +17,15 @@ Aplicação web para tuning assistido de mapas da ECU MasterInjection. O usuári
 | F05 | Seleção de intervalo | Zoom/seleção de trecho do datalog para análise |
 | F06 | Análise de tuning | Agrupamento de dados por célula RPM×MAP, cálculo de desvios |
 | F07 | Sugestão automática | Mapa de correções sugeridas com overlay visual |
-| F08 | Tuning manual | Edição direta de células do mapa |
+| F08 | Tuning manual | Edição direta de células do mapa VE |
 | F09 | Configuração de premissas | Parâmetros do motor de tuning ajustáveis |
-| F10 | Exportação | Download do mapa atualizado no formato CSV original |
+| F10 | Exportação | Download do mapa atualizado no formato CSV original (VE + Ignição + Lambda) |
+| F11 | Edição de ignição | Edição manual da tabela de avanço de ignição (`#I01`–`#I16`) |
+| F12 | Edição de lambda alvo | Edição manual da tabela de alvo de lambda (`#A01`–`#A16`) |
 
 ## Roadmap (fases futuras)
 
-- Tuning de outros mapas (avanço de ignição, alvo de lambda, boost, etc.)
+- Auto-tuning dos mapas de ignição e lambda (atualmente apenas edição manual)
 - Insights automáticos (célula com poucos dados, região nunca visitada, etc.)
 - Recomendações textuais geradas por análise
 - Histórico de sessões (comparação de mapas antes/depois)

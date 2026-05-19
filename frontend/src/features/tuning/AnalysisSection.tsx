@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useMapStore } from '@/store/mapStore'
-import { useTuningStore } from '@/store/tuningStore'
 import HeatmapTable from '@/components/HeatmapTable'
 import type { ColorScale } from '@/components/HeatmapTable'
 import type { TuningOutput } from '@/types/tuning'
@@ -41,11 +40,14 @@ function fmtCell(tab: TabKey) {
   }
 }
 
-export default function AnalysisSection() {
+interface Props {
+  output: TuningOutput | null
+}
+
+export default function AnalysisSection({ output }: Props) {
   const [activeTab, setActiveTab] = useState<TabKey>('ve_lambda')
 
   const originalMap = useMapStore(s => s.originalMap)
-  const output      = useTuningStore(s => s.lastOutput)
 
   if (!output || !originalMap) return null
 
@@ -66,11 +68,9 @@ export default function AnalysisSection() {
     filterStats.discardedDeltaPedal
 
   return (
-    <section className="px-5 pb-6">
-      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Análise</h2>
-
+    <div className="flex flex-col gap-4">
       {/* Filter stats */}
-      <div className="flex flex-wrap gap-3 mb-4">
+      <div className="flex flex-wrap gap-3">
         {([
           ['Total',          filterStats.totalRows],
           ['Aproveitadas',   filterStats.passed],
@@ -89,7 +89,7 @@ export default function AnalysisSection() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 mb-3 border-b border-gray-700 overflow-x-auto">
+      <div className="flex gap-1 border-b border-gray-700 overflow-x-auto">
         {TABS.map(t => (
           <button
             key={t.key}
@@ -117,7 +117,7 @@ export default function AnalysisSection() {
 
       {/* Gradient warnings */}
       {gradientWarnings.length > 0 && (
-        <div className="mt-4">
+        <div>
           <p className="text-xs font-semibold text-yellow-400 mb-2">
             Avisos de gradiente ({gradientWarnings.length})
           </p>
@@ -131,6 +131,6 @@ export default function AnalysisSection() {
           </div>
         </div>
       )}
-    </section>
+    </div>
   )
 }

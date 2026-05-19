@@ -7,7 +7,15 @@ export async function saveMap(
   csvBlob: Blob,
 ): Promise<void> {
   const db = await getDB()
-  await db.put('map', { originalModel, editableCells, csvBlob, savedAt: Date.now() }, 'current')
+  const entry: MapDBEntry = {
+    originalModel,
+    editableCells,
+    editableIgnitionCells: originalModel.ignitionCells ? [...originalModel.ignitionCells.map(r => [...r])] : null,
+    editableLambdaCells:   originalModel.lambdaCells   ? [...originalModel.lambdaCells.map(r => [...r])]   : null,
+    csvBlob,
+    savedAt: Date.now(),
+  }
+  await db.put('map', entry, 'current')
 }
 
 export async function updateEditableCells(cells: number[][]): Promise<void> {
@@ -15,6 +23,20 @@ export async function updateEditableCells(cells: number[][]): Promise<void> {
   const entry = (await db.get('map', 'current')) as MapDBEntry | undefined
   if (!entry) return
   await db.put('map', { ...entry, editableCells: cells }, 'current')
+}
+
+export async function updateIgnitionCells(cells: number[][]): Promise<void> {
+  const db    = await getDB()
+  const entry = (await db.get('map', 'current')) as MapDBEntry | undefined
+  if (!entry) return
+  await db.put('map', { ...entry, editableIgnitionCells: cells }, 'current')
+}
+
+export async function updateLambdaCells(cells: number[][]): Promise<void> {
+  const db    = await getDB()
+  const entry = (await db.get('map', 'current')) as MapDBEntry | undefined
+  if (!entry) return
+  await db.put('map', { ...entry, editableLambdaCells: cells }, 'current')
 }
 
 export async function loadMap(): Promise<MapDBEntry | undefined> {

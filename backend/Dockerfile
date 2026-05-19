@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ ./app/
 
-ENV MFT_CACHE_DIR=/tmp/mft_datalogs
+ENV MIOT_CACHE_DIR=/tmp/miot_datalogs
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000

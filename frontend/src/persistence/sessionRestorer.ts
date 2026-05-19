@@ -11,6 +11,8 @@ export async function restoreSession(): Promise<void> {
     restoreLogs(),
     restoreTuning(),
   ])
+  const { useSessionStore } = await import('@/store/sessionStore')
+  useSessionStore.getState().setRestoringDone()
 }
 
 async function restoreMap(): Promise<void> {
@@ -19,14 +21,16 @@ async function restoreMap(): Promise<void> {
   try { entry = await mapPersistence.loadMap() } catch { return }
   if (!entry) return
   useMapStore.getState().hydrate({
-    originalModel: entry.originalModel,
-    editableCells: entry.editableCells ?? entry.originalModel.cells,
+    originalModel:         entry.originalModel,
+    editableCells:         entry.editableCells         ?? entry.originalModel.cells,
+    editableIgnitionCells: entry.editableIgnitionCells ?? entry.originalModel.ignitionCells,
+    editableLambdaCells:   entry.editableLambdaCells   ?? entry.originalModel.lambdaCells,
   })
 }
 
 async function restoreLogs(): Promise<void> {
   const { useLogStore } = await import('@/store/logStore')
-  const logOrder = lsGet<{ orderedHashes: string[]; enabledHashes: string[] }>('mft:log-order')
+  const logOrder = lsGet<{ orderedHashes: string[]; enabledHashes: string[] }>('miot:log-order')
 
   let entries
   try { entries = await logPersistence.loadAllLogs() } catch { return }
@@ -49,7 +53,7 @@ async function restoreLogs(): Promise<void> {
 async function restoreTuning(): Promise<void> {
   const { useTuningStore } = await import('@/store/tuningStore')
 
-  const config    = lsGet<TuningConfig>('mft:config')
+  const config    = lsGet<TuningConfig>('miot:config')
   const engineId  = lsGet<string>('mft:engine-id')
 
   if (config)   useTuningStore.getState().hydrateConfig(config)

@@ -4,17 +4,20 @@ import BulkEditModal from '@/features/tuning/BulkEditModal'
 export type ColorScale = 'warm' | 'diverging' | 'confidence' | 'coverage' | 'convergence'
 
 interface HeatmapTableProps {
-  cells:           (number | boolean | null)[][]
-  rowHeaders:      number[]      // MAP breakpoints (kPa), cells[0] = lowest MAP
-  colHeaders:      number[]      // RPM breakpoints
-  colorScale?:     ColorScale
-  readOnly?:       boolean
-  onCellChange?:   (row: number, col: number, value: number) => void
-  onBulkChange?:   (changes: { row: number; col: number; value: number }[]) => void
-  modifiedCells?:  Set<string>   // "row:col"
-  min?:            number
-  max?:            number
-  formatValue?:    (v: number | boolean | null) => string
+  cells:               (number | boolean | null)[][]
+  rowHeaders:          number[]      // MAP breakpoints (kPa), cells[0] = lowest MAP
+  colHeaders:          number[]      // RPM breakpoints
+  colorScale?:         ColorScale
+  readOnly?:           boolean
+  onCellChange?:       (row: number, col: number, value: number) => void
+  onBulkChange?:       (changes: { row: number; col: number; value: number }[]) => void
+  modifiedCells?:      Set<string>   // "row:col"
+  min?:                number
+  max?:                number
+  formatValue?:        (v: number | boolean | null) => string
+  onSelectionChange?:  (anchor: { r: number; c: number } | null, selEnd: { r: number; c: number } | null) => void
+  cellWidth?:          number
+  externalSelection?:  { anchor: { r: number; c: number }; selEnd?: { r: number; c: number } | null } | null
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -97,7 +100,13 @@ export default function HeatmapTable({
   min,
   max,
   formatValue,
+  onSelectionChange,
+  cellWidth,
+  externalSelection,
 }: HeatmapTableProps) {
+  const cw      = cellWidth ?? 52
+  const cellFs  = cw >= 48 ? 12 : cw >= 38 ? 11 : cw >= 30 ? 10 : 9
+  const cellPad = cw >= 48 ? '2px 4px' : cw >= 38 ? '1px 3px' : cw >= 30 ? '0 2px' : '0 1px'
   const nRows = cells.length
   const nCols = colHeaders.length
 
@@ -171,14 +180,16 @@ export default function HeatmapTable({
 
   // ── Bulk edit (F2 modal) ─────────────────────────────────────────────────────
 
-  function handleBulkApply(type: 'pct' | 'fixed', value: number) {
+  function handleBulkApply(type: 'pct' | 'add' | 'fixed', value: number) {
     if (!sr || !onBulkChange) return
     const changes: { row: number; col: number; value: number }[] = []
     for (let r = sr.r0; r <= sr.r1; r++) {
       for (let c = sr.c0; c <= sr.c1; c++) {
         const cur = cells[r][c]
         if (typeof cur !== 'number') continue
-        const newVal = type === 'fixed' ? value : cur * (1 + value / 100)
+        const newVal = type === 'fixed' ? value
+                     : type === 'add'   ? cur + value
+                     : cur * (1 + value / 100)
         changes.push({ row: r, col: c, value: newVal })
       }
     }
@@ -280,6 +291,34 @@ export default function HeatmapTable({
       return
     }
 
+    // Ctrl+I: +1%
+    if (mod && key === 'i') {
+      e.preventDefault()
+      const range = sr ?? { r0: anchor.r, r1: anchor.r, c0: anchor.c, c1: anchor.c }
+      const changes: { row: number; col: number; value: number }[] = []
+      for (let r = range.r0; r <= range.r1; r++)
+        for (let c = range.c0; c <= range.c1; c++) {
+          const v = cells[r][c]
+          if (typeof v === 'number') changes.push({ row: r, col: c, value: v * 1.01 })
+        }
+      if (changes.length) onBulkChange?.(changes)
+      return
+    }
+
+    // Ctrl+U: -1%
+    if (mod && key === 'u') {
+      e.preventDefault()
+      const range = sr ?? { r0: anchor.r, r1: anchor.r, c0: anchor.c, c1: anchor.c }
+      const changes: { row: number; col: number; value: number }[] = []
+      for (let r = range.r0; r <= range.r1; r++)
+        for (let c = range.c0; c <= range.c1; c++) {
+          const v = cells[r][c]
+          if (typeof v === 'number') changes.push({ row: r, col: c, value: v * 0.99 })
+        }
+      if (changes.length) onBulkChange?.(changes)
+      return
+    }
+
     // Printable digit — start inline edit
     if (key.length === 1 && !mod && /[\d.\-]/.test(key)) {
       e.preventDefault()
@@ -348,10 +387,25 @@ export default function HeatmapTable({
   }, [editing, bulkEditOpen])
 
   useEffect(() => {
+    if (!readOnly && nRows > 0 && nCols > 0) setAnchor({ r: 0, c: 0 })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     const up = () => setDragging(false)
     window.addEventListener('mouseup', up)
     return () => window.removeEventListener('mouseup', up)
   }, [])
+
+  useEffect(() => {
+    onSelectionChange?.(anchor, selEnd)
+  }, [anchor, selEnd]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!externalSelection) return
+    setAnchor(externalSelection.anchor)
+    setSelEnd(externalSelection.selEnd ?? null)
+    wrapRef.current?.focus()
+  }, [externalSelection]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Format ───────────────────────────────────────────────────────────────────
 
@@ -374,12 +428,13 @@ export default function HeatmapTable({
       <div
         ref={wrapRef}
         tabIndex={0}
-        className="overflow-auto rounded border border-gray-700 outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+        className={`${cellWidth != null ? 'overflow-hidden' : 'overflow-auto'} rounded border border-gray-700 outline-none focus-visible:ring-1 focus-visible:ring-blue-500`}
         onKeyDown={handleContainerKey}
+        onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { setAnchor(null); setSelEnd(null) } }}
       >
         <table
-          className="border-collapse text-xs font-mono"
-          style={{ minWidth: 'max-content' }}
+          className="border-collapse font-mono"
+          style={{ minWidth: 'max-content', fontSize: cellFs }}
         >
           <thead>
             <tr>
@@ -389,7 +444,8 @@ export default function HeatmapTable({
               {colHeaders.map(rpm => (
                 <th
                   key={rpm}
-                  className="sticky top-0 z-10 bg-gray-800 border border-gray-700 p-1 text-gray-300 text-center min-w-[52px]"
+                  className="sticky top-0 z-10 bg-gray-800 border border-gray-700 text-gray-300 text-center"
+                  style={{ minWidth: cw, padding: cellPad }}
                 >
                   {rpm}
                 </th>
@@ -404,10 +460,10 @@ export default function HeatmapTable({
                 </td>
                 {cells[ri].map((val, ci) => {
                   const { bg, fg } = cellBg(val, colorScale, cMin, cMax)
-                  const sel    = inSel(ri, ci)
-                  const anch   = isAnchor(ri, ci)
-                  const isEdit = editing?.r === ri && editing?.c === ci
-                  const isMod  = modifiedCells?.has(`${ri}:${ci}`) ?? false
+                  const sel           = inSel(ri, ci)
+                  const anch          = isAnchor(ri, ci)
+                  const isEdit        = editing?.r === ri && editing?.c === ci
+                  const isMod = modifiedCells?.has(`${ri}:${ci}`) ?? false
 
                   return (
                     <td
@@ -415,7 +471,7 @@ export default function HeatmapTable({
                       style={{
                         backgroundColor: sel ? 'rgba(59,130,246,0.40)' : bg,
                         color:           sel ? '#f3f4f6' : fg,
-                        boxShadow:       anch && !isEdit ? 'inset 0 0 0 2px #60a5fa' : undefined,
+                        boxShadow: anch && !isEdit ? 'inset 0 0 0 2px #60a5fa' : undefined,
                       }}
                       className={[
                         'border p-0 text-center cursor-default select-none',
@@ -433,10 +489,11 @@ export default function HeatmapTable({
                           onChange={e => setEditVal(e.target.value)}
                           onBlur={() => commitEdit(ri, ci)}
                           onKeyDown={handleInputKey}
-                          className="w-[52px] text-center bg-gray-900 outline outline-2 outline-blue-400 text-gray-100 font-bold"
+                          className="text-center bg-gray-900 outline outline-2 outline-blue-400 text-gray-100 font-bold"
+                          style={{ width: cw }}
                         />
                       ) : (
-                        <span className="block px-1 py-0.5 min-w-[52px]">{fmt(val)}</span>
+                        <span style={{ display: 'block', minWidth: cw, padding: cellPad }}>{fmt(val)}</span>
                       )}
                     </td>
                   )
@@ -445,18 +502,17 @@ export default function HeatmapTable({
             ))}
           </tbody>
         </table>
+        {bulkEditOpen && (
+          <BulkEditModal
+            cellCount={bulkCellCount}
+            onApply={(type, value) => {
+              handleBulkApply(type, value)
+              setBulkEditOpen(false)
+            }}
+            onClose={() => setBulkEditOpen(false)}
+          />
+        )}
       </div>
-
-      {bulkEditOpen && (
-        <BulkEditModal
-          cellCount={bulkCellCount}
-          onApply={(type, value) => {
-            handleBulkApply(type, value)
-            setBulkEditOpen(false)
-          }}
-          onClose={() => setBulkEditOpen(false)}
-        />
-      )}
     </>
   )
 }

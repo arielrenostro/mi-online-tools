@@ -105,7 +105,7 @@ export const useLogStore = create<LogState & LogActions>()(
 )
 
 function persistOrder(logs: LogEntry[]) {
-  lsSet('mft:log-order', {
+  lsSet('miot:log-order', {
     orderedHashes: logs.map(l => l.hash),
     enabledHashes: logs.filter(l => l.enabled).map(l => l.hash),
   })

@@ -21,7 +21,7 @@ O `localStorage` é ideal para dados que precisam estar disponíveis **sincronam
 
 ## IndexedDB
 
-**Nome do banco:** `mi-fuel-tuner-db`  
+**Nome do banco:** `miot-db`  
 **Versão:** `1`  
 **Biblioteca:** `idb` (wrapper moderno com Promises — não usar `idb-keyval`, que não suporta múltiplos object stores customizados de forma eficiente)
 
@@ -31,7 +31,7 @@ O `localStorage` é ideal para dados que precisam estar disponíveis **sincronam
 // persistence/db.ts
 import { openDB, DBSchema, IDBPDatabase } from 'idb'
 
-interface MiFuelTunerDB extends DBSchema {
+interface MiotDB extends DBSchema {
   // Armazena o mapa atual (original + editável + blob CSV)
   'map': {
     key: string            // sempre "current"
@@ -72,11 +72,11 @@ interface TuningOutputDBEntry {
   savedAt: number
 }
 
-let _db: IDBPDatabase<MiFuelTunerDB> | null = null
+let _db: IDBPDatabase<MiotDB> | null = null
 
-export async function getDB(): Promise<IDBPDatabase<MiFuelTunerDB>> {
+export async function getDB(): Promise<IDBPDatabase<MiotDB>> {
   if (_db) return _db
-  _db = await openDB<MiFuelTunerDB>('mi-fuel-tuner-db', 1, {
+  _db = await openDB<MiotDB>('miot-db', 1, {
     upgrade(db) {
       db.createObjectStore('map')
       const logStore = db.createObjectStore('logs', { keyPath: 'hash' })

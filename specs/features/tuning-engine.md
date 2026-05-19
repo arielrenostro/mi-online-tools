@@ -25,19 +25,25 @@ Especificação do algoritmo de auto-tuning do mapa de eficiência volumétrica 
  5. Peso de correção (count_score) e confiança combinada (count + stability)
       │
       ▼
- 6. Fator de correção ponderado por célula  cf = 1 + count_score × (ve_lambda_avg/current − 1)
+6. Fator de correção ponderado por célula
       │
       ▼
- 7. Interpolação 2D do fator de correção (propaga para células sem dados)
+7. Interpolação 2D local do fator de correção
       │
       ▼
- 8. Aplicação: new_value = round(current × cf_interpolado) + indicador de convergência
+8. Extração de tendências estruturais (RPM / MAP / gradiente)
       │
       ▼
- 9. Aplicação de limites absolutos (max_correction_pct, 100–9999)
+9. Composição do fator final preservando forma do mapa
       │
       ▼
-10. Pós-processamento: RPM 400, MAP baixo, monotonicidade, gradiente entre vizinhos
+10. Aplicação ao mapa
+      │
+      ▼
+11. Limites absolutos
+      │
+      ▼
+12. Pós-processamento
       │
       ▼
 [Mapa VE sugerido]
@@ -125,6 +131,17 @@ class TuningConfig:
     low_map_threshold:          int   = 20
     low_map_discount:           float = 0.025
     max_adjacent_gradient_pct:  float = 20.0
+
+    # Propagação estrutural
+    shape_propagation_enabled: bool = True
+
+    shape_rpm_weight: float = 0.50
+    shape_map_weight: float = 0.30
+    shape_gradient_weight: float = 0.20
+
+    global_shape_weight: float = 0.10
+
+    gradient_min_samples: int = 2
 ```
 
 ---
@@ -434,6 +451,27 @@ cf_full = interpolate_cf(data_points, map_breakpoints, rpm_breakpoints, fill_val
 | **Propagação de padrões por coluna** | Se 3200 RPM tem cf ≈ 1.04 em MAP 40–80 kPa, a interpolação estende cf ≈ 1.04 para MAP 90–200 kPa na mesma coluna, carregando o padrão para o território não coberto. |
 | **Conservadorismo fora dos dados** | O fill_value = 1.0 garante que células muito afastadas de qualquer dado não recebem correção — apenas as bordas do convex hull interpolam suavemente de correto → 1.0. |
 
+
+## Preservação de forma do mapa (Shape Preservation)
+
+A engine assume que mapas VE representam uma superfície física contínua:
+
+```text
+VE = f(RPM, MAP)
+```
+
+Portanto regiões sem amostra não devem permanecer invariáveis nem receber apenas interpolação local; elas devem herdar:
+
+1. tendências por RPM;
+2. tendências por carga (MAP);
+3. inclinações observadas da superfície;
+4. desvios globais do motor.
+
+O objetivo é reproduzir o comportamento esperado de um calibrador humano:
+
+> "Se uma região do mapa precisa mais VE e existe continuidade física com regiões adjacentes, o restante da superfície deve acompanhar mantendo o formato original."
+
+
 ### Implementação (Python)
 
 ```python
@@ -464,7 +502,275 @@ def interpolate_cf(
 
 ---
 
-## 8. Aplicação do fator ao mapa
+# 8. Extração de tendências estruturais (Shape Propagation)
+
+A interpolação local (etapa 7) evita descontinuidades, porém não preserva padrões globais do motor quando regiões inteiras do mapa não possuem amostras.
+
+Exemplos:
+
+```text
+3000RPM × 30kPa → -8%
+3000RPM ×130kPa → +2%
+```
+
+ou:
+
+```text
+2000RPM ×60kPa → 0%
+2400RPM ×60kPa → -10%
+3000RPM ×60kPa → +1%
+```
+
+Nestes casos existe informação sobre a **inclinação da superfície VE**, mesmo sem cobertura completa.
+
+A engine passa então a modelar três componentes adicionais:
+
+---
+
+## 8.1 Tendência por RPM (rpm_cf)
+
+Representa quanto determinada coluna tende a corrigir independentemente da carga.
+
+```python
+rpm_cf[col_j] =
+weighted_mean(
+    cf[row_i][col_j]
+    for todas células válidas da coluna
+)
+```
+
+Peso:
+
+```python
+weight =
+sample_count *
+confidence
+```
+
+Resultado:
+
+```text
+2000RPM → 1.00
+2400RPM → 0.90
+3000RPM → 1.01
+```
+
+---
+
+## 8.2 Tendência por MAP (map_cf)
+
+Representa tendência da correção conforme carga do motor.
+
+```python
+map_cf[row_i] =
+weighted_mean(
+    cf[row_i][col_j]
+    para todas células válidas da linha
+)
+```
+
+Exemplo:
+
+```text
+30kPa → 0.92
+130kPa → 1.02
+```
+
+---
+
+## 8.3 Gradiente local (slope propagation)
+
+Em vez de considerar apenas o valor absoluto da correção, modelar também sua variação ao longo dos eixos.
+
+Gradiente RPM:
+
+```python
+rpm_gradient =
+(cf2 - cf1) /
+(rpm2 - rpm1)
+```
+
+Gradiente MAP:
+
+```python
+map_gradient =
+(cf2 - cf1) /
+(map2 - map1)
+```
+
+Exemplo:
+
+Dados:
+
+```text
+3000RPM ×30kPa  → -8%
+3000RPM ×130kPa → +2%
+```
+
+Gradiente:
+
+```text
+(+10%) / (100kPa)
+
+=
+0.10% por kPa
+```
+
+Permite estimar:
+
+```text
+3000RPM ×180kPa
+
+≈ +7%
+```
+
+mesmo sem amostra.
+
+---
+
+## 8.4 Campo estrutural previsto
+
+Combinar tendências:
+
+```python
+cf_structural =
+rpm_cf[col]^α *
+map_cf[row]^β *
+gradient_cf^(1-α-β)
+```
+
+Valores sugeridos:
+
+```python
+alpha = 0.50
+beta  = 0.30
+gradient_weight = 0.20
+```
+
+Configuração:
+
+```python
+shape_rpm_weight      = 0.50
+shape_map_weight      = 0.30
+shape_gradient_weight = 0.20
+```
+
+---
+
+# 9. Composição do fator final
+
+O fator aplicado ao mapa deixa de ser apenas interpolação local.
+
+Antes:
+
+```python
+cf_final =
+cf_interp
+```
+
+Novo:
+
+```python
+cf_final =
+(
+cf_interp^w_local
+*
+cf_structural^w_shape
+*
+cf_global^w_global
+)
+```
+
+Onde:
+
+---
+
+### Componente local
+
+Correção derivada diretamente das células medidas.
+
+```python
+w_local =
+confidence
+```
+
+Maior confiança → maior peso.
+
+---
+
+### Componente estrutural
+
+Propaga comportamento da superfície VE.
+
+```python
+w_shape =
+1 - confidence
+```
+
+Regiões sem dado:
+
+```text
+confidence → 0
+
+=> estrutura domina
+```
+
+---
+
+### Componente global
+
+Corrige desvios uniformes do mapa inteiro.
+
+Útil quando:
+
+* troca de injetores
+* mudança de combustível
+* erro global de VE
+
+```python
+cf_global =
+weighted_mean(
+todos cf observados
+)
+```
+
+Peso pequeno:
+
+```python
+global_shape_weight = 0.10
+```
+
+---
+
+### Fórmula final sugerida
+
+```python
+cf_final =
+(
+cf_interp^confidence
+*
+cf_structural^(1-confidence)
+*
+cf_global^0.10
+)
+```
+
+ou equivalente em blending linear:
+
+```python
+cf_final =
+1
++
+confidence*(cf_interp-1)
++
+shape_weight*(cf_structural-1)
++
+global_weight*(cf_global-1)
+```
+
+---
+
+## 10. Aplicação do fator ao mapa
 
 ```python
 for row_i, map_kpa in enumerate(map_breakpoints):
@@ -485,7 +791,7 @@ O `residual_pct` mede quanto o mapa ainda precisa evoluir nessa célula: com wei
 
 ---
 
-## 9. Aplicação de limites absolutos
+## 11. Aplicação de limites absolutos
 
 ```python
 # Limite de correção máxima por rodada (segurança)

@@ -9,21 +9,23 @@
 ## Layout
 
 ```
-┌─ [Mapa Original — colapsável] ────────────────────────────── [▲ Colapsar] ─┐
-│  (heatmap somente leitura)                                                   │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─ [Mapa Original — colapsável] ──────────────────────────────────────────── [▲ Colapsar] ─┐
+│  ┌─ Tabela (somente leitura) ──────────┐  ┌─ Gráfico ──────────────────────────────────┐ │
+│  │  HeatmapTable                       │  │  [MAP×RPM][RPM×MAP]  [2D][3D]              │ │
+│  │  (overflow-x automático)            │  │  ECharts heatmap / bar3D                   │ │
+│  └─────────────────────────────────────┘  └────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 
-┌─ Mapa Editável ──────────────────── [⚙ Config]  [Rodar Auto-tuning]  [Resetar] ─┐
-│  (heatmap editável + resultado do auto-tuning)                                    │
-└───────────────────────────────────────────────────────────────────────────────────┘
+┌─ Mapa Editável ──────────────────────────────── [Auto Tuning]  [Resetar] ─┐
+│  ┌─ Tabela (editável) ─────────────────┐  ┌─ Gráfico ──────────────────┐  │
+│  │  HeatmapTable                       │  │  [MAP×RPM][RPM×MAP] [2D][3D]│  │
+│  │  células modificadas: borda laranja │  │  células selecionadas: azul │  │
+│  └─────────────────────────────────────┘  └────────────────────────────┘  │
+└────────────────────────────────────────────────────────────────────────────┘
 
 ┌─ Análise do Auto-tuning ───────────────────────────────────────────────────┐
 │  (heatmaps diagnósticos, warnings e estatísticas de filtragem)              │
 │  Visível apenas após executar o auto-tuning                                 │
-└─────────────────────────────────────────────────────────────────────────────┘
-
-┌─ Gráficos ─────────────────────────────────────────────────────────────────┐
-│  [MAP × RPM]                    [RPM × MAP]                                 │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -33,16 +35,18 @@
 
 Exibe o mapa exatamente como foi importado. Somente leitura — não pode ser editado aqui.
 
+Implementado com `MapWithChart`: tabela somente-leitura à esquerda e gráfico interativo à direita.
+
 ```
 ┌─ Mapa Original ──────────────────────────────────────────── [▲ Colapsar] ──┐
 │                                                                               │
-│  VE — valores originais (#F01–#F16)                                          │
-│                                                                               │
-│       400  800 1200 1600 2000 2400 2800 3200 3600 4000 4400 4800 5200 5600 6200 6800
-│  200  ███  ███  ███  ███  ███  ███  ███  ███  ███  ███  ███  ███  ███  ███  ███  ███
-│  180  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓
-│  ...
-│   10  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░
+│  ┌─ Tabela ──────────────────────────────────────────────┐                  │
+│  │       400  800 1200 ... 6800                           │ ┌─ Gráfico ────┐│
+│  │  200  ███  ███  ███  ... ███                           │ │[MAP×RPM][RPM×MAP]││
+│  │  180  ██▓  ██▓  ██▓  ... ██▓                           │ │[  2D  ][  3D  ]  ││
+│  │  ...                                                   │ │               ││
+│  │   10  ░░░  ░░░  ░░░  ... ░░░                           │ │ ECharts chart ││
+│  └───────────────────────────────────────────────────────┘ └───────────────┘│
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -50,26 +54,33 @@ Exibe o mapa exatamente como foi importado. Somente leitura — não pode ser ed
 **Comportamento do colapso:**
 - Botão `[▲ Colapsar]` recolhe a seção, exibindo apenas o cabeçalho `Mapa Original [▼ Expandir]`
 - Estado persiste em `localStorage` entre sessões
-- Hover na tabela exibe tooltip: `RPM: 2000 | MAP: 80 kPa | Valor: 851`
+
+**Gráfico:**
+- Switches no topo: orientação (`MAP×RPM` / `RPM×MAP`) e modo (`2D` / `3D`)
+- **2D**: gráfico de linhas — padrão `MAP×RPM` com uma linha por condição de MAP; trocar para `RPM×MAP` exibe uma linha por condição de RPM
+- **3D**: superfície mesh interativa (rotacionável)
+- Selecionar células na tabela destaca os pontos correspondentes no gráfico (dot azul em 2D, esfera azul em 3D)
+- Largura do gráfico ajustável via drag no separador — proporção salva no localStorage
 
 ---
 
 ## Seção 2 — Mapa Editável
 
-Mapa onde o usuário faz edições manuais e onde o auto-tuning plota as correções sugeridas. Começa como cópia do mapa original. Células editadas ficam com um contorno vermelho, indicando alteração.
+Mapa onde o usuário faz edições manuais e onde o auto-tuning plota as correções sugeridas. Começa como cópia do mapa original. Células editadas ficam com um contorno laranja, indicando alteração.
+
+Implementado com `MapWithChart`: tabela editável à esquerda e gráfico interativo à direita.
 
 ```
-┌─ Mapa Editável ──────────────────── [⚙ Config]  [Rodar Auto-tuning]  [Resetar] ─┐
-│                                                                                    │
-│  Fonte: 2 logs · 14 min 33 s selecionados                                        │
-│                                                                                    │
-│       400  800 1200 1600 2000 2400 2800 3200 3600 4000 4400 4800 5200 5600 6200 6800
-│  200  ███  ███  ███  ███  ███· ███  ███· ███  ███  ███  ███  ███  ███  ███  ███  ███
-│  180  ██▓  ██▓  ██▓  ██▓  ██▓· ██▓ ██▓· ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓  ██▓
-│  ...  (· = célula modificada)
-│   10  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░  ░░░
-│                                                                                    │
-└────────────────────────────────────────────────────────────────────────────────────┘
+┌─ Mapa Editável ──────────────────────────── [Auto Tuning]  [Resetar] ──┐
+│                                                                           │
+│  ┌─ Tabela ──────────────────────┐ │ ┌─ Gráfico ───────────────────────┐ │
+│  │      400  800 1200 ... 6800   │ ↕ │ [MAP×RPM][RPM×MAP] [2D][3D]     │ │
+│  │ 200  ███  ███  ███  ... ███   │   │ 2D: linhas por MAP ou RPM       │ │
+│  │ 180  ██▓  ██▓· ██▓  ... ██▓  │   │ 3D: superfície mesh             │ │
+│  │ ...  (· = modif.)            │   │ pontos selecionados em azul     │ │
+│  └───────────────────────────────┘   └─────────────────────────────────┘ │
+│       drag handle (↕) para ajustar proporção tabela/gráfico               │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Edição de células
@@ -77,7 +88,7 @@ Mapa onde o usuário faz edições manuais e onde o auto-tuning plota as correç
 | Ação | Resultado |
 |------|-----------|
 | Hover | Tooltip: `Valor original: 851 | Diff: x%` |
-| Clique simples | Seleciona a célula; destaca nos gráficos abaixo |
+| Clique simples | Seleciona a célula; destaca o ponto correspondente no gráfico ao lado |
 | Duplo clique ou `Enter` | Abre campo de edição inline com o valor atual, permitindo informar um percentual ou um novo valor |
 | Digitar + `Enter` ou clique fora | Confirma o novo valor |
 | `Escape` | Cancela a edição, restaura o valor anterior |
@@ -106,8 +117,9 @@ Mapa onde o usuário faz edições manuais e onde o auto-tuning plota as correç
 
 ### Botão: Resetar
 
+- Sempre visível; fica desabilitado enquanto o mapa não tem edições (`isDirty = false`)
+- Quando habilitado, exibe diálogo de confirmação antes de executar: "Isso irá descartar todas as edições manuais. Continuar?"
 - Restaura todas as células ao valor do mapa original importado
-- Exibe diálogo de confirmação antes de executar: "Isso irá descartar todas as edições manuais. Continuar?"
 
 ---
 
@@ -221,32 +233,11 @@ Painel fixo (não colapsável) com o diagnóstico de quantos pontos do log foram
 
 ---
 
-## Seção 4 — Gráficos
-
-Dois heatmaps exibidos lado a lado, sempre refletindo o **mapa editável** atual em tempo real.
-
-```
-┌─ MAP × RPM ─────────────────────┐  ┌─ RPM × MAP ─────────────────────┐
-│  Eixo X: RPM                    │  │  Eixo X: MAP (kPa)              │
-│  Eixo Y: MAP (kPa)              │  │  Eixo Y: RPM                    │
-│  Cor: valor da célula           │  │  Cor: valor da célula           │
-│                                  │  │                                  │
-│  [heatmap interativo]           │  │  [heatmap interativo]           │
-└──────────────────────────────────┘  └──────────────────────────────────┘
-```
-
-**Interações:**
-- Hover em qualquer célula do gráfico destaca a mesma célula na tabela e no gráfico oposto
-- Clique em célula seleciona na tabela (mesmo comportamento do clique direto na tabela)
-- Gradiente de cores idêntico ao da tabela (calculado sobre o mesmo conjunto de dados)
-
----
-
 ---
 
 ## Atalhos de teclado — Mapa Editável
 
-A tabela do mapa editável replica o comportamento do Excel/Calc. Os atalhos funcionam quando a tabela tem foco (clique na tabela para ativá-la).
+A tabela do mapa editável replica o comportamento do Excel/Calc. Ao montar a tabela, a célula `[0,0]` é automaticamente selecionada — os atalhos funcionam imediatamente, sem necessidade de clicar primeiro.
 
 ### Navegação
 
@@ -277,13 +268,15 @@ A tabela do mapa editável replica o comportamento do Excel/Calc. Os atalhos fun
 |--------|------|
 | `F2` | Abre a modal de edição em massa para as células selecionadas |
 
-A modal oferece **dois campos alternativos** (preencher um limpa o outro automaticamente):
+A modal oferece **três campos alternativos** (preencher um limpa os outros automaticamente):
 
 - **Percentual (%)** — ajusta cada célula individualmente pelo percentual informado.  
-  Exemplos: `+5` aumenta 5%; `-10` reduz 10%. Fórmula: `novo = round(atual × (1 + pct/100))`.
-- **Valor fixo** — define todas as células do range para o mesmo valor inteiro.
+  Exemplos: `+5` aumenta 5%; `-10` reduz 10%. Fórmula: `novo = atual × (1 + pct/100)`.
+- **Acrescentar um valor** — soma ou subtrai um delta fixo de cada célula.  
+  Exemplos: `+5` adiciona 5 unidades; `-3` subtrai 3. Fórmula: `novo = atual + delta`.
+- **Definir um valor** — sobrescreve todas as células do range com o mesmo valor.
 
-Prioridade quando aplicado: valor fixo > percentual.  
+Prioridade quando aplicado: acrescentar > definir > percentual.  
 Confirmar com `Enter` ou o botão **Aplicar**. Cancelar com `Escape` ou clique fora.  
 O resultado é registrado como **uma única entrada no histórico** (Ctrl+Z desfaz tudo de uma vez).
 
@@ -297,6 +290,15 @@ O resultado é registrado como **uma única entrada no histórico** (Ctrl+Z desf
 | `Shift` + Seta | Estende o range a partir do âncora atual |
 
 A célula âncora é indicada por um contorno azul (`box-shadow` inset). O restante do range selecionado recebe fundo azul semitransparente.
+
+### Ajuste rápido de valor
+
+| Atalho | Ação |
+|--------|------|
+| `Ctrl+I` | Aumenta todas as células selecionadas em 1% (multiplica por 1,01) |
+| `Ctrl+U` | Diminui todas as células selecionadas em 1% (multiplica por 0,99) |
+
+Opera sobre o range completo (âncora + extensão). Registra uma única entrada no histórico por acionamento.
 
 ### Área de transferência
 

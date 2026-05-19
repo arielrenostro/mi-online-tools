@@ -1,12 +1,17 @@
 import { useState } from 'react'
-import { useMapStore } from '@/store/mapStore'
-import HeatmapTable from '@/components/HeatmapTable'
+import MapWithChart from '@/components/MapWithChart'
 
-export default function OriginalMapSection() {
+interface Props {
+  cells:          number[][]
+  rpmBreakpoints: number[]
+  mapBreakpoints: number[]
+  formatValue?:   (v: number | boolean | null) => string
+}
+
+export default function OriginalMapSection({ cells, rpmBreakpoints, mapBreakpoints, formatValue }: Props) {
   const [collapsed, setCollapsed] = useState(true)
-  const originalMap = useMapStore(s => s.originalMap)
 
-  if (!originalMap) return null
+  const fmt = formatValue ?? (v => v === null ? '—' : String(v as number))
 
   return (
     <section className="px-5 pb-3">
@@ -24,13 +29,13 @@ export default function OriginalMapSection() {
       </button>
 
       {!collapsed && (
-        <HeatmapTable
-          cells={originalMap.cells}
-          rowHeaders={originalMap.mapBreakpoints}
-          colHeaders={originalMap.rpmBreakpoints}
+        <MapWithChart
+          cells={cells}
+          rowHeaders={mapBreakpoints}
+          colHeaders={rpmBreakpoints}
           colorScale="warm"
           readOnly
-          formatValue={v => v === null ? '—' : String(v as number)}
+          formatValue={fmt}
         />
       )}
     </section>

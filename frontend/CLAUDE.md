@@ -1,4 +1,4 @@
-# Frontend — mi-fuel-tuner
+# Frontend — Master Injection Online Tools
 
 **Stack:** React 18 · TypeScript 5 · Vite 5 · Tailwind CSS 3 · Zustand 4 · idb 8
 
@@ -15,7 +15,7 @@ npm run build        # build de produção em dist/
 
 ```bash
 # Docker (VITE_API_URL é build-time)
-docker build --build-arg VITE_API_URL=http://localhost:8000 -t mft-frontend .
+docker build --build-arg VITE_API_URL=http://localhost:8000 -t miot-frontend .
 docker run -p 80:80 mft-frontend
 ```
 

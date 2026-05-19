@@ -1,582 +1,230 @@
-# Componente `MapChart`
+# Componentes `MapChart` e `MapWithChart`
 
-Heatmap interativo construído com ECharts que exibe o mapa da ECU em formato visual MAP×RPM ou RPM×MAP. Renderizado via canvas para performance. Exibe overlay de pontos do datalog e sincroniza o estado de célula destacada bidirecionalmente com o `HeatmapTable`.
+Dois componentes complementares para visualização de mapas da ECU.
 
-**Localização:** `frontend/src/components/MapChart/`  
-**Arquivos:** `MapChart.tsx`, `useMapChartOptions.ts`, `mapChartColors.ts`
+- **`MapChart`** — gráfico ECharts standalone (2D linhas ou 3D superfície)
+- **`MapWithChart`** — wrapper reutilizável que combina `HeatmapTable` + `MapChart` lado a lado, com sincronização de seleção e largura ajustável via drag
 
----
-
-## Props
-
-```typescript
-// src/components/MapChart/MapChart.tsx
-import type { ScatterPoint } from '@/types/ui'
-
-export interface MapChartProps {
-  /**
-   * Valores das células. Shape: data[row][col].
-   * row = índice MAP (0 = MAP maior), col = índice RPM (0 = RPM menor).
-   * Mesma shape de MapModel.cells.
-   */
-  data: number[][]
-
-  /** Breakpoints de MAP (kPa) — labels do eixo vertical. */
-  rowLabels: number[]
-
-  /** Breakpoints de RPM — labels do eixo horizontal. */
-  colLabels: number[]
-
-  /**
-   * Define qual eixo vai para qual lado.
-   * - 'map_x_rpm': eixo X = RPM, eixo Y = MAP (kPa). Leitura natural: aumento de RPM → direita.
-   * - 'rpm_x_map': eixo X = MAP (kPa), eixo Y = RPM. Visão alternativa rotacionada 90°.
-   */
-  orientation: 'map_x_rpm' | 'rpm_x_map'
-
-  /**
-   * Pontos do datalog plotados como scatter sobre o heatmap.
-   * Posicionados nas coordenadas reais de RPM e MAP (não snapped para o breakpoint mais próximo).
-   */
-  overlayPoints?: ScatterPoint[]
-
-  /**
-   * Célula atualmente destacada (hover vindo de HeatmapTable ou do outro MapChart).
-   * Controlado externamente pelo componente pai.
-   */
-  highlightedCell?: { row: number; col: number } | null
-
-  /** Mouse entrou na célula (row, col) do heatmap. */
-  onCellHover?: (row: number, col: number) => void
-
-  /** Mouse saiu do área do gráfico. */
-  onHoverEnd?: () => void
-
-  /** Clique em uma célula do heatmap. */
-  onCellClick?: (row: number, col: number) => void
-
-  /** Altura do componente em pixels. Padrão: 300. */
-  height?: number
-}
-```
-
-```typescript
-// Reutilizado de src/types/ui.ts
-export interface ScatterPoint {
-  rpm: number
-  map_kpa: number
-  /**
-   * Densidade normalizada (0–1) derivada da contagem de amostras na célula correspondente.
-   * Controla a opacidade do ponto no overlay.
-   * 0 = ponto muito translúcido (poucas amostras), 1 = ponto opaco (muitas amostras).
-   */
-  density: number
-}
-```
+**Localizações:**
+- `frontend/src/components/MapChart/` — `MapChart.tsx`, `useMapChartOptions.ts`, `mapChart3DOptions.ts`, `index.ts`
+- `frontend/src/components/MapWithChart/` — `MapWithChart.tsx`, `index.ts`
 
 ---
 
-## Configuração ECharts
+## `MapWithChart`
 
-O componente usa `echarts-for-react` ou a API imperativa do ECharts. A opção principal é construída em `useMapChartOptions.ts`.
-
-### Estrutura das Séries
+Componente reutilizável que substitui um `<HeatmapTable>` adicionando o gráfico ao lado. Interface idêntica ao `HeatmapTable`, com um prop adicional `chartHeight`.
 
 ```typescript
-// useMapChartOptions.ts
-import type { EChartsOption } from 'echarts'
-
-export function buildMapChartOptions(props: MapChartProps & { colorMin: number; colorMax: number }): EChartsOption {
-  const { data, rowLabels, colLabels, orientation, overlayPoints, highlightedCell, colorMin, colorMax } = props
-
-  // Converte a matriz para o formato de série heatmap do ECharts: [colIdx, rowIdx, value]
-  const heatmapData: [number, number, number][] = []
-  for (let row = 0; row < data.length; row++) {
-    for (let col = 0; col < data[row].length; col++) {
-      if (orientation === 'map_x_rpm') {
-        // Eixo X = RPM (colIdx), Eixo Y = MAP (rowIdx)
-        heatmapData.push([col, row, data[row][col]])
-      } else {
-        // Eixo X = MAP (rowIdx), Eixo Y = RPM (colIdx)
-        heatmapData.push([row, col, data[row][col]])
-      }
-    }
-  }
-
-  // Constrói dados do scatter (overlay de pontos do log)
-  const scatterData = overlayPoints?.map(pt => {
-    if (orientation === 'map_x_rpm') {
-      return { value: [pt.rpm, pt.map_kpa], opacity: pt.density }
-    } else {
-      return { value: [pt.map_kpa, pt.rpm], opacity: pt.density }
-    }
-  }) ?? []
-
-  const xAxisData = orientation === 'map_x_rpm' ? colLabels : rowLabels  // RPM ou MAP
-  const yAxisData = orientation === 'map_x_rpm' ? rowLabels : colLabels  // MAP ou RPM
-  const xAxisName = orientation === 'map_x_rpm' ? 'RPM' : 'MAP (kPa)'
-  const yAxisName = orientation === 'map_x_rpm' ? 'MAP (kPa)' : 'RPM'
-
-  return {
-    grid: { top: 20, right: 20, bottom: 40, left: 60 },
-    xAxis: {
-      type: 'category',
-      data: xAxisData.map(String),
-      name: xAxisName,
-      nameLocation: 'middle',
-      nameGap: 30,
-      axisLabel: { color: '#9ca3af', fontSize: 10 },
-      splitLine: { lineStyle: { color: '#374151' } },
-    },
-    yAxis: {
-      type: 'category',
-      data: yAxisData.map(String),
-      name: yAxisName,
-      nameLocation: 'middle',
-      nameGap: 40,
-      axisLabel: { color: '#9ca3af', fontSize: 10 },
-      splitLine: { lineStyle: { color: '#374151' } },
-    },
-    visualMap: {
-      min: colorMin,
-      max: colorMax,
-      show: false,
-      // Gradiente idêntico à escala 'warm' do HeatmapTable
-      inRange: {
-        color: [
-          '#0000ff',  // azul (min)
-          '#00ff00',  // verde
-          '#ffff00',  // amarelo
-          '#ff0000',  // vermelho (max)
-        ],
-      },
-    },
-    series: [
-      // Série 1: Heatmap
-      {
-        type: 'heatmap',
-        data: heatmapData,
-        emphasis: {
-          itemStyle: {
-            borderColor: '#ffffff',
-            borderWidth: 2,
-          },
-        },
-        label: { show: false },  // labels dentro das células não são exibidos no chart
-      },
-      // Série 2: Scatter de pontos do log (opcional)
-      ...(overlayPoints && overlayPoints.length > 0 ? [{
-        type: 'scatter' as const,
-        data: scatterData,
-        symbol: 'circle',
-        symbolSize: 4,
-        itemStyle: {
-          color: 'rgba(255, 255, 255, 0.6)',
-        },
-        // Opacidade individual por ponto via encode ou itemStyle customizado
-      }] : []),
-    ],
-    tooltip: {
-      trigger: 'item',
-      formatter: buildTooltipFormatter(orientation, rowLabels, colLabels, overlayPoints),
-      backgroundColor: '#1f2937',
-      borderColor: '#374151',
-      textStyle: { color: '#f3f4f6', fontSize: 12 },
-    },
-    backgroundColor: '#111827',
-  }
+interface MapWithChartProps {
+  cells:          (number | boolean | null)[][]
+  rowHeaders:     number[]
+  colHeaders:     number[]
+  colorScale?:    ColorScale
+  readOnly?:      boolean
+  onCellChange?:  (row: number, col: number, value: number) => void
+  onBulkChange?:  (changes: { row: number; col: number; value: number }[]) => void
+  modifiedCells?: Set<string>
+  formatValue?:   (v: number | boolean | null) => string
+  chartHeight?:   number  // padrão: 340
 }
 ```
 
-### Escala de Cor
+Layout com drag handle redimensionável:
+```
+┌─────────────────────────────┐ │ ┌──────────────────────┐
+│  HeatmapTable               │ ↕ │  [MAP×RPM][RPM×MAP]  │
+│  (overflow-hidden)          │   │  [   2D  ][   3D  ]  │
+│  flexBasis: (1-ratio)%      │   │  MapChart            │
+└─────────────────────────────┘   │  flexBasis: ratio%   │
+                                   └──────────────────────┘
+```
 
-A escala `warm` usada pelo `MapChart` é **calibrada sobre o mesmo min/max global** do mapa editável, garantindo que as cores sejam idênticas às do `HeatmapTable`. O pai calcula min/max e passa como props adicionais:
+O `│ ↕ │` representa o drag handle — arrastar para esquerda expande o gráfico, para direita expande a tabela.
+
+### Proporção salva no localStorage
+
+Chave `mft:map-chart-ratio` (float 0.15–0.75). Padrão: **0.5** (50/50). Salva ao soltar o drag handle (`mouseup`).
+
+### Cálculo de `cellWidth`
+
+Para evitar scroll horizontal ao estreitar a tabela:
+
+```ts
+const STICKY_PX = 80  // largura estimada da coluna sticky "MAP↓/RPM→"
+const tablePx   = containerWidth * (1 - chartRatio) - 12  // -12 = drag handle
+const cellWidth = tablePx > STICKY_PX
+  ? Math.max(24, (tablePx - STICKY_PX) / colHeaders.length)
+  : undefined
+```
+
+Quando `cellWidth` é fornecido, `HeatmapTable` usa `overflow-hidden` (sem scrollbar).
+
+### Sincronização de seleção — tabela → gráfico
+
+`MapWithChart` gerencia `selectedCells: Set<string>` ("row:col") internamente.
+
+- `HeatmapTable` recebe `onSelectionChange(anchor, selEnd)` — disparado por `useEffect` quando a seleção muda
+- `MapWithChart` computa o range e passa `selectedCells` para `MapChart`
+- Em 2D: pontos selecionados ganham dot azul maior nas linhas
+- Em 3D: pontos selecionados ganham esferas azuis (`scatter3D`) sobrepostas à superfície
+
+### Sincronização de seleção — gráfico → tabela
+
+**Clique em ponto**: clicar num símbolo do gráfico 2D dispara `onChartCellClick(cells)` em `MapChart`.
+
+**Seleção por retângulo (box select)**: arrastar em área vazia do gráfico 2D desenha um retângulo de seleção (estilo Windows). Ao soltar, `MapChart` itera todos os pontos, converte suas posições com `convertToPixel({ gridIndex: 0 }, [xi, val])` e seleciona aqueles dentro do retângulo. Chama `onChartCellClick(selectedSet)` com o conjunto resultante. Um overlay `<div>` com borda `#60a5fa` e fundo semitransparente visualiza o retângulo durante o arrasto.
+
+Clicar num símbolo (elemento ECharts) **não** inicia box select — a distinção é feita via event bubbling: o evento ECharts `mousedown` dispara primeiro e seta um flag `symbolHitRef`; o `onMouseDown` do div container checa esse flag.
+
+Tanto o clique quanto o box select chegam em `MapWithChart` como `onChartCellClick`:
+- `MapWithChart.handleChartCellClick` converte o `Set<string>` em bounding-box (minRow, maxRow, minCol, maxCol)
+- Seta `externalSelection: { anchor, selEnd }` → passado para `HeatmapTable` via prop `externalSelection`
+- `HeatmapTable` aplica a seleção internamente via `useEffect`: chama `setAnchor`/`setSelEnd` e foca o container
+- A seleção passa pelo caminho normal (`onSelectionChange` → `handleSelectionChange` → `selectedCells` → MapChart dots)
+- Células ficam com fundo azul + borda azul no anchor, idêntico à navegação pela tabela
+- Após a seleção, Ctrl+I/U/F2 funcionam imediatamente
+
+### Edição por drag no gráfico 2D
+
+`MapWithChart` passa `onCellChange` para `MapChart`. Ao arrastar um ponto verticalmente:
+- ECharts dispara `mousedown` no ponto → `dragRef` registra `{row, col}`
+- `window.mousemove` → `convertFromPixel({ gridIndex: 0 }, [pixX, pixY])` mapeia pixel Y → valor VE
+- `onCellChange(row, col, newVal)` é chamado a cada movimento
+- `window.mouseup` → `dragRef` é limpo
+
+---
+
+## `MapChart`
+
+### Props
+
+```typescript
+interface MapChartProps {
+  data:               number[][]   // cells[row][col], row 0 = menor MAP
+  rowLabels:          number[]     // MAP breakpoints (kPa)
+  colLabels:          number[]     // RPM breakpoints
+  selectedCells?:     Set<string>  // "row:col" — células com dot azul
+  height?:            number       // padrão: 340
+  onCellChange?:      (row: number, col: number, value: number) => void
+  onChartCellClick?:  (cells: Set<string>) => void
+}
+```
+
+### Estado interno + persistência
+
+```typescript
+const [orientation, setOrientation] = useStickyState<Orientation>('mft:map-chart-orientation', 'map_x_rpm')
+const [mode,        setMode]        = useStickyState<Mode>('mft:map-chart-mode', '2d')
+```
+
+`useStickyState` lê o valor inicial do localStorage e persiste automaticamente ao alterar. Padrão: `'map_x_rpm'` + `'2d'`.
+
+### Switches no topo
+
+- **Orientação**: `MAP×RPM` | `RPM×MAP`
+- **Modo**: `2D` | `3D`
+
+### localStorage keys
+
+| Chave | Tipo | Padrão |
+|-------|------|--------|
+| `mft:map-chart-orientation` | `'map_x_rpm' \| 'rpm_x_map'` | `'map_x_rpm'` |
+| `mft:map-chart-mode` | `'2d' \| '3d'` | `'2d'` |
+| `mft:map-chart-ratio` | string (float 0.15–0.75) | `'0.5'` |
+
+---
+
+## `useMapChartOptions.ts` — Modo 2D (linhas)
+
+```typescript
+export function build2DOptions(
+  data:          number[][],
+  rowLabels:     number[],
+  colLabels:     number[],
+  orientation:   'map_x_rpm' | 'rpm_x_map',
+  selectedCells: Set<string>,
+): EChartsOption
+```
+
+**`map_x_rpm`**: eixo X = RPM (category), eixo Y = VE (value), **uma linha por condição de MAP** (16 séries).  
+**`rpm_x_map`**: eixo X = MAP (category), eixo Y = VE (value), **uma linha por condição de RPM** (16 séries).
+
+**Cores**: gradiente warm (`#3b82f6 → #22c55e → #eab308 → #ef4444`) interpolado entre as N séries.
+
+**Símbolos nos pontos**:
+- Selecionados: `symbolSize: 7`, `itemStyle.color: '#60a5fa'` (azul)
+- Não-selecionados: `symbolSize: 3`, `itemStyle.color: <cor-da-série>`, `opacity: 0.5` — necessário para ECharts disparar eventos de mouse
+
+**Eixo Y**: `min = floor(allMin - 5%)`, `max = ceil(allMax + 5%)` — margem de 5% além dos dados.
+
+Tooltip: `trigger: 'axis'` — exibe RPM ou MAP + valores VE de todas as séries na linha do cursor.
+
+---
+
+## `mapChart3DOptions.ts` — Modo 3D (superfície)
+
+```typescript
+import 'echarts-gl'  // side-effect: registra 'surface' e 'scatter3D'
+
+export function build3DOptions(
+  data:          number[][],
+  rowLabels:     number[],
+  colLabels:     number[],
+  orientation:   'map_x_rpm' | 'rpm_x_map',
+  colorMin:      number,
+  colorMax:      number,
+  selectedCells: Set<string>,
+): any  // echarts-gl não tem tipos TypeScript oficiais
+```
+
+Série principal: `type: 'surface'` com `wireframe: { show: true }`.  
+Eixos de tipo `'value'` com os valores reais de RPM e MAP (não categoria).  
+Dados: `[[x, y, z], ...]` onde x/y são os valores reais dos breakpoints e z é o valor VE.
+
+**Eixo Z + visualMap**: `min = colorMin - 5%`, `max = colorMax + 5%` — margem de 5% além dos dados.
+
+**Destaque de seleção**: série `scatter3D` sobreposta com `itemStyle.color: '#60a5fa'`.
+
+---
+
+## `HeatmapTable` — props adicionados para integração
+
+```typescript
+onSelectionChange?: (
+  anchor: { r: number; c: number } | null,
+  selEnd: { r: number; c: number } | null
+) => void
+
+cellWidth?: number         // largura por coluna em px; usa overflow-hidden quando definido
+externalSelection?: {      // impõe anchor/selEnd internos e foca o container
+  anchor: { r: number; c: number }
+  selEnd?: { r: number; c: number } | null
+} | null
+```
+
+---
+
+## Uso
 
 ```tsx
-// features/tuning/ve/VETab.tsx
-const { min: colorMin, max: colorMax } = useMemo(
-  () => globalMinMax(editableMap ?? []),
-  [editableMap]
-)
+import MapWithChart from '@/components/MapWithChart'
 
-// Ambos os MapCharts recebem o mesmo colorMin/colorMax:
-<MapChart data={editableMap} colorMin={colorMin} colorMax={colorMax} ... />
-<MapChart data={editableMap} colorMin={colorMin} colorMax={colorMax} orientation="rpm_x_map" ... />
-```
-
-Isso garante que uma célula com valor 800 terá exatamente a mesma cor no heatmap ECharts e na tabela React.
-
----
-
-## Orientações
-
-### `map_x_rpm` (padrão, exibido à esquerda)
-
-```
-Eixo Y (MAP kPa) ↑         200 │ ███ ██▓ ██░ ...
-                            180 │ ██▓ ███ ██▓ ...
-                            ... │
-                             10 │ ░░░ ░░░ ░░░ ...
-                                └──────────────────→ Eixo X (RPM)
-                                  400 800 1200 ...
-```
-
-### `rpm_x_map` (exibido à direita)
-
-```
-Eixo Y (RPM) ↑             6800 │ ███ ██▓ ██░ ...
-                            6200 │ ██▓ ███ ██▓ ...
-                             ... │
-                             400 │ ░░░ ░░░ ░░░ ...
-                                 └──────────────────→ Eixo X (MAP kPa)
-                                   10  20  30 ...
-```
-
-As duas instâncias são exibidas lado a lado na seção Gráficos da aba VE. O hover em uma destaca a mesma célula na outra (via `highlightedCell` controlado pelo pai).
-
----
-
-## Overlay de Scatter
-
-Os pontos do log são plotados sobre o heatmap nas coordenadas **reais** de RPM e MAP, sem snap para breakpoints. Isso permite visualizar a distribuição real das amostras dentro de cada célula.
-
-### Geração dos pontos a partir do datalog
-
-```typescript
-// Em VETab.tsx ou hook useVETuning.ts — calculado fora do MapChart
-function buildOverlayPoints(
-  rows: DatalogRow[],
-  sampleCountMap: number[][],
-  rpmBreakpoints: number[],
-  mapBreakpoints: number[]
-): ScatterPoint[] {
-  // Máximo de amostras por célula para normalizar a opacidade
-  const maxSamples = Math.max(...sampleCountMap.flat(), 1)
-
-  return rows.map(row => {
-    // Encontra a célula mais próxima para obter a contagem de amostras
-    const rpmIdx = findClosestIndex(row.rpm, rpmBreakpoints)
-    const mapIdx = findClosestIndex(row.mapKpa, mapBreakpoints)
-    const density = sampleCountMap[mapIdx]?.[rpmIdx] / maxSamples ?? 0
-
-    return {
-      rpm: row.rpm,
-      map_kpa: row.mapKpa,
-      density: Math.max(0.05, Math.min(1, density)),  // mínimo 5% de opacidade
-    }
-  })
-}
-```
-
-### Limitação de pontos
-
-Para evitar poluição visual, é recomendável amostrar os pontos do overlay quando o log tem muitas linhas:
-
-```typescript
-function sampleOverlayPoints(points: ScatterPoint[], maxPoints: number = 2000): ScatterPoint[] {
-  if (points.length <= maxPoints) return points
-  const step = Math.ceil(points.length / maxPoints)
-  return points.filter((_, i) => i % step === 0)
-}
+// Drop-in replacement para HeatmapTable — mesma interface
+<MapWithChart
+  cells={editableMap}
+  rowHeaders={originalMap.mapBreakpoints}
+  colHeaders={originalMap.rpmBreakpoints}
+  colorScale="warm"
+  onCellChange={updateCell}
+  onBulkChange={bulkUpdateCells}
+  modifiedCells={modifiedCells}
+/>
 ```
 
 ---
 
-## Célula Destacada (`highlightedCell`)
+## Futuro (fora do escopo atual)
 
-A célula destacada recebe um tratamento especial via a API do ECharts. Como o ECharts não tem um mecanismo nativo de "destacar célula por índice externo", usamos a abordagem de adicionar uma `markArea` ou reconfigurar a ênfase:
-
-```typescript
-// Quando highlightedCell muda, o componente dispara uma action do ECharts
-useEffect(() => {
-  if (!chartRef.current || !highlightedCell) return
-
-  const { row, col } = highlightedCell
-
-  // Converter índice de célula para coordenadas do eixo
-  const xVal = orientation === 'map_x_rpm'
-    ? String(colLabels[col])   // RPM
-    : String(rowLabels[row])   // MAP
-
-  const yVal = orientation === 'map_x_rpm'
-    ? String(rowLabels[row])   // MAP
-    : String(colLabels[col])   // RPM
-
-  chartRef.current.dispatchAction({
-    type: 'highlight',
-    seriesIndex: 0,
-    dataIndex: highlightedCell
-      ? data[0].length * highlightedCell.row + highlightedCell.col
-      : undefined,
-  })
-}, [highlightedCell, orientation, rowLabels, colLabels])
-```
-
-Alternativamente, adicionar `markArea` com coordenadas da célula:
-
-```typescript
-// Abordagem via markArea — mais confiável que dispatchAction
-const markArea = highlightedCell ? {
-  silent: true,
-  itemStyle: { borderColor: '#ffffff', borderWidth: 2, color: 'transparent' },
-  data: [[
-    { xAxis: String(xVal), yAxis: String(yVal) },
-    { xAxis: String(xVal), yAxis: String(yVal) },
-  ]],
-} : undefined
-```
-
----
-
-## Tooltip ECharts
-
-```typescript
-function buildTooltipFormatter(
-  orientation: 'map_x_rpm' | 'rpm_x_map',
-  rowLabels: number[],
-  colLabels: number[],
-  overlayPoints?: ScatterPoint[]
-) {
-  return function(params: any) {
-    if (params.seriesType === 'heatmap') {
-      const [xIdx, yIdx, value] = params.data
-
-      const rpm    = orientation === 'map_x_rpm' ? colLabels[xIdx] : colLabels[yIdx]
-      const mapKpa = orientation === 'map_x_rpm' ? rowLabels[yIdx] : rowLabels[xIdx]
-
-      // Estima amostras na região (se overlayPoints disponível)
-      let samplesLine = ''
-      if (overlayPoints && overlayPoints.length > 0) {
-        // Conta pontos dentro dos limites da célula (usa half-step entre breakpoints)
-        const nearbyPoints = overlayPoints.filter(pt =>
-          Math.abs(pt.rpm - rpm) < 250 && Math.abs(pt.map_kpa - mapKpa) < 8
-        )
-        samplesLine = nearbyPoints.length > 0
-          ? `<br/>Amostras nesta região: ~${nearbyPoints.length}`
-          : ''
-      }
-
-      return `
-        <div style="line-height: 1.8">
-          <strong>RPM:</strong> ${rpm} &nbsp;|&nbsp;
-          <strong>MAP:</strong> ${mapKpa} kPa<br/>
-          <strong>Valor:</strong> ${value}${samplesLine}
-        </div>
-      `
-    }
-    return ''  // sem tooltip para pontos scatter
-  }
-}
-```
-
----
-
-## Eventos e Sincronização
-
-### Captura de eventos do ECharts
-
-```tsx
-// MapChart.tsx
-function MapChart({ onCellHover, onHoverEnd, onCellClick, orientation, rowLabels, colLabels, ...props }: MapChartProps) {
-  const chartRef = useRef<EChartsInstance | null>(null)
-
-  const onChartEvents = useMemo(() => ({
-    mousemove: (params: any) => {
-      if (params.seriesType !== 'heatmap') return
-      const [xIdx, yIdx] = params.data
-
-      // Converte de volta para índices row/col do mapa
-      const row = orientation === 'map_x_rpm' ? yIdx : xIdx
-      const col = orientation === 'map_x_rpm' ? xIdx : yIdx
-
-      onCellHover?.(row, col)
-    },
-    mouseout: () => {
-      onHoverEnd?.()
-    },
-    click: (params: any) => {
-      if (params.seriesType !== 'heatmap') return
-      const [xIdx, yIdx] = params.data
-      const row = orientation === 'map_x_rpm' ? yIdx : xIdx
-      const col = orientation === 'map_x_rpm' ? xIdx : yIdx
-      onCellClick?.(row, col)
-    },
-  }), [onCellHover, onHoverEnd, onCellClick, orientation])
-
-  return (
-    <ReactECharts
-      ref={chartRef}
-      option={options}
-      onEvents={onChartEvents}
-      style={{ height: props.height ?? 300, width: '100%' }}
-      notMerge={false}
-      lazyUpdate={true}
-    />
-  )
-}
-```
-
-### Sincronização bidirecional com HeatmapTable
-
-O estado `highlightedCell` é gerenciado pelo componente pai (ex.: `VETab`):
-
-```tsx
-// features/tuning/ve/VETab.tsx — seção Gráficos
-function ChartsSection() {
-  const [hoveredCell, setHoveredCell] = useState<{ row: number; col: number } | null>(null)
-
-  const handleCellHover = useCallback((row: number, col: number) => {
-    setHoveredCell({ row, col })
-  }, [])
-
-  const handleHoverEnd = useCallback(() => {
-    setHoveredCell(null)
-  }, [])
-
-  return (
-    <div className="grid grid-cols-2 gap-4">
-      <MapChart
-        data={editableMap}
-        rowLabels={mapBreakpoints}
-        colLabels={rpmBreakpoints}
-        orientation="map_x_rpm"
-        overlayPoints={overlayPoints}
-        highlightedCell={hoveredCell}
-        onCellHover={handleCellHover}
-        onHoverEnd={handleHoverEnd}
-        onCellClick={handleChartCellClick}
-        height={300}
-      />
-      <MapChart
-        data={editableMap}
-        rowLabels={mapBreakpoints}
-        colLabels={rpmBreakpoints}
-        orientation="rpm_x_map"
-        overlayPoints={overlayPoints}
-        highlightedCell={hoveredCell}
-        onCellHover={handleCellHover}
-        onHoverEnd={handleHoverEnd}
-        onCellClick={handleChartCellClick}
-        height={300}
-      />
-    </div>
-  )
-}
-```
-
-Hover em qualquer dos dois MapCharts atualiza `hoveredCell`, que é passado para ambos e também para o `HeatmapTable` acima via `hoveredCell` prop. O HeatmapTable faz o caminho inverso: `onHover` → `setHoveredCell` → ambos os MapCharts recebem o highlight.
-
----
-
-## Responsividade
-
-O ECharts detecta mudanças no tamanho do container via `ResizeObserver` quando configurado com `option.responsive: true`. Para garantir o redimensionamento correto:
-
-```tsx
-// MapChart.tsx
-useEffect(() => {
-  if (!containerRef.current || !chartRef.current) return
-
-  const observer = new ResizeObserver(() => {
-    chartRef.current?.resize()
-  })
-
-  observer.observe(containerRef.current)
-  return () => observer.disconnect()
-}, [])
-
-return (
-  <div ref={containerRef} style={{ width: '100%' }}>
-    <ReactECharts ... />
-  </div>
-)
-```
-
-Quando usado com `echarts-for-react`, o wrapper já gerencia o `resize` automaticamente via `onChartReady`. Verificar a versão da biblioteca usada.
-
----
-
-## Integração com as Props do HeatmapTable
-
-| Evento do MapChart | Efeito no HeatmapTable |
-|-------------------|------------------------|
-| `onCellHover(row, col)` | `hoveredCell` do HeatmapTable é atualizado → célula ganha borda branca |
-| `onCellClick(row, col)` | `selectedCells` do HeatmapTable é atualizado → célula ganha outline azul |
-| `onHoverEnd()` | `hoveredCell = null` → HeatmapTable remove highlight |
-
-| Evento do HeatmapTable | Efeito no MapChart |
-|------------------------|-------------------|
-| `onHover(row, col)` | `highlightedCell` do MapChart é atualizado → célula ganha borda branca |
-| `onHoverEnd()` | `highlightedCell = null` → MapChart remove highlight |
-| `onCellClick(row, col)` | Não afeta diretamente o MapChart (seleção é gerenciada pelo HeatmapTable) |
-
----
-
-## Exemplo de Uso Completo
-
-```tsx
-import { MapChart } from '@/components/MapChart'
-import { useMapStore }    from '@/store/mapStore'
-import { useTuningStore } from '@/store/tuningStore'
-import { globalMinMax }   from '@/components/HeatmapTable/colorScales'
-import { useMemo, useState, useCallback } from 'react'
-
-function VEChartsSection() {
-  const originalMap  = useMapStore(s => s.originalMap)
-  const editableMap  = useMapStore(s => s.editableMap)
-  const tuningOutput = useTuningStore(s => s.lastOutput)
-
-  const [hoveredCell, setHoveredCell] = useState<{ row: number; col: number } | null>(null)
-
-  const { min: colorMin, max: colorMax } = useMemo(
-    () => globalMinMax(editableMap ?? []),
-    [editableMap]
-  )
-
-  const overlayPoints = useMemo(() => {
-    if (!tuningOutput || !originalMap) return undefined
-    // Gera pontos usando sampleCountMap para densidade
-    // (lógica completa na seção "Overlay de Scatter")
-    return buildOverlayPoints(/* ... */)
-  }, [tuningOutput, originalMap])
-
-  const handleCellHover = useCallback((row: number, col: number) => {
-    setHoveredCell({ row, col })
-  }, [])
-
-  if (!editableMap || !originalMap) return null
-
-  return (
-    <section className="grid grid-cols-2 gap-6">
-      <div>
-        <h3 className="text-sm font-medium text-gray-400 mb-2">MAP × RPM</h3>
-        <MapChart
-          data={editableMap}
-          rowLabels={originalMap.mapBreakpoints}
-          colLabels={originalMap.rpmBreakpoints}
-          orientation="map_x_rpm"
-          overlayPoints={overlayPoints}
-          highlightedCell={hoveredCell}
-          onCellHover={handleCellHover}
-          onHoverEnd={() => setHoveredCell(null)}
-          height={320}
-        />
-      </div>
-      <div>
-        <h3 className="text-sm font-medium text-gray-400 mb-2">RPM × MAP</h3>
-        <MapChart
-          data={editableMap}
-          rowLabels={originalMap.mapBreakpoints}
-          colLabels={originalMap.rpmBreakpoints}
-          orientation="rpm_x_map"
-          overlayPoints={overlayPoints}
-          highlightedCell={hoveredCell}
-          onCellHover={handleCellHover}
-          onHoverEnd={() => setHoveredCell(null)}
-          height={320}
-        />
-      </div>
-    </section>
-  )
-}
-```
+- **Overlay de scatter** — pontos do datalog plotados sobre o gráfico (`ScatterPoint[]` em `src/types/ui.ts`)
+- **Hover sync** — mover o mouse no gráfico destaca a célula na tabela

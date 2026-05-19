@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from app.models.datalog_model import DatalogModel
 
-CACHE_DIR = Path(os.environ.get("MFT_CACHE_DIR", "/tmp/mft_datalogs"))
+CACHE_DIR = Path(os.environ.get("MIOT_CACHE_DIR", "/tmp/miot_datalogs"))
 
 
 class DatalogDiskStore:

@@ -1,4 +1,4 @@
-# Backend — mi-fuel-tuner
+# Backend — Master Injection Online Tools
 
 **Stack:** Python 3.12 · FastAPI 0.115 · Pydantic v2 · NumPy 2.1 · SciPy 1.14
 
@@ -15,7 +15,7 @@ uvicorn app.main:app --reload --port 8000
 ```bash
 # Docker
 docker build -t mft-backend .
-docker run -p 8000:8000 -e MFT_CACHE_DIR=/tmp/mft_datalogs mft-backend
+docker run -p 8000:8000 -e MIOT_CACHE_DIR=/tmp/mft_datalogs mft-backend
 ```
 
 ## Testar
@@ -107,7 +107,7 @@ ve_lambda = (lambda1 + lambda_correcao - lambda_target) × ve_value_raw
 
 ### Cache de datalog
 - Hash no header `X-Content-Hash: sha1:<hex>`
-- Arquivo em `{MFT_CACHE_DIR}/{hex}.json`
+- Arquivo em `{MIOT_CACHE_DIR}/{hex}.json`
 - TTL 1h via `mtime`; cleanup a cada 10min
 - Cache hit → `touch()` + retorna modelo salvo, sem re-parsing
 

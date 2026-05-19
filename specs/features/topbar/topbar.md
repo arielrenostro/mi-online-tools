@@ -8,7 +8,7 @@ Barra superior global da aplicação. Sempre visível, independente da tela ativ
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  mi-fuel-tuner   │  [📄 4bar - 1.csv  ▼]   [📋 Logs (2) ▼]   [⬇ Exportar]  │
+│  Master Injection Online Tools  │  [📄 4bar - 1.csv  ▼]   [📋 Logs (2) ▼]   [⬇ Exportar]  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 

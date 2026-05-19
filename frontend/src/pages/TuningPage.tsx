@@ -1,102 +1,117 @@
-import { useState, useEffect } from 'react'
-import { useTuningStore } from '@/store/tuningStore'
+import { useState, useEffect, useRef } from 'react'
+import { Outlet, useLocation } from 'react-router-dom'
 import { useMapStore } from '@/store/mapStore'
-import { listEngines } from '@/api/engines'
-import type { EngineInfo } from '@/types/engine'
-import TopBar from '@/features/tuning/TopBar'
-import LogsPanel from '@/features/tuning/LogsPanel'
-import TuningConfigModal from '@/features/tuning/TuningConfigModal'
-import OriginalMapSection from '@/features/tuning/OriginalMapSection'
-import EditableMapSection from '@/features/tuning/EditableMapSection'
-import AnalysisSection from '@/features/tuning/AnalysisSection'
+import { exportMapCsv, downloadCsv } from '@/utils/mapExporter'
+import { TuningTabLink } from '@/components/TuningTabLink'
 
 export default function TuningPage() {
-  const [logsOpen,    setLogsOpen]    = useState(false)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [engines,      setEngines]     = useState<EngineInfo[]>([])
+  const [menuOpen, setMenuOpen] = useState(false)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const location = useLocation()
 
-  const config           = useTuningStore(s => s.config)
-  const selectedEngineId = useTuningStore(s => s.selectedEngineId)
-  const updateConfig     = useTuningStore(s => s.updateConfig)
-  const resetConfig      = useTuningStore(s => s.resetConfig)
-  const setEngine        = useTuningStore(s => s.setEngine)
+  const originalMap        = useMapStore(s => s.originalMap)
+  const editableMap        = useMapStore(s => s.editableMap)
+  const editableIgnitionMap = useMapStore(s => s.editableIgnitionMap)
+  const editableLambdaMap  = useMapStore(s => s.editableLambdaMap)
+  const loadMap            = useMapStore(s => s.loadMap)
 
-  useEffect(() => {
-    listEngines().then(setEngines).catch(() => { /* non-fatal */ })
-  }, [])
-
-  // Global undo/redo — skips when focus is inside an input or textarea
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (!(e.ctrlKey || e.metaKey)) return
       const tag = (e.target as HTMLElement)?.tagName ?? ''
       if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+      const path        = location.pathname
+      const isIgnition  = path.includes('/ignition')
+      const isLambda    = path.includes('/lambda')
+      const store       = useMapStore.getState()
+
       if (e.key.toLowerCase() === 'z') {
         e.preventDefault()
-        if (e.shiftKey) useMapStore.getState().redo()
-        else            useMapStore.getState().undo()
+        if (isIgnition) { if (e.shiftKey) store.redoIgnition(); else store.undoIgnition() }
+        else if (isLambda) { if (e.shiftKey) store.redoLambda(); else store.undoLambda() }
+        else { if (e.shiftKey) store.redo(); else store.undo() }
       }
       if (e.key.toLowerCase() === 'y' && !e.shiftKey) {
         e.preventDefault()
-        useMapStore.getState().redo()
+        if (isIgnition) store.redoIgnition()
+        else if (isLambda) store.redoLambda()
+        else store.redo()
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [location])
 
-  const selectedEngine = engines.find(e => e.engineId === selectedEngineId)
+  function handleExport() {
+    if (!originalMap || !editableMap) return
+    const content = exportMapCsv(
+      originalMap.rawLines,
+      editableMap,
+      editableIgnitionMap,
+      editableLambdaMap,
+    )
+    downloadCsv(content, `${originalMap.name.replace(/\.csv$/i, '')}_tuned.csv`)
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) await loadMap(file)
+    e.target.value = ''
+  }
 
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
-      <TopBar onLogsClick={() => setLogsOpen(true)} onSettingsClick={() => setSettingsOpen(true)} />
+    <div className="flex flex-col h-full">
+      <nav className="flex items-center gap-1 px-4 pt-2 border-b border-gray-800 flex-shrink-0">
+        <TuningTabLink to="ve" label="VE" />
+        <TuningTabLink to="ignition" label="Ignition" />
+        <TuningTabLink to="lambda" label="Lambda" />
 
-      {/* Engine selector tabs */}
-      <div className="flex items-center gap-1 px-5 pt-3 border-b border-gray-800 flex-shrink-0">
-        {engines.map(engine => (
+        <div className="ml-auto mb-1 relative">
+          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleImport} />
           <button
-            key={engine.engineId}
-            onClick={() => setEngine(engine.engineId)}
-            className={`px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 transition-colors ${
-              engine.engineId === selectedEngineId
-                ? 'border-blue-500 text-blue-400 bg-gray-800'
-                : 'border-transparent text-gray-500 hover:text-gray-300'
-            }`}
+            onClick={() => setMenuOpen(v => !v)}
+            className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+            title="Ações"
           >
-            {engine.name}
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 16 16">
+              <circle cx="8" cy="2.5"  r="1.5" />
+              <circle cx="8" cy="8"    r="1.5" />
+              <circle cx="8" cy="13.5" r="1.5" />
+            </svg>
           </button>
-        ))}
-        {/* Locked tabs */}
-        {(['Ignição', 'Lambda', 'Boost'] as const).map(name => (
-          <button
-            key={name}
-            disabled
-            className="px-4 py-2 text-sm font-medium rounded-t-lg border-b-2 border-transparent text-gray-700 cursor-not-allowed"
-          >
-            {name} 🔒
-          </button>
-        ))}
-      </div>
 
-      {/* Scrollable content */}
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-screen-2xl mx-auto py-4 space-y-4">
-          <OriginalMapSection />
-          <EditableMapSection />
-          <AnalysisSection />
+          {menuOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
+              <div className="absolute right-0 top-full mt-1 z-20 bg-gray-800 border border-gray-700 rounded-lg shadow-xl min-w-[180px] py-1">
+                <button
+                  onClick={() => { setMenuOpen(false); fileRef.current?.click() }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+                >
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Importar Mapa
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); handleExport() }}
+                  className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-200 hover:bg-gray-700 transition-colors"
+                >
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M8 11l4 4 4-4M12 4v11" />
+                  </svg>
+                  Exportar Mapa
+                </button>
+              </div>
+            </>
+          )}
         </div>
-      </main>
+      </nav>
 
-      <LogsPanel open={logsOpen} onClose={() => setLogsOpen(false)} />
-
-      <TuningConfigModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        config={config}
-        schema={selectedEngine?.configSchema}
-        onUpdate={updateConfig}
-        onReset={resetConfig}
-      />
+      <div className="flex-1 overflow-auto">
+        <Outlet />
+      </div>
     </div>
   )
 }

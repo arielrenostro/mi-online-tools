@@ -2,20 +2,23 @@ import { useState, useRef, useEffect } from 'react'
 
 interface Props {
   cellCount: number
-  onApply:   (type: 'pct' | 'fixed', value: number) => void
+  onApply:   (type: 'pct' | 'add' | 'fixed', value: number) => void
   onClose:   () => void
 }
 
 export default function BulkEditModal({ cellCount, onApply, onClose }: Props) {
   const [pct,   setPct]   = useState('')
+  const [add,   setAdd]   = useState('')
   const [fixed, setFixed] = useState('')
   const pctRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { pctRef.current?.focus() }, [])
 
   function apply() {
+    const addNum   = parseFloat(add)
     const fixedNum = parseFloat(fixed)
     const pctNum   = parseFloat(pct)
+    if (!isNaN(addNum))   { onApply('add',   addNum);   return }
     if (!isNaN(fixedNum)) { onApply('fixed', fixedNum); return }
     if (!isNaN(pctNum))   { onApply('pct',   pctNum);   return }
     onClose()
@@ -44,9 +47,9 @@ export default function BulkEditModal({ cellCount, onApply, onClose }: Props) {
             <input
               ref={pctRef}
               type="number"
-              placeholder="+5 ou −10"
+              placeholder="+5 ou -10"
               value={pct}
-              onChange={e => { setPct(e.target.value); setFixed('') }}
+              onChange={e => { setPct(e.target.value); setAdd(''); setFixed('') }}
               className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
             />
             <p className="text-xs text-gray-600 mt-0.5">Ajusta cada célula pelo percentual indicado</p>
@@ -59,12 +62,30 @@ export default function BulkEditModal({ cellCount, onApply, onClose }: Props) {
           </div>
 
           <div>
-            <label className="text-xs text-gray-400 block mb-1">Valor fixo</label>
+            <label className="text-xs text-gray-400 block mb-1">Acrescentar um valor</label>
+            <input
+              type="number"
+              placeholder="+5 ou -3"
+              value={add}
+              onChange={e => { setAdd(e.target.value); setPct(''); setFixed('') }}
+              className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+            />
+            <p className="text-xs text-gray-600 mt-0.5">Soma ou subtrai o valor de cada célula</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex-1 h-px bg-gray-700" />
+            <span className="text-xs text-gray-600">ou</span>
+            <div className="flex-1 h-px bg-gray-700" />
+          </div>
+
+          <div>
+            <label className="text-xs text-gray-400 block mb-1">Definir um valor</label>
             <input
               type="number"
               placeholder="ex: 1000"
               value={fixed}
-              onChange={e => { setFixed(e.target.value); setPct('') }}
+              onChange={e => { setFixed(e.target.value); setPct(''); setAdd('') }}
               className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
             />
             <p className="text-xs text-gray-600 mt-0.5">Define todas as células para este valor</p>

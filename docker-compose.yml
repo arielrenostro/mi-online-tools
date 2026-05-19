@@ -8,7 +8,7 @@ services:
     volumes:
       - /tmp:/tmp
     environment:
-      MFT_CACHE_DIR: /tmp/mft_datalogs
+      MIOT_CACHE_DIR: /tmp/miot_datalogs
     restart: unless-stopped
 
   frontend:
