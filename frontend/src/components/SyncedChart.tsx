@@ -10,20 +10,10 @@ import type { DatalogRow, TimeSelection } from '@/types/datalog'
 
 const GROUP_ID = 'datalog-charts'
 
-const SIGNAL_COLORS: Record<string, string> = {
-  'RPM':           '#60a5fa',
-  'MAP':           '#34d399',
-  'Lambda 1':      '#fbbf24',
-  'Lambda Target': '#a78bfa',
-  'Lambda Corr':   '#f87171',
-  'CLT':           '#fb923c',
-  'Lambda Loop':   '#4ade80',
-  'Pedal':         '#e879f9',
-}
 const PALETTE = ['#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f87171', '#fb923c', '#4ade80', '#e879f9']
 
 function sigColor(signal: string, idx: number): string {
-  return SIGNAL_COLORS[signal] ?? PALETTE[idx % PALETTE.length]
+  return PALETTE[idx % PALETTE.length]
 }
 
 function findLastRow(rows: DatalogRow[], t: number): DatalogRow | null {
@@ -75,9 +65,6 @@ function buildOption(
     type:           'line',
     yAxisIndex:     i,
     data:           rows.map(r => [r.timestamp_ms, r[sig] ?? NaN]),
-    sampling:       'lttb',
-    large:          true,
-    largeThreshold: 2000,
     symbol:         'none',
     lineStyle:      { color: sigColor(sig, i), width: 1.5 },
     itemStyle:      { color: sigColor(sig, i) },
@@ -98,6 +85,7 @@ function buildOption(
     yAxis: yAxes,
     series,
     tooltip: {
+      triggerOn:   'mousemove|click',
       trigger:     'axis',
       axisPointer: {
         type: 'line',
@@ -421,7 +409,6 @@ function LayoutRenderer({
 }
 
 // ─── SyncedChart (export) ─────────────────────────────────────────────────────
-
 // Context to share chart instances for cross-chart hover sync
 const ChartSyncContext = React.createContext<{
   registerChart:   (id: string, inst: echarts.ECharts) => void
@@ -441,7 +428,6 @@ export function SyncedChart() {
 
   const instancesRef    = useRef<Map<string, echarts.ECharts>>(new Map())
   const zoomListenerRef = useRef<{ inst: echarts.ECharts; handler: (p: unknown) => void } | null>(null)
-  const lastTimeRef     = useRef<number | null>(null)
 
   const registerChart = useCallback((id: string, inst: echarts.ECharts) => {
     instancesRef.current.set(id, inst)
@@ -481,27 +467,28 @@ export function SyncedChart() {
     if (instances.length === 0) return
 
     let timeMs: number | null = null
+    let isInsideChart = false
+
+    // Find which chart the pointer is inside and convert to timestamp
     for (const inst of instances) {
       const dom = inst.getDom()
       const rect = dom.getBoundingClientRect()
       if (e.clientX >= rect.left && e.clientX <= rect.right &&
           e.clientY >= rect.top  && e.clientY <= rect.bottom) {
-        const converted = inst.convertFromPixel({ xAxisIndex: 0 }, e.clientX - rect.left)
-        if (converted != null) { timeMs = converted as number; break }
+        timeMs = inst.convertFromPixel({ xAxisIndex: 0 }, e.clientX - rect.left) as number
+        isInsideChart = true
+        break
       }
     }
 
-    if (timeMs === null) {
-      timeMs = lastTimeRef.current
-      if (timeMs === null) return
-    } else {
-      lastTimeRef.current = timeMs
-    }
+    if (!isInsideChart || timeMs === null) return
 
+    // For each chart, convert timestamp to dataIndex for the left yAxis series and show tooltip
     for (const inst of instances) {
       const dom = inst.getDom()
       const rect = dom.getBoundingClientRect()
       const pixelX = inst.convertToPixel({ xAxisIndex: 0 }, timeMs)
+
       if (pixelX != null) {
         inst.dispatchAction({ type: 'showTip', x: pixelX as number, y: rect.height / 2 })
       }
@@ -509,9 +496,9 @@ export function SyncedChart() {
   }, [])
 
   const handlePointerLeave = useCallback(() => {
-    lastTimeRef.current = null
-    for (const inst of instancesRef.current.values()) {
-      if (!inst.isDisposed()) inst.dispatchAction({ type: 'hideTip' })
+    const instances = Array.from(instancesRef.current.values()).filter(i => !i.isDisposed())
+    for (const inst of instances) {
+      inst.dispatchAction({ type: 'hideTip' })
     }
   }, [])
 
