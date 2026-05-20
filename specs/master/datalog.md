@@ -1,75 +1,62 @@
 # MasterInjection — Datalog (CSV)
 
-Especificação do formato do arquivo de datalog gerado pelo software de dashboard da ECU MasterInjection e das regras de parsing.
-
----
+Formato do arquivo de datalog gerado pelo software da ECU e regras de parsing.
 
 ## Formato do arquivo
 
-CSV com separador `;`. O arquivo é gerado em tempo real pelo software de coleta; quando o software reinicia (sem encerrar a sessão de log), ele escreve o cabeçalho novamente no meio do arquivo.
-
-### Exemplo das primeiras linhas
+CSV separado por `;`. Gerado em tempo real; quando o software reinicia (sem encerrar a sessão de log), reescreve o cabeçalho no meio do arquivo.
 
 ```
-Timestamp;Event;Mess 1;RPM;MAP;Boost;Load %;Idle;Lambda 1;Inj. Pulse;Inj. Utiliz.;VE Value;Ign. Adv.;Knock;A/C Input;Start Input;Outputs 1;Outputs 2;Lambda 2;Mess 2;Batt Volt.;CLT;IAT;Inj. DT;Ign. Dwell;KM/H;Lambda Loop;Lambda Target;Lambda Corr;Strobo Angle;Turbo Target;ACC %;ACP %;dACC %;0;0
-1778957562179;;#D01;839;37;100;20;20;1018;146;2;580;10;0;0000;1000;1101;00;0;#D02;143;357;331;542;341;0;1;1000;1020;1170;150;0;594;5000;0;0
-1778957562298;;#D01;846;37;100;20;20;1021;146;2;581;10;0;0000;1000;1101;00;0;#D02;142;357;331;548;344;0;1;1000;1021;1170;150;0;594;5000;0;0
+Timestamp;Event;Mess 1;RPM;MAP;Boost;Load %;Idle;Lambda 1;Inj. Pulse;...
+1778957562179;;#D01;839;37;100;20;20;1018;146;...
+1778957562298;;#D01;846;37;100;20;20;1021;146;...
 ```
-
----
 
 ## Colunas relevantes para tuning
 
-Colunas são sempre identificadas pelo **nome** (header), nunca por posição de índice.
+Colunas identificadas sempre pelo **nome** (header), nunca por índice.
 
-| Nome da coluna | Sinal | Unidade | Conversão do valor bruto |
-|----------------|-------|---------|--------------------------|
-| `Timestamp` | Timestamp Unix | ms | nenhuma (`int`) |
-| `RPM` | Rotações por minuto | RPM | `int(raw)` |
-| `MAP` | Pressão no coletor de admissão | kPa | `int(raw)` |
-| `Boost` | Pressão de boost (referência atmosférica) | kPa | `int(raw)` |
-| `Lambda 1` | Lambda medido pela sonda | λ | `float(raw) / 1000` |
+| Coluna | Sinal | Unidade | Conversão raw→real |
+|--------|-------|---------|--------------------|
+| `Timestamp` | Timestamp Unix | ms | `int` |
+| `RPM` | Rotações | RPM | `int(raw)` |
+| `MAP` | Pressão coletor admissão | kPa | `int(raw)` |
+| `Boost` | Pressão de boost (ref. atmosférica) | kPa | `int(raw)` |
+| `Lambda 1` | Lambda medido pela sonda | λ | `float(raw)/1000` |
 | `Inj. Utiliz.` | Duty cycle do injetor | % | `int(raw)` |
-| `VE Value` | Eficiência volumétrica calculada pela ECU | % | `float(raw) / 10` |
+| `VE Value` | VE calculada pela ECU | % | `float(raw)/10` |
 | `Ign. Adv.` | Avanço de ignição | º | `int(raw)` |
 | `Batt Volt.` | Tensão da bateria | V | — (reservado) |
-| `CLT` | Temperatura do líquido de arrefecimento | ºC | `int(raw) - 273` |
-| `IAT` | Temperatura do ar admitido | ºC | `int(raw) - 273` |
-| `KM/H` | Velocidade do veículo | km/h | `int(raw)` |
-| `Lambda Loop` | Modo de controle de lambda | — | `int(raw)` → `0`=open loop, `1`=closed loop |
-| `Lambda Target` | Lambda alvo configurado na ECU | λ | `float(raw) / 1000` |
-| `Lambda Corr` | Correção de combustível aplicada pela ECU (fuel trim) | % | `(float(raw) - 1000) / 10` |
+| `CLT` | Temp. líquido arrefecimento | ºC | `int(raw)-273` |
+| `IAT` | Temp. ar admitido | ºC | `int(raw)-273` |
+| `KM/H` | Velocidade | km/h | `int(raw)` |
+| `Lambda Loop` | Modo de controle de lambda | — | `int(raw)` → `0`=open, `1`=closed |
+| `Lambda Target` | Lambda alvo da ECU | λ | `float(raw)/1000` |
+| `Lambda Corr` | Correção de combustível (fuel trim) | % | `(float(raw)-1000)/10` |
 | `Turbo Target` | Pressão de boost alvo | kPa | `int(raw)` |
-| `ACC %` | Posição do acelerador (pedal) | % | `min(100.0, float(raw) / 990.0 * 100.0)` |
+| `ACC %` | Posição do acelerador (pedal) | % | `min(100.0, float(raw)/990.0*100.0)` |
 
 ### Notas sobre conversores
 
-- **CLT / IAT**: valor bruto em Kelvin; subtrair 273 para obter Celsius
-- **Lambda 1 / Lambda Target**: valor bruto é lambda × 1000 (inteiro); dividir por 1000
-- **Lambda Corr**: valor bruto com offset 1000, escala ×10; fórmula: `(raw - 1000) / 10`. Ex.: raw=1020 → +2.0%; raw=980 → -2.0%
-- **ACC %**: range bruto 0–990; normalizar para 0–100%, clampar em 100%
-- **Lambda Loop**: `0` = open loop (ECU não corrige), `1` = closed loop (ECU corrige ativamente)
+- **CLT/IAT**: raw em Kelvin; subtrair 273
+- **Lambda 1 / Lambda Target**: raw = lambda × 1000; dividir por 1000
+- **Lambda Corr**: offset 1000, escala ×10; `(raw-1000)/10`. raw=1020 → +2.0%; raw=980 → -2.0%
+- **ACC %**: raw 0–990; normalizar para 0–100%, clampar em 100%
+- **Lambda Loop**: `0`=open loop (ECU não corrige), `1`=closed loop (ECU corrige)
 
 ### Colunas presentes mas não usadas na v1
 
-`Event`, `Mess 1`, `Mess 2`, `Idle`, `Inj. Pulse`, `Knock`, `A/C Input`, `Start Input`, `Outputs 1`, `Outputs 2`, `Lambda 2`, `Inj. DT`, `Ign. Dwell`, `Strobo Angle`, `ACP %`, `dACC %`, e as duas colunas sem nome (`0;0` no final).
-
----
+`Event`, `Mess 1`, `Mess 2`, `Idle`, `Inj. Pulse`, `Knock`, `A/C Input`, `Start Input`, `Outputs 1`, `Outputs 2`, `Lambda 2`, `Inj. DT`, `Ign. Dwell`, `Strobo Angle`, `ACP %`, `dACC %`, e as duas colunas sem nome (`0;0` final).
 
 ## Regras de parsing
 
 ### 1. Identificação do header
 
-Uma linha é considerada **header** quando:
-- O primeiro campo não é numérico (não pode ser convertido para `int` ou `float`)
-- Contém a string `Timestamp` no primeiro campo
-
-O parser deve estar preparado para encontrar o header **em qualquer linha do arquivo**, não apenas na primeira. Ao encontrar um header repetido, continuar lendo os dados que se seguem usando o novo mapeamento de colunas (que deve ser idêntico, mas o parser não deve assumir isso).
+Linha é **header** quando o primeiro campo não é numérico e contém `Timestamp`. O parser deve achar o header **em qualquer linha** (não só a primeira); ao reencontrá-lo, continua lendo com o novo mapeamento de colunas.
 
 ```python
 def is_header(line: str) -> bool:
-    first_field = line.split(';')[0]
-    return first_field.strip() == 'Timestamp'
+    return line.split(';')[0].strip() == 'Timestamp'
 ```
 
 ### 2. Leitura dos dados
@@ -88,24 +75,21 @@ for line in file:
 
 ### 3. Validação de linhas
 
-Descartar linha se:
-- Número de campos for diferente do esperado pelo header atual
-- `Timestamp` não for numérico
-- `RPM` ou `MAP` não forem inteiros válidos
+Descartar se: nº de campos ≠ esperado pelo header atual; `Timestamp` não numérico; `RPM` ou `MAP` não inteiros válidos.
 
-Linhas com coluna `Event` preenchida (alarmes, eventos) podem ser preservadas como metadados mas não entram na análise de tuning.
+Linhas com `Event` preenchido (alarmes) podem virar metadados, mas não entram na análise.
 
-### 4. Estrutura resultante por linha (após conversão)
+### 4. Estrutura resultante por linha
 
 ```python
 @dataclass
 class DatalogRow:
     timestamp: int          # ms
-    rpm: int                # RPM
+    rpm: int
     map_kpa: int            # kPa
-    lambda_measured: float  # λ (já convertido)
-    lambda_target: float    # λ (já convertido)
-    lambda_corr_pct: float  # % (já convertido, ex: +2.0, -1.5)
+    lambda_measured: float  # λ convertido
+    lambda_target: float    # λ convertido
+    lambda_corr_pct: float  # % convertido (ex: +2.0)
     lambda_loop_closed: bool
     clt: int                # ºC
     iat: int                # ºC
@@ -115,10 +99,8 @@ class DatalogRow:
     speed_kmh: int          # km/h
 ```
 
----
+## Performance
 
-## Considerações de performance
-
-- Datalogs podem ter dezenas de milhares de linhas (log de ~30 min a ~10 Hz ≈ 18.000 linhas)
-- O parsing deve ser feito em streaming (linha a linha), sem carregar o arquivo inteiro em memória antes de processar
-- Ao fazer upload de múltiplos datalogs, cada um é parseado independentemente e concatenado na sessão
+- Datalogs podem ter dezenas de milhares de linhas (~30 min @ 10 Hz ≈ 18.000)
+- Parsing em streaming (linha a linha), sem carregar o arquivo inteiro em memória
+- Múltiplos datalogs: cada um parseado independentemente e concatenado na sessão

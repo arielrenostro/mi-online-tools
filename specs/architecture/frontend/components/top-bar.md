@@ -1,62 +1,33 @@
 # Componente `TopBar`
 
-Barra de navegação global exibida em todas as rotas da aplicação. Contém o logotipo/link para home, o badge do mapa carregado, os controles de importação de mapa e abertura do painel de datalogs. Gerencia internamente o estado de abertura do `LogsPanel`.
+Barra de navegação global em todas as rotas. Logotipo/link para home, badge do mapa carregado, controles de importação de mapa e abertura do `LogsPanel`. Gerencia internamente o estado de abertura do `LogsPanel`.
 
-**Localização:** `frontend/src/components/TopBar.tsx`
-
----
+**Arquivo:** `frontend/src/components/TopBar.tsx`
 
 ## Props
 
-Nenhuma. O componente é auto-suficiente — lê os stores diretamente e gerencia o estado do `LogsPanel` internamente.
-
----
+Nenhuma. Auto-suficiente — lê os stores diretamente e gerencia o `LogsPanel` via estado local.
 
 ## Comportamento
 
 | Elemento | Descrição |
 |----------|-----------|
-| **Logotipo "Master Injection Online Tools"** | `<Link to="/">` — navega para a home ao clicar |
-| **Badge do mapa** | Exibe `originalMap.name` truncado (max 240 px). Oculto quando nenhum mapa está carregado |
-| **Botão "Importar Mapa"** | Abre um `<input type="file" accept=".csv">` oculto. Ao selecionar, chama `useMapStore.loadMap(file)`. O valor do input é limpo após cada seleção para permitir reimportar o mesmo arquivo |
-| **Botão "Datalogs"** | Define `logsOpen = true`, abrindo o `LogsPanel` |
-| **`LogsPanel`** | Renderizado inline no `TopBar`, controlado por estado local `logsOpen` |
-
-### Leitura dos stores
+| Logotipo "Master Injection Online Tools" | `<Link to="/">` — navega para a home |
+| Badge do mapa | `originalMap.name` truncado (máx 240px); oculto sem mapa |
+| Botão "Importar Mapa" | `<input type="file" accept=".csv">` oculto → `useMapStore.loadMap(file)`. Limpa o valor do input após cada seleção (permite reimportar o mesmo arquivo) |
+| Botão "Datalogs" | Define `logsOpen = true`, abrindo o `LogsPanel` |
+| `LogsPanel` | Renderizado inline, controlado por estado local `logsOpen` |
 
 ```typescript
 const loadMap = useMapStore((s) => s.loadMap)
 const mapName = useMapStore((s) => s.originalMap?.name ?? null)
 ```
 
-O `TopBar` não subscreve nenhum estado reativo do `useLogStore` diretamente — o `LogsPanel` faz isso internamente.
-
----
-
-## Exemplo de uso
-
-```tsx
-// pages/RootLayout.tsx
-import { TopBar } from '@/components/TopBar'
-
-export function RootLayout() {
-  return (
-    <div className="flex flex-col min-h-screen bg-gray-950 text-gray-100">
-      <TopBar />
-      <main className="flex-1 overflow-auto">
-        <Outlet />
-      </main>
-    </div>
-  )
-}
-```
-
-`TopBar` é usado **exclusivamente** em `RootLayout`. Não deve ser instanciado em outras páginas ou features.
-
----
+O `TopBar` não subscreve estado reativo do `useLogStore` — o `LogsPanel` faz isso internamente.
 
 ## Invariantes
 
-- Não recebe `onLogsClick` nem `onSettingsClick` por prop — o estado de abertura do `LogsPanel` é local.
-- O botão de configurações de tuning (gear icon) **não** está no `TopBar` — fica em `TuningPage`, pois é específico da seção de tuning.
-- O botão de exportação de mapa **não** está no `TopBar` — fica em `EditableMapSection`, junto ao contexto onde faz sentido.
+- Usado **exclusivamente** em `RootLayout`. Não instanciar em outras páginas.
+- Não recebe `onLogsClick`/`onSettingsClick` por prop — estado do `LogsPanel` é local.
+- Botão de config de tuning (gear) **não** está no TopBar — fica em `TuningPage`.
+- Botão de exportação de mapa **não** está no TopBar — fica em `EditableMapSection`.

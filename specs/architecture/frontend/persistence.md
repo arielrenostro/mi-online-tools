@@ -1,76 +1,45 @@
 # Persistência de Estado — Frontend
 
-O usuário nunca deve perder seu trabalho ao fechar o navegador, dar F5 ou reabrir uma aba. Esta spec detalha os dois mecanismos de persistência, a lógica de restauração de sessão, o tratamento de falhas e as regras de invalidação.
+O usuário nunca perde o trabalho ao fechar o navegador, dar F5 ou reabrir. Dois mecanismos complementares, restauração de sessão, tratamento de falhas e invalidação.
 
----
-
-## Por que dois mecanismos
-
-A aplicação usa **localStorage** e **IndexedDB** de forma complementar:
+## Dois mecanismos
 
 | Mecanismo | Capacidade | API | Quando usar |
 |-----------|-----------|-----|-------------|
-| `localStorage` | ~5 MB (strings) | Síncrona | Dados pequenos (config, preferências de UI, metadados de ordem) |
-| `IndexedDB` | Centenas de MB | Assíncrona (Promise) | Blobs de arquivo, JSON grandes (modelos de mapa e log, TuningOutput) |
+| `localStorage` | ~5 MB (strings) | Síncrona | Config, preferências de UI, metadados de ordem |
+| `IndexedDB` | Centenas de MB | Assíncrona | Blobs de arquivo, JSONs grandes (modelos de mapa/log, TuningOutput) |
 
-Se armazenássemos o modelo completo de um log (que pode ter >100 mil linhas) no `localStorage`, facilmente ultrapassaríamos o limite de 5 MB com dois logs. O IndexedDB suporta blobs binários nativamente — ideal para os arquivos CSV originais que precisam ser reenviados ao backend no restore.
-
-O `localStorage` é ideal para dados que precisam estar disponíveis **sincronamente** no início da inicialização (configurações de UI que afetam o primeiro render, ordem dos logs) e para dados que são pequenos e raramente maiores que alguns kilobytes.
-
----
+Um log pode ter >100 mil linhas — `localStorage` estouraria com dois logs. IndexedDB suporta blobs binários (os CSVs originais são reenviados ao backend no restore). `localStorage` serve para dados pequenos disponíveis **sincronamente** no início da inicialização.
 
 ## IndexedDB
 
-**Nome do banco:** `miot-db`  
-**Versão:** `1`  
-**Biblioteca:** `idb` (wrapper moderno com Promises — não usar `idb-keyval`, que não suporta múltiplos object stores customizados de forma eficiente)
+**Banco:** `miot-db` · **Versão:** `1` · **Lib:** `idb` (Promises; não usar `idb-keyval`)
 
 ### Object stores
 
 ```typescript
 // persistence/db.ts
-import { openDB, DBSchema, IDBPDatabase } from 'idb'
-
 interface MiotDB extends DBSchema {
-  // Armazena o mapa atual (original + editável + blob CSV)
-  'map': {
-    key: string            // sempre "current"
-    value: MapDBEntry
-  }
-
-  // Armazena os logs individualmente (indexados por hash)
-  'logs': {
-    key: string            // hash SHA-1 do arquivo CSV (formato "sha1:<hex>")
-    value: LogDBEntry
-    indexes: { 'by-filename': string }
-  }
-
-  // Armazena o último TuningOutput gerado
-  'tuning-output': {
-    key: string            // sempre "last"
-    value: TuningOutputDBEntry
-  }
+  'map':           { key: string; value: MapDBEntry }              // key sempre "current"
+  'logs':          { key: string; value: LogDBEntry;               // key = SHA-1 "sha1:<hex>"
+                     indexes: { 'by-filename': string } }
+  'tuning-output': { key: string; value: TuningOutputDBEntry }     // key sempre "last"
 }
 
 interface MapDBEntry {
-  originalModel: MapModel           // modelo parseado client-side
+  originalModel: MapModel
   editableCells: number[][] | null  // cópia editável (pode diferir do original)
-  csvBlob: Blob                     // arquivo CSV original (para exportação client-side)
-  savedAt: number                   // Date.now() — para diagnóstico
+  csvBlob: Blob                     // CSV original (exportação client-side)
+  savedAt: number
 }
 
 interface LogDBEntry {
-  hash: string                      // SHA-1 do arquivo CSV ("sha1:<hex>")
-  filename: string
-  model: DatalogModel               // modelo completo com todas as linhas
-  csvBlob: Blob                     // arquivo CSV original
-  savedAt: number
+  hash: string; filename: string
+  model: DatalogModel               // modelo completo
+  csvBlob: Blob; savedAt: number
 }
 
-interface TuningOutputDBEntry {
-  output: TuningOutput
-  savedAt: number
-}
+interface TuningOutputDBEntry { output: TuningOutput; savedAt: number }
 
 let _db: IDBPDatabase<MiotDB> | null = null
 
@@ -88,117 +57,47 @@ export async function getDB(): Promise<IDBPDatabase<MiotDB>> {
 }
 ```
 
-### Operações por object store
-
-#### `map`
+### Operações
 
 ```typescript
-// persistence/mapPersistence.ts
-import { getDB } from './db'
-import type { MapModel } from '@/types/map'
+// mapPersistence.ts — store 'map' (key "current")
+saveMap(originalModel, editableCells, csvBlob)  // put { ..., savedAt: Date.now() }
+loadMap(): Promise<MapDBEntry | undefined>
+clearMap()
+updateEditableCells(cells)  // merge no entry existente, atualiza editableCells
 
-export async function saveMap(
-  originalModel: MapModel,
-  editableCells: number[][] | null,
-  csvBlob: Blob
-): Promise<void> {
-  const db = await getDB()
-  await db.put('map', {
-    originalModel,
-    editableCells,
-    csvBlob,
-    savedAt: Date.now(),
-  }, 'current')
-}
+// logPersistence.ts — store 'logs' (key = hash)
+saveLog(entry: LogDBEntry)
+loadAllLogs(): Promise<LogDBEntry[]>
+getLog(hash): Promise<LogDBEntry | undefined>
+deleteLog(hash)
 
-export async function loadMap(): Promise<MapDBEntry | undefined> {
-  const db = await getDB()
-  return db.get('map', 'current')
-}
-
-export async function clearMap(): Promise<void> {
-  const db = await getDB()
-  await db.delete('map', 'current')
-}
-
-export async function updateEditableCells(cells: number[][]): Promise<void> {
-  const db = await getDB()
-  const existing = await db.get('map', 'current')
-  if (!existing) return
-  await db.put('map', { ...existing, editableCells: cells, savedAt: Date.now() }, 'current')
-}
+// tuningPersistence.ts — store 'tuning-output' (key "last")
+saveTuningOutput(output)
+loadTuningOutput(): Promise<TuningOutput | undefined>
+clearTuningOutput()
 ```
-
-#### `logs`
-
-```typescript
-// persistence/logPersistence.ts
-export async function saveLog(entry: LogDBEntry): Promise<void> {
-  const db = await getDB()
-  await db.put('logs', entry)
-}
-
-export async function loadAllLogs(): Promise<LogDBEntry[]> {
-  const db = await getDB()
-  return db.getAll('logs')
-}
-
-export async function getLog(hash: string): Promise<LogDBEntry | undefined> {
-  const db = await getDB()
-  return db.get('logs', hash)
-}
-
-export async function deleteLog(hash: string): Promise<void> {
-  const db = await getDB()
-  await db.delete('logs', hash)
-}
-```
-
-#### `tuning-output`
-
-```typescript
-// persistence/tuningPersistence.ts
-export async function saveTuningOutput(output: TuningOutput): Promise<void> {
-  const db = await getDB()
-  await db.put('tuning-output', { output, savedAt: Date.now() }, 'last')
-}
-
-export async function loadTuningOutput(): Promise<TuningOutput | undefined> {
-  const db = await getDB()
-  const entry = await db.get('tuning-output', 'last')
-  return entry?.output
-}
-
-export async function clearTuningOutput(): Promise<void> {
-  const db = await getDB()
-  await db.delete('tuning-output', 'last')
-}
-```
-
----
 
 ## localStorage
 
-**Prefixo de chaves:** `miot:` (para evitar colisão com outras apps no mesmo domínio)
+**Prefixo de chaves:** `miot:`
 
-| Chave | Conteúdo | Tipo | Store |
-|-------|----------|------|-------|
-| `miot:config` | `TuningConfig` serializada | JSON object | `useTuningStore` |
-| `miot:engine-id` | ID do engine selecionado | string | `useTuningStore` |
-| `miot:log-order` | `{ orderedHashes: string[]; enabledHashes: string[] }` | JSON object | `useLogStore` |
-| `miot:ui` | `UIState` completo | JSON object | `useUIStore` |
-| `miot:time` | `{ cursor_ms: number \| null; selection: TimeSelection \| null; sparklineSensor: string }` | JSON object | `useTimeStore` |
+| Chave | Conteúdo | Store |
+|-------|----------|-------|
+| `miot:config` | `TuningConfig` | `useTuningStore` |
+| `miot:engine-id` | ID do engine selecionado | `useTuningStore` |
+| `miot:log-order` | `{ orderedHashes: string[]; enabledHashes: string[] }` | `useLogStore` |
+| `miot:ui` | `UIState` | `useUIStore` |
+| `miot:time` | `{ cursor_ms: number\|null; selection: TimeSelection\|null; sparklineSensor: string }` | `useTimeStore` |
 
-### Utilitários de acesso
+### Utilitários
 
 ```typescript
 // persistence/localStorage.ts
-
 export function lsGet<T>(key: string): T | null {
   try {
     const raw = localStorage.getItem(key)
-    if (raw === null) return null
-    return JSON.parse(raw) as T
+    return raw === null ? null : (JSON.parse(raw) as T)
   } catch {
     console.warn(`[miot] Falha ao ler localStorage["${key}"]`)
     return null
@@ -209,39 +108,20 @@ export function lsSet<T>(key: string, value: T): void {
   try {
     localStorage.setItem(key, JSON.stringify(value))
   } catch (e) {
-    // QuotaExceededError — log silencioso, não travar o app
-    console.warn(`[miot] Falha ao salvar em localStorage["${key}"]`, e)
+    console.warn(`[miot] Falha ao salvar em localStorage["${key}"]`, e)  // QuotaExceededError
   }
 }
 
-export function lsClear(key: string): void {
-  localStorage.removeItem(key)
-}
+export function lsClear(key: string): void { localStorage.removeItem(key) }
 ```
 
----
+## `sessionRestorer.ts` — Restauração
 
-## `sessionRestorer.ts` — Algoritmo de restauração
-
-O `sessionRestorer` é chamado **uma única vez**, em `main.tsx`, antes do primeiro render. Ele orquestra a leitura de todos os mecanismos de persistência e popula os stores Zustand.
+Chamado **uma vez** em `main.tsx`, antes do primeiro render. Orquestra a leitura de todos os mecanismos e popula os stores.
 
 ```typescript
-// persistence/sessionRestorer.ts
-import { useMapStore }     from '@/store/mapStore'
-import { useLogStore }     from '@/store/logStore'
-import { useTimeStore }    from '@/store/timeStore'
-import { useTuningStore }  from '@/store/tuningStore'
-import { useUIStore }      from '@/store/uiStore'
-import { useSessionStore } from '@/store/sessionStore'
-import * as mapPersistence    from './mapPersistence'
-import * as logPersistence    from './logPersistence'
-import * as tuningPersistence from './tuningPersistence'
-import { lsGet }              from './localStorage'
-
 export async function restore(): Promise<void> {
-  // Sinaliza que a restauração está em andamento (guards aguardam)
   useSessionStore.getState().setRestoring(true)
-
   try {
     await restoreStep_UI()
     await restoreStep_TuningConfig()
@@ -250,204 +130,61 @@ export async function restore(): Promise<void> {
     await restoreStep_TuningOutput()
     await restoreStep_Time()
   } catch (err) {
-    // Erro inesperado no restorer — não deve travar o app
-    console.error('[miot] sessionRestorer falhou:', err)
+    console.error('[miot] sessionRestorer falhou:', err)  // não trava o app
   } finally {
     useSessionStore.getState().setRestoring(false)
   }
 }
 ```
 
-### Passo a passo detalhado
+### Passos
 
-**Etapa 1 — Restaurar UIState**
-
-```typescript
-async function restoreStep_UI() {
-  const savedUI = lsGet<UIState>('miot:ui')
-  if (savedUI) {
-    useUIStore.getState().hydrate(savedUI)
-  }
-  // Falha aqui = UI fica com valores default. Não é crítico.
-}
-```
-
-**Etapa 2 — Restaurar TuningConfig e engine selecionado**
-
-```typescript
-async function restoreStep_TuningConfig() {
-  const savedConfig = lsGet<TuningConfig>('miot:config')
-  const savedEngineId = lsGet<string>('miot:engine-id')
-
-  if (savedConfig) {
-    useTuningStore.getState().hydrateConfig(savedConfig)
-  }
-  if (savedEngineId) {
-    useTuningStore.getState().hydrateEngineId(savedEngineId)
-  }
-}
-```
-
-**Etapa 3 — Restaurar mapa**
-
-```typescript
-async function restoreStep_Map() {
-  let mapEntry: MapDBEntry | undefined
-  try {
-    mapEntry = await mapPersistence.loadMap()
-  } catch (err) {
-    // IndexedDB indisponível (Safari private mode, etc.) — log e prosseguir
-    console.warn('[miot] IndexedDB indisponível para mapa:', err)
-    return
-  }
-
-  if (!mapEntry) return   // nenhum mapa salvo
-
-  useMapStore.getState().hydrate({
-    originalModel: mapEntry.originalModel,
-    editableCells: mapEntry.editableCells ?? mapEntry.originalModel.cells,
-  })
-}
-```
-
-**Etapa 4 — Restaurar logs**
-
-```typescript
-async function restoreStep_Logs() {
-  const logOrder = lsGet<{ orderedHashes: string[]; enabledHashes: string[] }>('miot:log-order')
-
-  let logEntries: LogDBEntry[]
-  try {
-    logEntries = await logPersistence.loadAllLogs()
-  } catch (err) {
-    console.warn('[miot] IndexedDB indisponível para logs:', err)
-    return
-  }
-
-  if (logEntries.length === 0) return
-
-  const orderedLogs = sortLogsByOrder(logEntries, logOrder?.orderedHashes ?? [])
-  const enabledHashes = new Set(logOrder?.enabledHashes ?? [])
-
-  const entries: LogEntry[] = orderedLogs.map((entry) => ({
-    hash:        entry.hash,
-    filename:    entry.filename,
-    model:       entry.model,
-    enabled:     enabledHashes.size === 0 ? true : enabledHashes.has(entry.hash),
-    duration_ms: entry.model.duration_ms,
-  }))
-
-  useLogStore.getState().hydrate(entries)
-}
-```
-
-**Etapa 5 — Restaurar TuningOutput**
-
-```typescript
-async function restoreStep_TuningOutput() {
-  let output: TuningOutput | undefined
-  try {
-    output = await tuningPersistence.loadTuningOutput()
-  } catch (err) {
-    console.warn('[miot] IndexedDB indisponível para TuningOutput:', err)
-    return
-  }
-
-  if (output) {
-    useTuningStore.getState().hydrateOutput(output)
-  }
-}
-```
-
-**Etapa 6 — Restaurar TimeStore**
-
-```typescript
-async function restoreStep_Time() {
-  const saved = lsGet<{ cursor_ms: number | null; selection: TimeSelection | null; sparklineSensor: string }>('miot:time')
-  if (saved) {
-    useTimeStore.getState().hydrate(saved)
-  }
-}
-```
+1. **UIState** — `lsGet('miot:ui')` → `useUIStore.hydrate()`. Falha = UI fica nos defaults.
+2. **TuningConfig + engine** — `lsGet('miot:config')` → `hydrateConfig()`; `lsGet('miot:engine-id')` → `hydrateEngineId()`.
+3. **Mapa** — `mapPersistence.loadMap()` → `useMapStore.hydrate({ originalModel, editableCells: editableCells ?? originalModel.cells })`. IndexedDB indisponível → warning e prossegue.
+4. **Logs** — `lsGet('miot:log-order')` + `logPersistence.loadAllLogs()`. Ordena por `orderedHashes`; `enabled` por `enabledHashes` (set vazio → todos true) → `useLogStore.hydrate(entries)`.
+5. **TuningOutput** — `tuningPersistence.loadTuningOutput()` → `useTuningStore.hydrateOutput()`.
+6. **TimeStore** — `lsGet('miot:time')` → `useTimeStore.hydrate()`.
 
 ### Toast de confirmação
 
-Após a restauração bem-sucedida (pelo menos mapa ou logs encontrados), exibir um toast discreto. Colocar após o bloco `try/catch/finally`, fora do escopo de `restore()`:
+Após `restore()` concluir, se houver dados (mapa ou logs), exibir toast discreto "Sessão restaurada".
+
+## IndexedDB indisponível (Safari modo privado)
+
+Safari privado desabilita o IndexedDB. Nesse caso: `openDB()` lança exceção; o restorer captura, loga warning e continua sem restaurar; saves são silenciosamente ignorados (stores funcionam em memória); aviso ao usuário sobre perda de dados ao recarregar.
 
 ```typescript
-// Após restore() concluir (isRestoring já é false):
-const hasData = useMapStore.getState().originalMap !== null
-             || useLogStore.getState().logs.length > 0
-
-if (hasData) {
-  toast({ title: 'Sessão restaurada', description: 'Seus dados foram carregados automaticamente.' })
-}
-```
-
----
-
-## IndexedDB indisponível (Safari private mode)
-
-Safari em modo de navegação privada desabilita completamente o IndexedDB. Nesse caso:
-
-1. A chamada `openDB()` lança uma exceção.
-2. O `sessionRestorer` captura o erro, loga um warning e continua.
-3. Não há restauração de sessão — a aplicação inicia no estado limpo.
-4. As operações de persistência (saves) são silenciosamente ignoradas — os stores funcionam normalmente em memória.
-5. Um aviso é exibido: "Modo de persistência indisponível — seus dados serão perdidos ao recarregar a página."
-
-```typescript
-// persistence/db.ts — versão com fallback
+// db.ts — fallback de disponibilidade
 let _dbAvailable: boolean | null = null
 
 export async function isDBAvailable(): Promise<boolean> {
   if (_dbAvailable !== null) return _dbAvailable
-  try {
-    await getDB()
-    _dbAvailable = true
-  } catch {
-    _dbAvailable = false
-  }
+  try { await getDB(); _dbAvailable = true } catch { _dbAvailable = false }
   return _dbAvailable
 }
 
-// Todas as funções de save verificam antes de tentar:
+// Toda função de save verifica antes:
 export async function saveMap(entry: MapDBEntry): Promise<void> {
-  if (!await isDBAvailable()) return   // silencioso — app funciona sem salvar
+  if (!await isDBAvailable()) return   // silencioso
   const db = await getDB()
   await db.put('map', entry, 'current')
 }
 ```
 
----
-
 ## Como cada store persiste
 
-Os stores Zustand usam um padrão de **subscriber manual**: após cada mutação relevante, um listener persiste de forma assíncrona no IndexedDB ou síncrona no localStorage. Não se usa o middleware `persist` do Zustand porque:
-
-1. O `persist` middleware salva/carrega o store **inteiro** atomicamente, mas precisamos de controle granular (ex.: persistir `editableCells` debounced e `originalModel` imediato).
-2. O IndexedDB é assíncrono e o middleware `persist` padrão foi projetado para localStorage síncrono.
-3. A lógica de restauração exige controle granular sobre a ordem e o timing de cada store — difícil de encapsular em um rehydrator genérico.
-
-### Padrão de subscriber
+Padrão de **subscriber manual**: após cada mutação relevante, um listener persiste (async no IndexedDB, sync no localStorage). Não se usa o middleware `persist` do Zustand porque ele salva o store inteiro atomicamente e foi feito para localStorage síncrono — aqui é preciso controle granular (timing, ordem, debounce).
 
 ```typescript
-// Exemplo no mapStore.ts
-import { subscribeWithSelector } from 'zustand/middleware'
-import { debounce } from '@/utils/debounce'
-
+// Exemplo: mapStore.ts
 const debouncedSaveEditableCells = debounce(async (cells: number[][]) => {
   await mapPersistence.updateEditableCells(cells)
 }, 300)
 
-// Configurado uma vez na inicialização do store:
 useMapStore.subscribe(
   (state) => state.editableMap,
-  (editableMap) => {
-    if (editableMap !== null) {
-      debouncedSaveEditableCells(editableMap)
-    }
-  }
+  (editableMap) => { if (editableMap !== null) debouncedSaveEditableCells(editableMap) }
 )
 ```
 
@@ -455,37 +192,33 @@ useMapStore.subscribe(
 
 | Store | Dado | Mecanismo | Timing |
 |-------|------|-----------|--------|
-| `useMapStore` | `originalModel` + `csvBlob` | IndexedDB | Imediato após `loadMap()` bem-sucedido |
-| `useMapStore` | `editableCells` | IndexedDB | Debounced 300ms após `updateCell` ou `applyTuningOutput` |
-| `useLogStore` | `model` + `csvBlob` por log | IndexedDB | Imediato após `addLog()` bem-sucedido |
-| `useLogStore` | ordem e `enabled` | localStorage | Imediato após `reorder` ou `toggleLog` |
+| `useMapStore` | `originalModel` + `csvBlob` | IndexedDB | Imediato após `loadMap()` |
+| `useMapStore` | `editableCells` | IndexedDB | Debounced 300ms após `updateCell`/`applyTuningOutput` |
+| `useLogStore` | `model` + `csvBlob` | IndexedDB | Imediato após `addLog()` |
+| `useLogStore` | ordem + `enabled` | localStorage | Imediato após `reorder`/`toggleLog` |
 | `useTuningStore` | `config` | localStorage | Imediato após `updateConfig` |
 | `useTuningStore` | `selectedEngineId` | localStorage | Imediato após `setEngine` |
-| `useTuningStore` | `lastOutput` | IndexedDB | Imediato após `runTuning` bem-sucedido |
+| `useTuningStore` | `lastOutput` | IndexedDB | Imediato após `runTuning` |
 | `useTimeStore` | `cursor_ms`, `selection`, `sparklineSensor` | localStorage | Imediato após cada mudança |
-| `useUIStore` | `UIState` inteiro | localStorage | Imediato após qualquer mudança |
-
----
+| `useUIStore` | `UIState` | localStorage | Imediato após qualquer mudança |
 
 ## Invalidação de estado
 
-| Evento | O que deve ser limpo | Mecanismo |
-|--------|---------------------|-----------|
-| Usuário substitui mapa | `lastOutput` (IndexedDB), `editableCells` reseta para `originalModel.cells` | `mapStore.loadMap()` chama `tuningStore.clearOutput()` |
-| Usuário remove um log | `lastOutput` (IndexedDB + store) | `logStore.removeLog()` chama `tuningStore.clearOutput()` |
-| Usuário desativa um log | `lastOutput` (IndexedDB + store) | `logStore.toggleLog()` chama `tuningStore.clearOutput()` se log era ativo |
-| Usuário altera `TuningConfig` | `configDirty = true` (não apaga output, apenas marca como desatualizado) | `tuningStore.updateConfig()` |
-| `mapStore.clear()` | Tudo: IndexedDB `map`, `tuning-output`; localStorage entries | Chamada explícita (não exposta na UI diretamente) |
-
----
+| Evento | O que é limpo | Mecanismo |
+|--------|---------------|-----------|
+| Substituir mapa | `lastOutput`; `editableCells` reseta para `originalModel.cells` | `mapStore.loadMap()` → `tuningStore.clearOutput()` |
+| Remover log | `lastOutput` | `logStore.removeLog()` → `tuningStore.clearOutput()` |
+| Desativar log | `lastOutput` | `logStore.toggleLog()` → `clearOutput()` se log era ativo |
+| Alterar `TuningConfig` | `configDirty = true` (não apaga output, só marca desatualizado) | `tuningStore.updateConfig()` |
+| `mapStore.clear()` | Tudo: IndexedDB `map`+`tuning-output`, localStorage | Chamada explícita |
 
 ## Localização dos arquivos
 
 | Arquivo | Responsabilidade |
-|---------|-----------------|
-| `src/persistence/db.ts` | Inicialização do IndexedDB, schema, fallback de disponibilidade |
-| `src/persistence/mapPersistence.ts` | CRUD do object store `map` |
-| `src/persistence/logPersistence.ts` | CRUD do object store `logs` |
-| `src/persistence/tuningPersistence.ts` | CRUD do object store `tuning-output` |
-| `src/persistence/localStorage.ts` | Utilitários `lsGet`/`lsSet`/`lsClear` com tratamento de erro |
-| `src/persistence/sessionRestorer.ts` | Orquestra a restauração completa na inicialização |
+|---------|------------------|
+| `persistence/db.ts` | Init IndexedDB, schema, fallback |
+| `persistence/mapPersistence.ts` | CRUD `map` |
+| `persistence/logPersistence.ts` | CRUD `logs` |
+| `persistence/tuningPersistence.ts` | CRUD `tuning-output` |
+| `persistence/localStorage.ts` | `lsGet`/`lsSet`/`lsClear` |
+| `persistence/sessionRestorer.ts` | Orquestra a restauração |

@@ -1,71 +1,45 @@
 # Master Injection Online Tools
 
-Aplicação web de auto-tuning de mapas de ECU MasterInjection. O usuário importa o mapa atual e datalogs de estrada; a aplicação analisa desvios de lambda e sugere correções no mapa de combustível (VE).
+App web de auto-tuning de mapas de ECU MasterInjection: importa mapa + datalogs → analisa desvios de lambda → sugere correções no mapa VE.
 
-Specs completas em `specs/`. Leia `specs/overview.md` antes de qualquer coisa.
+Leia `specs/overview.md` antes de qualquer coisa.
 
 ## Subprojetos
 
-| Pasta | Stack | CLAUDE.md |
-|-------|-------|-----------|
+| Pasta | Stack | Docs |
+|-------|-------|------|
 | `backend/` | Python 3.12 + FastAPI + NumPy/SciPy | [backend/CLAUDE.md](backend/CLAUDE.md) |
 | `frontend/` | React 18 + TypeScript + Vite + Tailwind + Zustand | [frontend/CLAUDE.md](frontend/CLAUDE.md) |
 
-## Rodar localmente
-
 ```bash
-# Backend (porta 8000)
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-
-# Frontend (porta 5173)
-cd frontend
-npm install
-npm run dev
-```
-
-## Docker (produção)
-
-```bash
-docker compose up --build
-# Backend: http://localhost:8000
-# Frontend: http://localhost:80
-```
-
-Para apontar o frontend para uma URL de API diferente:
-```bash
-docker compose build --build-arg VITE_API_URL=https://api.exemplo.com frontend
+# Backend (8000)
+cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload
+# Frontend (5173)
+cd frontend && npm install && npm run dev
 ```
 
 ## Variáveis de ambiente
 
 | Variável | Padrão | Onde |
 |----------|--------|------|
-| `MIOT_CACHE_DIR` | `/tmp/miot_datalogs` | Backend — diretório de cache dos datalogs |
-| `VITE_API_URL` | `http://localhost:8000` | Frontend — URL base da API (build-time) |
+| `MIOT_CACHE_DIR` | `/tmp/miot_datalogs` | Backend — cache de datalogs |
+| `VITE_API_URL` | `http://localhost:8000` | Frontend — **build-time** |
 
-## Decisões arquiteturais importantes
+## Decisões arquiteturais
 
-- **O backend nunca armazena o mapa.** O mapa é enviado inline em cada `POST /api/tuning/run`. O frontend é o dono do mapa.
-- **Datalogs são cacheados por SHA-1.** TTL de 1h; o frontend sobe o log apenas quando o tuning for executado (`ensureLogsOnBackend`), não no carregamento.
-- **Parsing do mapa é client-side.** Apenas o frontend lê e escreve o CSV da MasterInjection. O backend nunca recebe o arquivo do mapa.
-- **Parsing do datalog é também client-side** (browser), mas o backend reparseia ao receber o upload para construir o `DatalogModel` persistido em disco.
+- **Backend nunca armazena o mapa.** Enviado inline em `POST /api/tuning/run`. Frontend é o dono.
+- **Datalogs cacheados por SHA-1** (TTL 1h). Upload ocorre em `ensureLogsOnBackend()`, não no carregamento.
+- **Parsing é sempre client-side.** `parseMapClient` e `parseDatalogClient` rodam no browser. Backend reparseia o datalog ao receber o upload para construir o `DatalogModel`.
 
-## Estrutura de specs
+## Specs
 
 ```
 specs/
-├── overview.md                    # Visão geral e escopo
-├── master/
-│   ├── map.md                     # Formato CSV da MasterInjection (#I20/#I21/#Fnn)
-│   └── datalog.md                 # Formato CSV de datalog, colunas e conversões raw→real
-├── features/
-│   ├── tuning-engine.md           # Pipeline de 10 etapas, fórmulas, contratos
-│   └── tuning/
-│       ├── ve.md                  # Aba VE: layout, edição, atalhos de teclado
-│       └── config.md              # Modal de configuração de tuning
-└── architecture/
-    ├── backend/backend.md         # API REST, engines, DiskStore, SOLID
-    └── frontend/frontend.md       # Stores, persistência, componentes
+├── overview.md                 # Visão geral e escopo
+├── master/map.md               # Formato CSV (#I20/#I21/#Fnn)
+├── master/datalog.md           # Colunas, conversões raw→real
+├── features/tuning-engine.md   # Pipeline 10 etapas
+├── features/tuning/ve.md       # Aba VE, atalhos de teclado
+├── features/datalog/           # Tela Datalog (overview + abas)
+└── architecture/frontend/      # Stores, persistência, componentes
 ```
