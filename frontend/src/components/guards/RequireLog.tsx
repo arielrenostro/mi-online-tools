@@ -12,6 +12,6 @@ export function RequireLog({ children }: Props) {
   const activeLogs = useLogStore((s) => s.logs.filter((l) => l.enabled))
 
   if (isRestoring) return <SessionRestoringSpinner />
-  if (activeLogs.length === 0) return <Navigate to="/" replace />
+  if (activeLogs.length === 0) return <Navigate to="/datalog/logs" replace />
   return <>{children}</>
 }

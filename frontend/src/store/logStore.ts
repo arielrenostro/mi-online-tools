@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import type { LogEntry, DatalogModel } from '@/types/datalog'
+import type { LogEntry, DatalogModel, DatalogRow } from '@/types/datalog'
 import { parseDatalogClient }    from '@/parsers/datalogParser'
 import { uploadDatalog }         from '@/api/datalog'
 import { computeHash }           from '@/api/client'
@@ -17,11 +17,25 @@ interface LogActions {
   addLog(file: File): Promise<void>
   removeLog(hash: string): Promise<void>
   toggleLog(hash: string): void
+  reorder(orderedHashes: string[]): void
   ensureLogsOnBackend(hashes: string[]): Promise<void>
   hydrate(entries: LogEntry[]): void
 }
 
 export const selectActiveLogs    = (s: LogState) => s.logs.filter(l => l.enabled)
+
+export const selectAllRows = (s: LogState): DatalogRow[] => {
+  const active = s.logs.filter(l => l.enabled)
+  let offset = 0
+  const result: DatalogRow[] = []
+  for (const log of active) {
+    for (const row of log.model.rows) {
+      result.push({ ...row, timestamp_ms: row.timestamp_ms + offset })
+    }
+    offset += log.duration_ms
+  }
+  return result
+}
 export const selectTotalDuration = (s: LogState) => s.logs.filter(l => l.enabled).reduce((a, l) => a + l.duration_ms, 0)
 export const selectAllSignals    = (s: LogState): string[] => {
   const active = s.logs.filter(l => l.enabled)
@@ -88,6 +102,19 @@ export const useLogStore = create<LogState & LogActions>()(
       import('./tuningStore').then(m => m.useTuningStore.getState().clearOutput())
       const newTotal = nowActive.reduce((a, l) => a + l.duration_ms, 0)
       useTimeStore.getState().onTotalDurationChanged(newTotal)
+    },
+
+    reorder(orderedHashes) {
+      const { logs } = get()
+      const mapped = new Map(logs.map(l => [l.hash, l]))
+      const reordered = orderedHashes
+        .map(h => mapped.get(h))
+        .filter((l): l is LogEntry => l !== undefined)
+      const inOrdered = new Set(orderedHashes)
+      const remaining = logs.filter(l => !inOrdered.has(l.hash))
+      const newLogs = [...reordered, ...remaining]
+      set({ logs: newLogs })
+      persistOrder(newLogs)
     },
 
     async ensureLogsOnBackend(hashes) {

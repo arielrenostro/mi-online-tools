@@ -10,6 +10,8 @@ export async function restoreSession(): Promise<void> {
     restoreMap(),
     restoreLogs(),
     restoreTuning(),
+    restoreUI(),
+    restoreTime(),
   ])
   const { useSessionStore } = await import('@/store/sessionStore')
   useSessionStore.getState().setRestoringDone()
@@ -62,6 +64,22 @@ async function restoreTuning(): Promise<void> {
   let output
   try { output = await tuningPersistence.loadTuningOutput() } catch { return }
   if (output) useTuningStore.getState().hydrateOutput(output)
+}
+
+async function restoreUI(): Promise<void> {
+  const { useUIStore } = await import('@/store/uiStore')
+  const saved = lsGet<any>('miot:ui')
+  if (saved) useUIStore.getState().hydrate(saved)
+}
+
+async function restoreTime(): Promise<void> {
+  const { useTimeStore } = await import('@/store/timeStore')
+  const saved = lsGet<any>('miot:time')
+  if (saved) useTimeStore.getState().hydrate({
+    cursor_ms:       saved.cursor_ms ?? null,
+    selection:       saved.selection ?? null,
+    sparklineSensor: saved.sparklineSensor ?? 'RPM',
+  })
 }
 
 function sortByOrder<T extends { hash: string }>(items: T[], order: string[]): T[] {

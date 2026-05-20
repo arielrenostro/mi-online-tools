@@ -26,6 +26,7 @@ const initialState: UIState = {
     panelId: INITIAL_PANEL_ID,
     signals: ['RPM'],
   },
+  chartsHeight:         400,    // altura inicial da área de gráficos em pixels
 }
 ```
 
@@ -38,6 +39,7 @@ const initialState: UIState = {
 | `datalogTab` | `DatalogTab` | `'dashboard'` | Aba ativa no Datalog (espelho do React Router — para persistência) |
 | `columnVisibility` | `Record<string, boolean>` | `{}` | Colunas visíveis na aba Dados; ausência = visível |
 | `chartLayout` | `ChartLayout` | painel único com RPM | Árvore de layout dos painéis de gráfico |
+| `chartsHeight` | `number` | `400` | Altura em pixels da área de gráficos na aba Gráficos; ajustável via drag |
 
 ---
 
@@ -56,6 +58,10 @@ interface UIActions {
   addChartPanel(parentId: string, direction: 'horizontal' | 'vertical'): void
   removeChartPanel(panelId: string): void
   updatePanelSignals(panelId: string, signals: string[]): void
+
+  /** Atualiza a altura da área de gráficos. Chamado pelo ResizeHandle na ChartsTab.
+   *  Valor é clampado entre 200 e 1200 no componente. Persiste em localStorage. */
+  setChartsHeight(h: number): void
 
   /** Usado pelo sessionRestorer para restaurar o estado sem side effects. */
   hydrate(state: Partial<UIState>): void
@@ -418,7 +424,8 @@ Todo o `UIState` é serializado como JSON e salvo em uma única chave do localSt
       { "type": "panel", "panelId": "abc-123", "signals": ["RPM", "MAP"] },
       { "type": "panel", "panelId": "def-456", "signals": ["Lambda 1"] }
     ]
-  }
+  },
+  "chartsHeight": 600
 }
 ```
 

@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
+import { TimeRail } from '@/components/TimeRail'
 
 function TabLink({ to, label }: { to: string; label: string }) {
   return (
@@ -19,37 +20,15 @@ export function DatalogPage() {
   return (
     <div className="flex flex-col h-full">
       <nav className="flex gap-1 border-b border-gray-800 px-4 pt-2 flex-shrink-0">
+        <TabLink to="logs" label="Logs" />
         <TabLink to="dashboard" label="Dashboard" />
         <TabLink to="charts" label="Gráficos" />
         <TabLink to="data" label="Dados" />
       </nav>
-      <div className="flex-1 overflow-auto">
+      <TimeRail />
+      <div className="flex-1 overflow-auto min-h-0">
         <Outlet />
       </div>
-    </div>
-  )
-}
-
-export function DashboardTab() {
-  return (
-    <div className="flex items-center justify-center h-64 text-gray-600 text-sm">
-      Dashboard — Em desenvolvimento
-    </div>
-  )
-}
-
-export function ChartsTab() {
-  return (
-    <div className="flex items-center justify-center h-64 text-gray-600 text-sm">
-      Gráficos — Em desenvolvimento
-    </div>
-  )
-}
-
-export function DataTab() {
-  return (
-    <div className="flex items-center justify-center h-64 text-gray-600 text-sm">
-      Dados brutos — Em desenvolvimento
     </div>
   )
 }

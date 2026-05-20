@@ -2,12 +2,16 @@ import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { RootLayout } from '@/pages/RootLayout'
 import HomePage from '@/pages/HomePage'
 import TuningPage from '@/pages/TuningPage'
-import { DatalogPage, DashboardTab, ChartsTab, DataTab } from '@/pages/DatalogPage'
+import { DatalogPage } from '@/pages/DatalogPage'
+import { DashboardTab } from '@/features/datalog/DashboardTab'
+import { ChartsTab } from '@/features/datalog/ChartsTab'
+import { DataTab } from '@/features/datalog/DataTab'
 import { RequireMap } from '@/components/guards/RequireMap'
 import { RequireLog } from '@/components/guards/RequireLog'
 import { VETab } from '@/features/tuning/ve/VETab'
 import { IgnitionTab } from '@/features/tuning/ignition/IgnitionTab'
 import { LambdaTab } from '@/features/tuning/lambda/LambdaTab'
+import { LogsTab } from '@/features/datalog/LogsTab'
 
 const router = createBrowserRouter([
   {
@@ -29,12 +33,13 @@ const router = createBrowserRouter([
 
       {
         path: 'datalog',
-        element: <RequireLog><DatalogPage /></RequireLog>,
+        element: <DatalogPage />,
         children: [
-          { index: true, element: <Navigate to="dashboard" replace /> },
-          { path: 'dashboard', element: <DashboardTab /> },
-          { path: 'charts',    element: <ChartsTab /> },
-          { path: 'data',      element: <DataTab /> },
+          { index: true, element: <Navigate to="logs" replace /> },
+          { path: 'logs',      element: <LogsTab /> },
+          { path: 'dashboard', element: <RequireLog><DashboardTab /></RequireLog> },
+          { path: 'charts',    element: <RequireLog><ChartsTab /></RequireLog> },
+          { path: 'data',      element: <RequireLog><DataTab /></RequireLog> },
         ],
       },
     ],

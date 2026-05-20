@@ -347,89 +347,68 @@ function buildPanelOptions(
 
 ---
 
-## Sincronização de Cursor
+## Sincronização de Cursor (Hover)
 
-A sincronização do cursor entre painéis usa dois mecanismos complementares:
+A sincronização de hover entre painéis usa um mecanismo de container para garantir confiabilidade mesmo ao mover o mouse rapidamente pelo gap entre painéis.
 
-### 1. ECharts `connect` (tooltip e axisPointer)
+### `ChartSyncContext` — registro central de instâncias
 
-O `echarts.connect(groupId)` faz com que o axisPointer (linha vertical de hover) se mova em todos os painéis ao mesmo tempo quando o mouse está em qualquer um deles. Isso é gerenciado automaticamente pelo ECharts sem código adicional, desde que todos os gráficos pertençam ao mesmo grupo.
-
-### 2. `markLine` controlado pelo `cursor_ms` do TimeStore
-
-A markLine vermelha (cursor do TimeRail) é renderizada em todos os painéis via a opção `markLine` da série fantasma `__cursor__`. Quando `cursor_ms` muda (vindo do TimeRail ou do hover em qualquer painel), todos os painéis atualizam sua markLine.
+O `SyncedChart` mantém um `Map<panelId, EChartsInstance>` via React Context. Cada `PanelView` registra sua instância ECharts ao montar e desregistra ao desmontar:
 
 ```typescript
-// Atualização parcial da option para apenas a markLine (evita re-render completo)
-function buildMarkLineOption(cursor_ms: number | null): EChartsOption {
-  return {
-    series: [{
-      name: '__cursor__',
-      markLine: cursor_ms !== null ? {
-        data: [{ xAxis: cursor_ms }],
-      } : { data: [] },
-    }],
-  }
-}
-
-// No useEffect do painel:
-useEffect(() => {
-  chartRef.current?.setOption(buildMarkLineOption(cursor_ms), {
-    replaceMerge: ['series'],
-  })
-}, [cursor_ms])
+const ChartSyncContext = createContext<{
+  registerChart:   (id: string, inst: echarts.ECharts) => void
+  unregisterChart: (id: string) => void
+  instancesRef:    RefObject<Map<string, echarts.ECharts>>
+} | null>(null)
 ```
 
-### Fluxo completo de sincronização
+### Container `onPointerMove` — broadcast ativo
 
+O container raiz do `SyncedChart` captura `onPointerMove` e `onPointerLeave`:
+
+```typescript
+// onPointerMove:
+// 1. Itera sobre instâncias para encontrar qual está sob o ponteiro
+// 2. Converte posição px → ms via inst.convertFromPixel({ xAxisIndex: 0 }, [x, 0])
+// 3. Para cada outra instância: converte ms → px via inst.convertToPixel(...)
+//    e dispara inst.dispatchAction({ type: 'showTip', x, y })
+
+// onPointerLeave (mouse saiu da área inteira de charts):
+// inst.dispatchAction({ type: 'hideTip' }) para todas as instâncias
 ```
-Usuário move mouse sobre Painel A
-         │
-         ▼
-  onMouseMove do ECharts
-         │
-         ▼
-  onCursorChange(timestamp_ms)
-         │
-         ▼
-  useTimeStore.setCursor(ms)
-         │
-         ├─── TimeRail: cursor_ms → CursorLine se move
-         │
-         ├─── Painel A: markLine atualiza (via useEffect cursor_ms)
-         ├─── Painel B: markLine atualiza
-         └─── Painel C: markLine atualiza
-```
+
+Isso elimina o flash causado pelo `mouseleave`/`mouseenter` individual ao transitar entre painéis.
+
+### `echarts.connect(GROUP_ID)` — usado apenas para zoom
+
+O `echarts.connect()` continua sendo usado para sincronizar `dataZoom` entre painéis automaticamente. A sincronização de tooltip é feita pelo container handler acima.
+
+### `markLine` controlado pelo `cursor_ms` do TimeStore
+
+A markLine vermelha (cursor do TimeRail) é renderizada em todos os painéis via `markLine` na primeira série. Quando `cursor_ms` muda, todos os painéis atualizam sua markLine via `useEffect`.
 
 ---
 
-## Sincronização de Zoom
+## Sincronização de Zoom com o TimeRail
 
-O zoom via scroll e pan é sincronizado automaticamente pelo ECharts `connect` + `dataZoom`. Quando o usuário faz zoom em um painel, o `dataZoom` propaga para todos os outros do mesmo grupo.
-
-**Importante:** o zoom sincronizado é puramente visual — ele NÃO chama `onSelectionChange` no `useTimeStore`. A seleção do TimeRail é uma operação explícita do usuário, não um zoom de visualização.
+Quando o usuário faz zoom (scroll) em qualquer painel, o evento `datazoom` do ECharts é capturado e propagado ao `useTimeStore`:
 
 ```typescript
-// O range do dataZoom é inicializado com timeRange mas pode ser modificado pelo usuário
-// O componente pai NÃO precisa ouvir mudanças de dataZoom — é estado local do ECharts
-dataZoom: [{
-  type: 'inside',
-  startValue: timeRange.start_ms,
-  endValue:   timeRange.end_ms,
-}]
+// No onChartReady do primeiro painel registrado:
+inst.on('datazoom', (params) => {
+  const start = params.batch?.[0]?.startValue ?? params.startValue
+  const end   = params.batch?.[0]?.endValue   ?? params.endValue
+  if (start == null || end == null) { clearChartZoom(); return }
+  // Se o zoom abrange quase 100% dos dados → limpa (zoom padrão)
+  if ((end - start) / totalRange > 0.99) { clearChartZoom(); return }
+  setChartZoom(start, end)
+})
 ```
 
-Quando `timeRange` muda (ex.: usuário altera a seleção no TimeRail), o painel reseta o dataZoom:
+O `timeStore.chartZoom` atualizado é consumido pelo `TimeRail` para exibir o **viewport band** — overlay escuro nas regiões fora do zoom atual.
 
-```typescript
-useEffect(() => {
-  chartRef.current?.dispatchAction({
-    type: 'dataZoom',
-    startValue: timeRange.start_ms,
-    endValue: timeRange.end_ms,
-  })
-}, [timeRange])
-```
+O zoom é puramente visual — **não** modifica `timeStore.selection`.
 
 ---
 
@@ -615,31 +594,23 @@ O usuário não configura `yAxis` diretamente — o pai define isso a partir das
 
 ## Eixo X Compartilhado
 
-O label do eixo X é exibido apenas no **último painel** (painel mais abaixo), pois todos compartilham o mesmo range. Nos demais painéis, os ticks e grid ainda existem, mas o label textual é ocultado:
+O label do eixo X é exibido em todos os painéis. O formato é `MM:SS` (zero-padded, sem decimais ou milissegundos), ou `HH:MM:SS` para datalogs com mais de 1 hora:
 
 ```typescript
-// No buildPanelOptions:
-xAxis: {
-  axisLabel: showXAxisLabels ? {
-    formatter: (val: number) => formatAxisTime(val),
-    color: '#6b7280',
-    fontSize: 10,
-  } : {
-    show: false,  // ticks ocultos, mas grid ainda renderizado
-  },
+function fmtMs(ms: number): string {
+  const totalSec = Math.floor(ms / 1000)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  if (h > 0) {
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+  }
+  return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
 }
-
-// showXAxisLabels = (panelIndex === panels.length - 1)
+// Ex: 80000ms → "01:20" | 3725000ms → "01:02:05"
 ```
 
-```typescript
-// timeRailUtils.ts — compartilhado com TimeRail
-export function formatAxisTime(ms: number): string {
-  const minutes = Math.floor(ms / 60000)
-  const seconds = Math.floor((ms % 60000) / 1000)
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-}
-```
+O mesmo formatter é usado no tooltip (`t = 01:20`).
 
 ---
 
@@ -676,70 +647,55 @@ chartRef.current?.setOption({
 ## Integração com `ChartsTab` e `useUIStore`
 
 ```tsx
-// features/datalog/charts/ChartsTab.tsx
+// features/datalog/ChartsTab.tsx
 import { SyncedChart } from '@/components/SyncedChart'
-import { useTimeStore }  from '@/store/timeStore'
-import { useUIStore }    from '@/store/uiStore'
-import { useLogStore, selectAllRows, selectAllSignals } from '@/store/logStore'
+import { useUIStore }  from '@/store/uiStore'
+import { useRef }      from 'react'
 
-function ChartsTab() {
-  const cursor_ms    = useTimeStore(s => s.cursor_ms)
-  const selection    = useTimeStore(s => s.selection)
-  const setCursor    = useTimeStore(s => s.setCursor)
-  const chartLayout  = useUIStore(s => s.chartLayout)
-  const updateLayout = useUIStore(s => s.setChartLayout)
-  const allRows      = useLogStore(selectAllRows)
-  const allSignals   = useLogStore(selectAllSignals)
+// ResizeHandle — alça de drag vertical no rodapé da área de gráficos
+function ResizeHandle({ height, onResize }: { height: number; onResize: (h: number) => void }) {
+  const startRef = useRef<{ y: number; h: number } | null>(null)
 
-  // Converte o ChartLayout em flat list de panels para o SyncedChart
-  const panels = useMemo<ChartPanel[]>(() => {
-    return flattenLayout(chartLayout).map(panel => ({
-      panelId: panel.panelId,
-      height: 200,
-      signals: panel.signals.map(sigName => {
-        const data = extractSignalData(allRows, sigName)
-        return {
-          name: sigName,
-          unit: getSignalUnit(sigName),
-          data,
-          color: getSignalColor(sigName),
-        }
-      }),
-    }))
-  }, [chartLayout, allRows])
-
-  // Range temporal: seleção do TimeRail ou range completo
-  const timeRange = useMemo(() => {
-    if (selection) return selection
-    const totalDuration = allRows[allRows.length - 1]?.timestamp_ms ?? 0
-    return { start_ms: 0, end_ms: totalDuration }
-  }, [selection, allRows])
+  function onMouseDown(e: React.MouseEvent) {
+    e.preventDefault()
+    startRef.current = { y: e.clientY, h: height }
+    function onMove(ev: MouseEvent) {
+      if (!startRef.current) return
+      const newH = Math.max(200, Math.min(1200, startRef.current.h + ev.clientY - startRef.current.y))
+      onResize(newH)
+    }
+    function onUp() {
+      startRef.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
 
   return (
-    <div className="h-full overflow-auto">
-      {panels.length === 0 ? (
-        <EmptyChartsPlaceholder onAdd={() => updateLayout(createInitialLayout())} />
-      ) : (
-        <SyncedChart
-          panels={panels}
-          cursor_ms={cursor_ms}
-          timeRange={timeRange}
-          onCursorChange={setCursor}
-          onPanelSignalsChange={(panelId, signals) => {
-            updateLayout(updatePanelSignals(chartLayout, panelId, signals))
-          }}
-          onAddPanel={(afterPanelId, direction) => {
-            updateLayout(splitPanel(chartLayout, afterPanelId, direction))
-          }}
-          onRemovePanel={panelId => {
-            updateLayout(removePanel(chartLayout, panelId))
-          }}
-        />
-      )}
+    <div className="flex-shrink-0 h-3 cursor-ns-resize ..." onMouseDown={onMouseDown}>
+      <div className="w-10 h-0.5 rounded-full bg-gray-700 group-hover:bg-gray-400" />
+    </div>
+  )
+}
+
+function ChartsTab() {
+  const chartsHeight    = useUIStore(s => s.chartsHeight)
+  const setChartsHeight = useUIStore(s => s.setChartsHeight)
+
+  return (
+    <div className="flex flex-col" style={{ height: chartsHeight }}>
+      <div className="flex-1 min-h-0 p-2">
+        <SyncedChart />
+      </div>
+      <ResizeHandle height={chartsHeight} onResize={setChartsHeight} />
     </div>
   )
 }
 ```
+
+O `DatalogPage` tem `overflow-auto` no container do Outlet — quando `chartsHeight` excede o espaço disponível, a página scrolla automaticamente.
 
 ---
 

@@ -81,6 +81,7 @@ O eixo X é **sempre sincronizado** entre todos os painéis:
 - Zoom via scroll em qualquer painel aplica o mesmo zoom em todos
 - Pan (arrastar) em qualquer painel arrasta todos simultaneamente
 - O range inicial do eixo X corresponde à seleção do TimeRail (se houver), ou ao intervalo completo dos logs
+- **Quando o usuário faz zoom, o TimeRail exibe um viewport band** — overlay escuro nas regiões fora do zoom — indicando visualmente qual trecho da timeline está visível
 
 ### Cursor do TimeRail
 
@@ -92,7 +93,7 @@ Ao mover o mouse sobre **qualquer painel**, todos os painéis exibem simultaneam
 
 ```
 ┌─────────────────────┐
-│  t = 04:23.512      │
+│  t = 04:23          │
 │  RPM:    3.241      │
 │  MAP:    98 kPa     │
 └─────────────────────┘
@@ -100,7 +101,7 @@ Ao mover o mouse sobre **qualquer painel**, todos os painéis exibem simultaneam
 
 ```
 ┌─────────────────────┐
-│  t = 04:23.512      │
+│  t = 04:23          │
 │  Lambda 1:   0.998  │
 │  λ Target:   1.000  │
 └─────────────────────┘
@@ -108,9 +109,27 @@ Ao mover o mouse sobre **qualquer painel**, todos os painéis exibem simultaneam
 
 O tooltip de cada painel exibe apenas os sinais daquele painel. O tempo (`t`) é sempre o mesmo em todos.
 
+A sincronização usa um handler `onPointerMove` no container pai de todos os painéis — isso garante que o tooltip persista mesmo ao mover o mouse rapidamente pelo gap entre painéis.
+
+### Formato do eixo X
+
+Os labels do eixo X seguem o formato `MM:SS` (ex: `04:23`) ou `HH:MM:SS` para logs com mais de 1 hora. Zero-padded, sem decimais.
+
+---
+
+## Altura dos gráficos
+
+A área de gráficos tem uma **alça de redimensionamento** no rodapé. O usuário pode arrastar verticalmente para aumentar ou diminuir a altura total da área de gráficos.
+
+- Altura mínima: 200px
+- Altura máxima: 1200px
+- Valor padrão: 400px
+- A altura é persistida em `localStorage` via `uiStore.chartsHeight`
+
 ---
 
 ## Persistência do layout
 
 - O layout de painéis (divisões e sinais configurados) é salvo em `localStorage`
-- É restaurado ao retornar à aba Gráficos dentro da mesma sessão
+- A altura da área de gráficos é salva em `localStorage`
+- Ambos são restaurados ao retornar à aba Gráficos

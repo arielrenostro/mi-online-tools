@@ -25,16 +25,22 @@ interface RawUploadResponse {
 
 function mapRow(r: RawDatalogRow): DatalogRow {
   return {
-    timestamp_ms:   r.timestamp_ms,
-    rpm:            r.rpm,
-    mapKpa:         r.map_kpa,
-    lambda1:        r.lambda1,
-    lambdaCorrecao: r.lambda_correcao,
-    lambdaTarget:   r.lambda_target,
-    veValueRaw:     r.ve_value_raw,
-    clt:            r.clt,
-    lambdaLoop:     r.lambda_loop,
-    pedal:          r.pedal,
+    timestamp_ms:    r.timestamp_ms,
+    'RPM':           r.rpm,
+    'MAP':           r.map_kpa,
+    'Boost':         NaN,
+    'Lambda 1':      r.lambda1,
+    'Lambda Target': r.lambda_target,
+    'Lambda Corr':   r.lambda_correcao,
+    'Lambda Loop':   r.lambda_loop,
+    'VE':            r.ve_value_raw / 10,
+    'CLT':           r.clt,
+    'IAT':           NaN,
+    'Inj. Utiliz.':  NaN,
+    'Ign. Adv.':     NaN,
+    'KM/H':          NaN,
+    'Turbo Target':  NaN,
+    'Pedal':         r.pedal ?? NaN,
   }
 }
 

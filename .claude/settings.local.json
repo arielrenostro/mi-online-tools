@@ -9,7 +9,9 @@
       "Bash(wsl bash *)",
       "Bash(Get-ChildItem -Path \"D:\\\\Users\\\\ariel\\\\Documents\\\\Projetos\\\\mi-fuel-tuner\\\\frontend\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
-      "Bash(Sort-Object)"
+      "Bash(Sort-Object)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Users\\\\ariel\\\\Documents\\\\Projetos\\\\mi-fuel-tuner\\\\frontend\\\\src\" -Recurse -File)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Users\\\\ariel\\\\Documents\\\\Projetos\\\\mi-fuel-tuner\\\\specs\" -Recurse -File)"
     ]
   }
 }

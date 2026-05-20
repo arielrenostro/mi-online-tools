@@ -1,14 +1,6 @@
 export interface DatalogRow {
-  timestamp_ms:   number
-  rpm:            number
-  mapKpa:         number
-  lambda1:        number
-  lambdaCorrecao: number
-  lambdaTarget:   number
-  veValueRaw:     number
-  clt:            number
-  lambdaLoop:     0 | 1
-  pedal:          number | null
+  timestamp_ms: number
+  [signalName: string]: number
 }
 
 export interface DatalogModel {

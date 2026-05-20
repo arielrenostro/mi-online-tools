@@ -104,10 +104,11 @@ export interface TimeRailProps {
 **Empilhamento por z-index (de baixo para cima):**
 1. Fundo escuro do rail (`z-0`)
 2. Sparkline SVG (`z-10`) — translúcida, só visual
-3. Segmentos desabilitados: fundo listrado (`z-15`)
-4. Faixa de seleção azul semi-transparente (`z-20`)
-5. Separadores de log (`z-25`) — linhas verticais pontilhadas
-6. Cursor pontual (`z-30`) — linha + triângulo, arrastável
+3. **Viewport band** (`z-10/11`) — overlay escuro fora do zoom atual dos gráficos + borda azul
+4. Segmentos desabilitados: fundo listrado (`z-15`)
+5. Faixa de seleção azul semi-transparente (`z-20`)
+6. Separadores de log (`z-25`) — linhas verticais pontilhadas
+7. Cursor pontual (`z-30`) — linha + triângulo, arrastável
 
 ---
 
@@ -327,6 +328,31 @@ function SelectionHandle({ side, onDrag }: SelectionHandleProps) {
 - **Clique fora da faixa, fora do cursor**: move o cursor (não cria seleção)
 - **Drag fora da faixa e fora do cursor**: cria nova seleção, substitui a anterior
 - **Drag de handle**: ajusta apenas o limite correspondente
+
+---
+
+## Viewport Band (zoom dos gráficos)
+
+Quando o usuário faz zoom nos gráficos (scroll), o `useTimeStore.chartZoom` é atualizado. O TimeRail exibe um `ViewportBand` que escurece as regiões **fora** da janela de zoom, tornando visualmente óbvio qual trecho da timeline está sendo visualizado nos gráficos.
+
+```tsx
+function ViewportBand({ zoom, total }: { zoom: TimeSelection; total: number }) {
+  const l = msToPct(zoom.start_ms, total)
+  const r = msToPct(zoom.end_ms, total)
+  return (
+    <>
+      {/* Overlay escuro à esquerda do viewport */}
+      <div style={{ left: 0, width: `${l}%` }} className="absolute top-0 bottom-0 z-10 bg-gray-950/65 pointer-events-none" />
+      {/* Overlay escuro à direita do viewport */}
+      <div style={{ left: `${r}%`, right: 0 }} className="absolute top-0 bottom-0 z-10 bg-gray-950/65 pointer-events-none" />
+      {/* Borda lateral da janela de zoom */}
+      <div style={{ left: `${l}%`, width: `${r - l}%` }} className="absolute top-0 bottom-0 z-11 border-x border-blue-400/50 pointer-events-none" />
+    </>
+  )
+}
+```
+
+O `ViewportBand` desaparece automaticamente quando `chartZoom` é `null` (zoom padrão — toda a timeline visível).
 
 ---
 

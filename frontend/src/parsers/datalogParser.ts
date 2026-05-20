@@ -1,8 +1,9 @@
 import type { DatalogModel, DatalogRow } from '@/types/datalog'
 import { computeHash } from '@/api/client'
+import { SIGNAL_DEFS } from '@/signals/signalRegistry'
 
-const REQUIRED = ['Timestamp', 'RPM', 'MAP', 'Lambda 1', 'VE Value', 'CLT', 'Lambda Loop', 'Lambda Target', 'Lambda Corr']
-const SIGNALS  = ['RPM', 'MAP', 'Lambda 1', 'Lambda Target', 'CLT', 'Lambda Corr', 'Lambda Loop']
+const REQUIRED_COLUMNS = SIGNAL_DEFS.map(s => s.column)
+const ALL_SIGNALS      = SIGNAL_DEFS.map(s => s.name)
 
 export async function parseDatalogClient(file: File): Promise<DatalogModel> {
   const [text, hash] = await Promise.all([file.text(), computeHash(file)])
@@ -24,7 +25,7 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
     if (fields[0].trim() === 'Timestamp') {
       colMap = {}
       fields.forEach((f, i) => { colMap[f.trim()] = i })
-      const missing = REQUIRED.filter(c => !(c in colMap))
+      const missing = REQUIRED_COLUMNS.filter(c => !(c in colMap))
       if (missing.length > 0) throw new Error(`Colunas ausentes: ${missing.join(', ')}`)
       continue
     }
@@ -37,49 +38,29 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
     const rawTs = parseInt(g('Timestamp'), 10)
     if (isNaN(rawTs)) continue
 
-    const rpm      = parseFloat(g('RPM'))
-    const mapKpa   = parseFloat(g('MAP'))
-    const l1Raw    = parseFloat(g('Lambda 1'))
-    const veRaw    = parseInt(g('VE Value'), 10)
-    const cltRaw   = parseInt(g('CLT'), 10)
-    const ll       = parseInt(g('Lambda Loop'), 10) as 0 | 1
-    const ltRaw    = parseFloat(g('Lambda Target'))
-    const lcRaw    = parseFloat(g('Lambda Corr'))
+    const row: DatalogRow = { timestamp_ms: 0 }
+    let valid = true
 
-    if ([rpm, mapKpa, l1Raw, veRaw, cltRaw, ll, ltRaw, lcRaw].some(isNaN)) continue
-
-    let pedal: number | null = null
-    if ('ACC %' in colMap) {
-      const accRaw = parseFloat(g('ACC %'))
-      if (!isNaN(accRaw)) pedal = Math.min(100, (accRaw / 990) * 100)
+    for (const sig of SIGNAL_DEFS) {
+      const converted = sig.convert(g(sig.column))
+      if (isNaN(converted)) { valid = false; break }
+      row[sig.name] = converted
     }
 
-    if (firstTs === null) firstTs = rawTs
+    if (!valid) continue
 
-    rows.push({
-      timestamp_ms:   rawTs - firstTs,
-      rpm,
-      mapKpa,
-      lambda1:        l1Raw / 1000,
-      lambdaCorrecao: lcRaw / 1000,
-      lambdaTarget:   ltRaw / 1000,
-      veValueRaw:     veRaw,
-      clt:            cltRaw - 273,
-      lambdaLoop:     ll,
-      pedal,
-    })
+    if (firstTs === null) firstTs = rawTs
+    row.timestamp_ms = rawTs - firstTs
+    rows.push(row)
   }
 
   if (rows.length === 0) throw new Error('Nenhuma linha de dados válida no CSV.')
-
-  const signals = [...SIGNALS]
-  if (rows.some(r => r.pedal !== null)) signals.push('Pedal')
 
   return {
     hash,
     filename,
     rows,
     duration_ms: rows[rows.length - 1].timestamp_ms,
-    signals,
+    signals:     ALL_SIGNALS,
   }
 }

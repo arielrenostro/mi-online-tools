@@ -26,6 +26,11 @@ interface TimeState {
    *  Deve estar presente em todos os logs ativos (interseção — ver logStore.allSignals).
    *  Default: "RPM" (invariavelmente disponível em logs MasterInjection). */
   sparklineSensor: string
+
+  /** Região atualmente visível nos gráficos (resultado do dataZoom do ECharts).
+   *  null = zoom padrão (toda a timeline visível).
+   *  Não persistido no localStorage — é estado volátil de visualização. */
+  chartZoom:       TimeSelection | null
 }
 
 interface TimeActions {
@@ -33,6 +38,13 @@ interface TimeActions {
   setSelection(start: number, end: number): void
   clearSelection(): void
   setSparklineSensor(signal: string): void
+
+  /** Atualiza o viewport de zoom dos gráficos. Chamado pelo SyncedChart ao receber
+   *  o evento datazoom do ECharts. Não persiste no localStorage. */
+  setChartZoom(start: number, end: number): void
+
+  /** Limpa o viewport de zoom (zoom padrão — toda a timeline visível). */
+  clearChartZoom(): void
 
   /** Chamado pelo logStore quando a duração total dos logs ativos muda.
    *  Ajusta cursor e selection para caber no novo range. */
@@ -56,6 +68,7 @@ const initialState: TimeState = {
   cursor_ms:       null,
   selection:       null,
   sparklineSensor: 'RPM',
+  chartZoom:       null,
 }
 ```
 
@@ -244,6 +257,8 @@ O `sparklineSensor` também é persistido pois é uma preferência de visualiza�
   "sparklineSensor": "RPM"
 }
 ```
+
+> `chartZoom` **não é persistido** — é estado volátil de visualização que se perde ao recarregar. O zoom dos gráficos sempre começa na visão completa da timeline.
 
 ---
 
