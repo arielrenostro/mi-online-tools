@@ -53,8 +53,9 @@ backend/
 │   │       │   ├── confidence.py        # Etapa 5: count_score, CV, confidence
 │   │       │   ├── cf_calculator.py     # Etapa 6: fator de correção ponderado
 │   │       │   ├── interpolator.py      # Etapa 7: interpolação 2D (scipy.griddata)
-│   │       │   ├── applicator.py        # Etapas 8+9: aplicação + limites absolutos
-│   │       │   └── postprocessor.py     # Etapa 10: RPM400, MAP baixo, monotonicidade, gradiente
+│   │       │   ├── shape_propagation.py # Etapas 8+9: tendências estruturais + composição cf_final
+│   │       │   ├── applicator.py        # Etapas 10+11: aplicação + limites absolutos
+│   │       │   └── postprocessor.py     # Etapa 12: RPM400, MAP baixo, monotonicidade, gradiente
 │   │       └── schema.py                # JSON Schema da config (para o endpoint de engines)
 │   │
 │   ├── parsers/
@@ -208,7 +209,7 @@ app.dependency_overrides[AbstractEngineRegistry] = lambda: registry
 
 ## Motor implementado: `VELambdaEngine`
 
-O único motor da v1. Implementa o pipeline de 10 etapas definido em [tuning-engine.md](../../features/tuning-engine.md).
+O único motor da v1. Implementa o pipeline de 12 etapas definido em [tuning-engine.md](../../features/tuning-engine.md).
 
 ```python
 # engines/ve_lambda/engine.py
@@ -237,9 +238,10 @@ class VELambdaEngine(TuningEngine):
         agg     = Aggregator(input.config).aggregate(with_ve)
         conf    = Confidence(input.config).compute(agg)
         cf      = CFCalculator(input.config).compute(conf, input.current_map)
-        cf_full = Interpolator(input.map_breakpoints, input.rpm_breakpoints).interpolate(cf)
-        applied = Applicator(input.config).apply(cf_full, input.current_map, agg)
-        result  = Postprocessor(input.config, input.map_breakpoints, input.rpm_breakpoints).run(applied)
+        cf_full  = Interpolator(input.map_breakpoints, input.rpm_breakpoints).interpolate(cf)
+        cf_final = ShapePropagation(input.config, input.map_breakpoints, input.rpm_breakpoints).compose(cf_full, cf, conf)
+        applied  = Applicator(input.config).apply(cf_final, input.current_map, conf)
+        result   = Postprocessor(input.config, input.map_breakpoints, input.rpm_breakpoints).run(applied)
         return result
 ```
 
@@ -297,7 +299,7 @@ Upload e parsing de um CSV de datalog. Suporta cache por hash para evitar re-par
 2. Verifica se `{CACHE_DIR}/{hexdigest}.json` existe no disco
    - **Cache hit:** toca o `mtime` do arquivo (atualiza para agora) e retorna o modelo salvo com `"cached": true` — sem re-parsing do CSV
    - **Cache miss:** parseia o CSV, salva o modelo como `{CACHE_DIR}/{hexdigest}.json` e retorna com `"cached": false`
-3. O `CACHE_DIR` é configurável via variável de ambiente `MFT_CACHE_DIR` (default: `/tmp/mft_datalogs`)
+3. O `CACHE_DIR` é configurável via variável de ambiente `MIOT_CACHE_DIR` (default: `/tmp/miot_datalogs`)
 
 **Response `200`:**
 ```json
@@ -432,7 +434,7 @@ import json
 import os
 from pathlib import Path
 
-CACHE_DIR = Path(os.environ.get("MFT_CACHE_DIR", "/tmp/mft_datalogs"))
+CACHE_DIR = Path(os.environ.get("MIOT_CACHE_DIR", "/tmp/miot_datalogs"))
 
 class DatalogDiskStore:
 

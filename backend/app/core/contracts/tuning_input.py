@@ -49,6 +49,14 @@ class TuningConfig:
     low_map_discount:          float        = 0.025
     max_adjacent_gradient_pct: float        = 20.0
 
+    # Shape propagation (steps 8+9)
+    shape_propagation_enabled: bool         = True
+    shape_rpm_weight:          float        = 0.50
+    shape_map_weight:          float        = 0.30
+    shape_gradient_weight:     float        = 0.20
+    global_shape_weight:       float        = 0.10
+    gradient_min_samples:      int          = 2
+
 
 @dataclass
 class TuningInput:

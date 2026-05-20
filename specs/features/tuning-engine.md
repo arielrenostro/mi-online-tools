@@ -576,6 +576,8 @@ Exemplo:
 130kPa → 1.02
 ```
 
+**Linhas sem dados:** quando uma linha MAP inteira não tem nenhuma célula com amostras, `map_cf[row_i]` é estimado por extrapolação linear usando o gradiente MAP calculado entre as linhas vizinhas mais próximas com dados (ver seção 8.3). Se não houver vizinhos suficientes (`gradient_min_samples < 2`), `map_cf[row_i] = 1.0` (sem correção).
+
 ---
 
 ## 8.3 Gradiente local (slope propagation)
@@ -596,6 +598,17 @@ Gradiente MAP:
 map_gradient =
 (cf2 - cf1) /
 (map2 - map1)
+```
+
+**Agregação quando há mais de dois pontos observados:** o gradiente final é a média ponderada dos gradientes entre pares consecutivos. O peso de cada segmento é o mínimo do `sample_count` dos dois extremos, favorecendo segmentos com mais dados em ambas as pontas:
+
+```python
+gradient = weighted_mean(
+    values=[(cf[i+1] - cf[i]) / (axis[i+1] - axis[i])
+            for i in range(len(observed) - 1)],
+    weights=[min(sample_count[i], sample_count[i+1])
+             for i in range(len(observed) - 1)]
+)
 ```
 
 Exemplo:
@@ -744,28 +757,31 @@ global_shape_weight = 0.10
 
 ### Fórmula final sugerida
 
+Os pesos devem somar 1.0. O componente global (`global_weight = 0.10`) desconta proporcionalmente os demais:
+
 ```python
-cf_final =
-(
-cf_interp^confidence
-*
-cf_structural^(1-confidence)
-*
-cf_global^0.10
+w = 1 - global_weight   # = 0.90
+
+cf_final = (
+    cf_interp      ^ (confidence * w)
+    * cf_structural ^ ((1 - confidence) * w)
+    * cf_global     ^ global_weight
 )
 ```
 
-ou equivalente em blending linear:
+Verificação: `confidence*w + (1-confidence)*w + global_weight = w + 0.10 = 1.00` ✓
+
+Equivalente em blending linear:
 
 ```python
-cf_final =
-1
-+
-confidence*(cf_interp-1)
-+
-shape_weight*(cf_structural-1)
-+
-global_weight*(cf_global-1)
+w = 1 - global_weight   # = 0.90
+
+cf_final = (
+    1
+    + confidence * w          * (cf_interp - 1)
+    + (1 - confidence) * w    * (cf_structural - 1)
+    + global_weight           * (cf_global - 1)
+)
 ```
 
 ---
@@ -805,7 +821,7 @@ new_value = max(100, min(9999, new_value))
 
 ---
 
-## 10. Pós-processamento
+## 12. Pós-processamento
 
 Após a aplicação do fator interpolado, regras específicas do motor e verificações de consistência são aplicadas como ajuste final. Estas regras tratam casos que a interpolação não cobre (coluna de RPM fisicamente impossível, linha de MAP sem dados em nenhum log).
 
@@ -881,7 +897,7 @@ Assim como a monotonicidade, gradientes excessivos são **warnings**, não corre
 
 ---
 
-## 11. Configuração padrão
+## Configuração padrão
 
 ```python
 TuningConfig(
@@ -920,7 +936,7 @@ TuningConfig(
 
 ---
 
-## 12. Iteratividade
+## Iteratividade
 
 O motor é projetado para uso iterativo:
 

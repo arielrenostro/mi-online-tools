@@ -16,7 +16,7 @@ npm run build        # build de produção em dist/
 ```bash
 # Docker (VITE_API_URL é build-time)
 docker build --build-arg VITE_API_URL=http://localhost:8000 -t miot-frontend .
-docker run -p 80:80 mft-frontend
+docker run -p 80:80 miot-frontend
 ```
 
 A URL da API é configurada em build-time via `VITE_API_URL`. Em dev, usa `http://localhost:8000` por padrão (ver `src/api/client.ts`).
@@ -114,7 +114,7 @@ Orquestra o auto-tuning. `runTuning()` valida pré-requisitos → `ensureLogsOnB
 
 ### Persistência
 - **IndexedDB** (via `idb`): mapa original + editável (blob CSV), logs (blob CSV + model), último output de tuning
-- **localStorage**: ordem dos logs (`mft:log-order`), config de tuning (`mft:config`), engine selecionado (`mft:engine-id`)
+- **localStorage**: ordem dos logs (`miot:log-order`), config de tuning (`miot:config`), engine selecionado (`miot:engine-id`)
 - `sessionRestorer.ts` restaura tudo na inicialização — **sem chamadas ao backend**. Logs são re-enviados ao backend na próxima execução de tuning.
 
 ### Dependências circulares entre stores

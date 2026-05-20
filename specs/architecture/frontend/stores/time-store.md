@@ -209,7 +209,7 @@ function getTotalDuration(): number {
 
 function persistTime(state: Partial<TimeState>): void {
   try {
-    lsSet('mft:time', {
+    lsSet('miot:time', {
       cursor_ms:       state.cursor_ms ?? null,
       selection:       state.selection ?? null,
       sparklineSensor: state.sparklineSensor ?? 'RPM',
@@ -235,7 +235,7 @@ Perder a seleção a cada reload forçaria o usuário a repetir a navegação no
 
 O `sparklineSensor` também é persistido pois é uma preferência de visualização do usuário.
 
-**Chave localStorage:** `mft:time`
+**Chave localStorage:** `miot:time`
 
 ```json
 {

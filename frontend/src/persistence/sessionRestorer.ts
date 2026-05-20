@@ -54,7 +54,7 @@ async function restoreTuning(): Promise<void> {
   const { useTuningStore } = await import('@/store/tuningStore')
 
   const config    = lsGet<TuningConfig>('miot:config')
-  const engineId  = lsGet<string>('mft:engine-id')
+  const engineId  = lsGet<string>('miot:engine-id')
 
   if (config)   useTuningStore.getState().hydrateConfig(config)
   if (engineId) useTuningStore.getState().hydrateEngineId(engineId)

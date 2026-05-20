@@ -70,6 +70,17 @@ As configurações são globais e se aplicam a todas as abas de tuning.
 | `smoothing_enabled` | boolean | true | Aplica suavização gaussiana 3×3 em células sem dados usando vizinhos com dados como âncoras |
 | `smoothing_radius` | inteiro | 1 | Raio do kernel de suavização (1 = vizinhos imediatos, 2 = dois saltos, etc.) |
 
+### Propagação estrutural
+
+| Campo | Tipo | Padrão | Descrição |
+|-------|------|--------|-----------|
+| `shape_propagation_enabled` | boolean | true | Ativa as etapas 8+9 do pipeline: extração de tendências estruturais (RPM, MAP, gradiente) e composição do `cf_final` com pesos normalizados. Se desativado, o mapa usa apenas a interpolação 2D local (etapa 7) |
+| `shape_rpm_weight` | float | 0.50 | Peso α da tendência por RPM no fator estrutural: `cf_structural = rpm_cf^α × map_cf^β × gradient_cf^(1−α−β)` |
+| `shape_map_weight` | float | 0.30 | Peso β da tendência por MAP no fator estrutural |
+| `shape_gradient_weight` | float | 0.20 | Peso `(1−α−β)` do gradiente local no fator estrutural. Deve satisfazer `shape_rpm_weight + shape_map_weight + shape_gradient_weight = 1.0` |
+| `global_shape_weight` | float | 0.10 | Peso do fator global (`cf_global`) no `cf_final`. Desconta proporcionalmente os componentes local e estrutural: `w = 1 − global_shape_weight`, garantindo que a soma dos pesos seja 1.0 |
+| `gradient_min_samples` | inteiro | 2 | Número mínimo de pontos observados para computar gradiente em uma linha ou coluna. Abaixo desse valor usa o valor constante observado (1 ponto) ou 1.0 (nenhum ponto) |
+
 ### Extrapolação
 
 | Campo | Tipo | Padrão | Descrição |

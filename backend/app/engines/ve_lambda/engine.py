@@ -14,6 +14,7 @@ from app.engines.ve_lambda.pipeline.aggregator import Aggregator
 from app.engines.ve_lambda.pipeline.confidence import Confidence
 from app.engines.ve_lambda.pipeline.cf_calculator import CFCalculator
 from app.engines.ve_lambda.pipeline.interpolator import Interpolator
+from app.engines.ve_lambda.pipeline.shape_propagation import ShapePropagation
 from app.engines.ve_lambda.pipeline.applicator import Applicator
 from app.engines.ve_lambda.pipeline.postprocessor import Postprocessor
 
@@ -83,8 +84,13 @@ class VELambdaEngine(TuningEngine):
 
         cf_full = Interpolator(input.map_breakpoints, input.rpm_breakpoints).interpolate(cf_sparse)
 
-        # Steps 8+9: Apply + limits
-        applied = Applicator(cfg).apply(cf_full, input.current_map, stats)
+        # Steps 8+9: Shape propagation — structural tendencies + cf_final composition
+        cf_final = ShapePropagation(
+            cfg, input.map_breakpoints, input.rpm_breakpoints
+        ).compose(cf_full, cf_sparse, stats)
+
+        # Step 10+11: Apply + limits
+        applied = Applicator(cfg).apply(cf_final, input.current_map, stats)
 
         # Assemble FilterStats
         passed_count = len(snapped_rows)
@@ -105,7 +111,7 @@ class VELambdaEngine(TuningEngine):
             discarded_outlier      = agg_result.outlier_count,
         )
 
-        # Step 10: Post-processing
+        # Step 12: Post-processing
         return Postprocessor(cfg, input.map_breakpoints, input.rpm_breakpoints).run(
             applied, filter_stats, cells_interp
         )

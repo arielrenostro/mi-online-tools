@@ -50,7 +50,7 @@ export const useTuningStore = create<TuningState & TuningActions>()(
 
     setEngine(engineId) {
       set({ selectedEngineId: engineId })
-      lsSet('mft:engine-id', engineId)
+      lsSet('miot:engine-id', engineId)
       get().clearOutput()
     },
 

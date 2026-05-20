@@ -167,7 +167,7 @@ export const useUIStore = create<UIStore>()(
 // ── Helper: persiste todo o UIState no localStorage ───────────────────────────
 function persist(): void {
   const state = useUIStore.getState()
-  lsSet<UIState>('mft:ui', {
+  lsSet<UIState>('miot:ui', {
     originalMapCollapsed: state.originalMapCollapsed,
     tuningAnalysisMode:   state.tuningAnalysisMode,
     datalogTab:           state.datalogTab,
@@ -402,7 +402,7 @@ O uso de "ausência = visível" garante que colunas novas (de logs adicionados d
 
 ## Persistência
 
-Todo o `UIState` é serializado como JSON e salvo em uma única chave do localStorage: `mft:ui`.
+Todo o `UIState` é serializado como JSON e salvo em uma única chave do localStorage: `miot:ui`.
 
 ```typescript
 // Exemplo do que é salvo:

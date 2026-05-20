@@ -15,6 +15,11 @@ const GROUPS: Record<string, string[]> = {
     'low_map_rule_enabled','low_map_threshold','low_map_discount',
     'max_adjacent_gradient_pct',
   ],
+  'Propagação estrutural': [
+    'shape_propagation_enabled',
+    'shape_rpm_weight','shape_map_weight','shape_gradient_weight',
+    'global_shape_weight','gradient_min_samples',
+  ],
 }
 
 interface Props {

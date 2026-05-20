@@ -179,15 +179,15 @@ export async function clearTuningOutput(): Promise<void> {
 
 ## localStorage
 
-**Prefixo de chaves:** `mft:` (para evitar colisão com outras apps no mesmo domínio)
+**Prefixo de chaves:** `miot:` (para evitar colisão com outras apps no mesmo domínio)
 
 | Chave | Conteúdo | Tipo | Store |
 |-------|----------|------|-------|
-| `mft:config` | `TuningConfig` serializada | JSON object | `useTuningStore` |
-| `mft:engine-id` | ID do engine selecionado | string | `useTuningStore` |
-| `mft:log-order` | `{ orderedHashes: string[]; enabledHashes: string[] }` | JSON object | `useLogStore` |
-| `mft:ui` | `UIState` completo | JSON object | `useUIStore` |
-| `mft:time` | `{ cursor_ms: number \| null; selection: TimeSelection \| null; sparklineSensor: string }` | JSON object | `useTimeStore` |
+| `miot:config` | `TuningConfig` serializada | JSON object | `useTuningStore` |
+| `miot:engine-id` | ID do engine selecionado | string | `useTuningStore` |
+| `miot:log-order` | `{ orderedHashes: string[]; enabledHashes: string[] }` | JSON object | `useLogStore` |
+| `miot:ui` | `UIState` completo | JSON object | `useUIStore` |
+| `miot:time` | `{ cursor_ms: number \| null; selection: TimeSelection \| null; sparklineSensor: string }` | JSON object | `useTimeStore` |
 
 ### Utilitários de acesso
 
@@ -200,7 +200,7 @@ export function lsGet<T>(key: string): T | null {
     if (raw === null) return null
     return JSON.parse(raw) as T
   } catch {
-    console.warn(`[mft] Falha ao ler localStorage["${key}"]`)
+    console.warn(`[miot] Falha ao ler localStorage["${key}"]`)
     return null
   }
 }
@@ -210,7 +210,7 @@ export function lsSet<T>(key: string, value: T): void {
     localStorage.setItem(key, JSON.stringify(value))
   } catch (e) {
     // QuotaExceededError — log silencioso, não travar o app
-    console.warn(`[mft] Falha ao salvar em localStorage["${key}"]`, e)
+    console.warn(`[miot] Falha ao salvar em localStorage["${key}"]`, e)
   }
 }
 
@@ -251,7 +251,7 @@ export async function restore(): Promise<void> {
     await restoreStep_Time()
   } catch (err) {
     // Erro inesperado no restorer — não deve travar o app
-    console.error('[mft] sessionRestorer falhou:', err)
+    console.error('[miot] sessionRestorer falhou:', err)
   } finally {
     useSessionStore.getState().setRestoring(false)
   }
@@ -264,7 +264,7 @@ export async function restore(): Promise<void> {
 
 ```typescript
 async function restoreStep_UI() {
-  const savedUI = lsGet<UIState>('mft:ui')
+  const savedUI = lsGet<UIState>('miot:ui')
   if (savedUI) {
     useUIStore.getState().hydrate(savedUI)
   }
@@ -276,8 +276,8 @@ async function restoreStep_UI() {
 
 ```typescript
 async function restoreStep_TuningConfig() {
-  const savedConfig = lsGet<TuningConfig>('mft:config')
-  const savedEngineId = lsGet<string>('mft:engine-id')
+  const savedConfig = lsGet<TuningConfig>('miot:config')
+  const savedEngineId = lsGet<string>('miot:engine-id')
 
   if (savedConfig) {
     useTuningStore.getState().hydrateConfig(savedConfig)
@@ -297,7 +297,7 @@ async function restoreStep_Map() {
     mapEntry = await mapPersistence.loadMap()
   } catch (err) {
     // IndexedDB indisponível (Safari private mode, etc.) — log e prosseguir
-    console.warn('[mft] IndexedDB indisponível para mapa:', err)
+    console.warn('[miot] IndexedDB indisponível para mapa:', err)
     return
   }
 
@@ -314,13 +314,13 @@ async function restoreStep_Map() {
 
 ```typescript
 async function restoreStep_Logs() {
-  const logOrder = lsGet<{ orderedHashes: string[]; enabledHashes: string[] }>('mft:log-order')
+  const logOrder = lsGet<{ orderedHashes: string[]; enabledHashes: string[] }>('miot:log-order')
 
   let logEntries: LogDBEntry[]
   try {
     logEntries = await logPersistence.loadAllLogs()
   } catch (err) {
-    console.warn('[mft] IndexedDB indisponível para logs:', err)
+    console.warn('[miot] IndexedDB indisponível para logs:', err)
     return
   }
 
@@ -349,7 +349,7 @@ async function restoreStep_TuningOutput() {
   try {
     output = await tuningPersistence.loadTuningOutput()
   } catch (err) {
-    console.warn('[mft] IndexedDB indisponível para TuningOutput:', err)
+    console.warn('[miot] IndexedDB indisponível para TuningOutput:', err)
     return
   }
 
@@ -363,7 +363,7 @@ async function restoreStep_TuningOutput() {
 
 ```typescript
 async function restoreStep_Time() {
-  const saved = lsGet<{ cursor_ms: number | null; selection: TimeSelection | null; sparklineSensor: string }>('mft:time')
+  const saved = lsGet<{ cursor_ms: number | null; selection: TimeSelection | null; sparklineSensor: string }>('miot:time')
   if (saved) {
     useTimeStore.getState().hydrate(saved)
   }

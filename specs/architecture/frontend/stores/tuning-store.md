@@ -95,7 +95,7 @@ export const useTuningStore = create<TuningStore>()(
     updateConfig(partial: Partial<TuningConfig>): void {
       const newConfig = { ...get().config, ...partial }
       set({ config: newConfig, configDirty: true })
-      lsSet('mft:config', newConfig)
+      lsSet('miot:config', newConfig)
       // Não limpa lastOutput — apenas marca como possivelmente desatualizado via configDirty.
       // O usuário verá o aviso visual no botão e decidirá se quer re-rodar.
     },
@@ -103,13 +103,13 @@ export const useTuningStore = create<TuningStore>()(
     // ── resetConfig ───────────────────────────────────────────────────────────
     resetConfig(): void {
       set({ config: DEFAULT_TUNING_CONFIG, configDirty: true })
-      lsSet('mft:config', DEFAULT_TUNING_CONFIG)
+      lsSet('miot:config', DEFAULT_TUNING_CONFIG)
     },
 
     // ── setEngine ─────────────────────────────────────────────────────────────
     setEngine(engineId: string): void {
       set({ selectedEngineId: engineId, configDirty: true })
-      lsSet('mft:engine-id', engineId)
+      lsSet('miot:engine-id', engineId)
       // Limpa o output pois o novo engine pode gerar resultados incompatíveis
       // com o format do output anterior
       get().clearOutput()
@@ -342,8 +342,8 @@ return (
 
 | Dado | Onde | Quando | Como |
 |------|------|--------|------|
-| `config` | localStorage (`mft:config`) | Imediato após `updateConfig()`, `resetConfig()` | `lsSet('mft:config', config)` |
-| `selectedEngineId` | localStorage (`mft:engine-id`) | Imediato após `setEngine()` | `lsSet('mft:engine-id', engineId)` |
+| `config` | localStorage (`miot:config`) | Imediato após `updateConfig()`, `resetConfig()` | `lsSet('miot:config', config)` |
+| `selectedEngineId` | localStorage (`miot:engine-id`) | Imediato após `setEngine()` | `lsSet('miot:engine-id', engineId)` |
 | `lastOutput` | IndexedDB (`tuning-output`) | Após `runTuning()` bem-sucedido | `tuningPersistence.saveTuningOutput()` |
 | Limpeza de output | IndexedDB (`tuning-output`) | Após `clearOutput()` | `tuningPersistence.clearTuningOutput()` |
 

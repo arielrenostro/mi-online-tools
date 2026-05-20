@@ -91,7 +91,7 @@ O frontend abre em `http://localhost:5173` e aponta para o backend em `http://lo
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `MIOT_CACHE_DIR` | `/tmp/mft_datalogs` | Diretório de cache dos datalogs no backend (TTL 1h) |
+| `MIOT_CACHE_DIR` | `/tmp/miot_datalogs` | Diretório de cache dos datalogs no backend (TTL 1h) |
 | `VITE_API_URL` | `http://localhost:8000` | URL base da API (definida em build-time no frontend) |
 
 ---

@@ -5,7 +5,11 @@
       "WebSearch",
       "PowerShell(Start-Process -FilePath \"wsl\" -ArgumentList \"bash\", \"-ic\", \"cd /mnt/d/Users/ariel/Documents/Projetos/mi-fuel-tuner/frontend && npm run dev > /tmp/vite-dev.log 2>&1\" -WindowStyle Hidden)",
       "PowerShell(wsl bash -ic \"cat /tmp/vite-dev.log\" 2>&1)",
-      "PowerShell(wsl bash -c \"source ~/.bashrc 2>/dev/null; source ~/.nvm/nvm.sh 2>/dev/null; which npm; npm --version\" 2>&1)"
+      "PowerShell(wsl bash -c \"source ~/.bashrc 2>/dev/null; source ~/.nvm/nvm.sh 2>/dev/null; which npm; npm --version\" 2>&1)",
+      "Bash(wsl bash *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Users\\\\ariel\\\\Documents\\\\Projetos\\\\mi-fuel-tuner\\\\frontend\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)"
     ]
   }
 }

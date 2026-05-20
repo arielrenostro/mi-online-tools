@@ -27,6 +27,12 @@ CONFIG_SCHEMA: dict = {
         "low_map_threshold":        {"type": "integer","default": 20,      "description": "Limite de MAP (kPa) para a regra de MAP baixo"},
         "low_map_discount":         {"type": "number", "default": 0.025,   "description": "Desconto aplicado à linha de MAP baixo"},
         "max_adjacent_gradient_pct":{"type": "number", "default": 20.0,   "description": "Gradiente máximo entre células vizinhas para warning (%)"},
+        "shape_propagation_enabled":{"type": "boolean","default": True,    "description": "Propagar tendências estruturais (RPM, MAP, gradiente) para células sem dados"},
+        "shape_rpm_weight":         {"type": "number", "default": 0.50,    "description": "Peso da tendência por RPM no fator estrutural (α)"},
+        "shape_map_weight":         {"type": "number", "default": 0.30,    "description": "Peso da tendência por MAP no fator estrutural (β)"},
+        "shape_gradient_weight":    {"type": "number", "default": 0.20,    "description": "Peso do gradiente local no fator estrutural (1−α−β)"},
+        "global_shape_weight":      {"type": "number", "default": 0.10,    "description": "Peso do fator global no cf_final (desconta os demais proporcionalmente)"},
+        "gradient_min_samples":     {"type": "integer","default": 2,       "description": "Mínimo de pontos observados para computar gradiente; abaixo disso usa valor constante ou 1.0"},
     },
     "additionalProperties": False,
 }

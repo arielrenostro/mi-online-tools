@@ -57,7 +57,9 @@ isRestoring = false
 
 ## `RequireLog`
 
-Protege todas as rotas `/datalog/*`. Exige pelo menos 1 log ativo (`enabled === true`).
+Protege individualmente as rotas `/datalog/dashboard`, `/datalog/charts` e `/datalog/data`. **Não** envolve `DatalogPage` — a aba Logs (`/datalog/logs`) é acessível sem logs e serve como ponto de entrada para adicioná-los.
+
+Exige pelo menos 1 log ativo (`enabled === true`). Redireciona para `/datalog/logs` (não para `/`) quando a condição não é atendida, mantendo o usuário na seção Datalog.
 
 ```tsx
 // components/guards/RequireLog.tsx
@@ -66,12 +68,14 @@ export function RequireLog({ children }: { children: React.ReactNode }) {
   const activeLogs  = useLogStore((s) => s.logs.filter((l) => l.enabled))
 
   if (isRestoring) return <SessionRestoringSpinner />
-  if (activeLogs.length === 0) return <Navigate to="/" replace />
+  if (activeLogs.length === 0) return <Navigate to="/datalog/logs" replace />
   return <>{children}</>
 }
 ```
 
-**Nota:** logs carregados mas desabilitados (toggle off) contam como zero logs ativos — o guard redireciona.
+**Notas:**
+- Logs carregados mas desabilitados (toggle off) contam como zero logs ativos — o guard redireciona.
+- O redirect usa caminho absoluto `/datalog/logs` (não relativo) para evitar problemas com rotas aninhadas.
 
 ---
 
@@ -81,17 +85,24 @@ export function RequireLog({ children }: { children: React.ReactNode }) {
 // App.tsx
 {
   path: 'tuning',
-  element: <RequireMap><TuningPage /></RequireMap>,
+  element: <RequireMap><TuningPage /></RequireMap>,  // guard no pai
   children: [ ... ],
 },
 {
   path: 'datalog',
-  element: <RequireLog><DatalogPage /></RequireLog>,
-  children: [ ... ],
+  element: <DatalogPage />,                          // sem guard no pai
+  children: [
+    { index: true, element: <Navigate to="logs" replace /> },
+    { path: 'logs',      element: <LogsTab /> },
+    { path: 'dashboard', element: <RequireLog><DashboardTab /></RequireLog> },
+    { path: 'charts',    element: <RequireLog><ChartsTab /></RequireLog> },
+    { path: 'data',      element: <RequireLog><DataTab /></RequireLog> },
+  ],
 },
 ```
 
-Os guards envolvem a **página inteira**, não as abas filhas individualmente. As rotas filhas herdam a proteção automaticamente via o mecanismo de children do React Router.
+`RequireMap` envolve a **página inteira** de Tuning — todas as abas herdam a proteção.  
+`RequireLog` é aplicado **individualmente** em cada aba filha de Datalog que precisa de logs — a aba Logs fica desprotegida e acessível sempre.
 
 ---
 

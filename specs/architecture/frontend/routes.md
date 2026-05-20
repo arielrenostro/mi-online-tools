@@ -32,12 +32,13 @@ const router = createBrowserRouter([
 
       {
         path: 'datalog',
-        element: <RequireLog><DatalogPage /></RequireLog>,
+        element: <DatalogPage />,          // sem guard no pai — LogsTab é acessível sem logs
         children: [
-          { index: true, element: <Navigate to="dashboard" replace /> },
-          { path: 'dashboard', element: <DashboardTab /> },
-          { path: 'charts',    element: <ChartsTab /> },
-          { path: 'data',      element: <DataTab /> },
+          { index: true, element: <Navigate to="logs" replace /> },
+          { path: 'logs',      element: <LogsTab /> },
+          { path: 'dashboard', element: <RequireLog><DashboardTab /></RequireLog> },
+          { path: 'charts',    element: <RequireLog><ChartsTab /></RequireLog> },
+          { path: 'data',      element: <RequireLog><DataTab /></RequireLog> },
         ],
       },
     ],
@@ -83,10 +84,11 @@ A `TopBar` é renderizada **sempre**, independentemente de qual rota está ativa
 | `/tuning/ve` | `VETab` dentro de `TuningPage` | herdado | — | — |
 | `/tuning/ignition` | `IgnitionTab` dentro de `TuningPage` | herdado | — | bloqueada na UI |
 | `/tuning/lambda` | `LambdaTab` dentro de `TuningPage` | herdado | — | bloqueada na UI |
-| `/datalog` | `DatalogPage` (via `RequireLog`) | 1+ logs ativos | `/` se sem logs | redireciona para `/datalog/dashboard` |
-| `/datalog/dashboard` | `DashboardTab` dentro de `DatalogPage` | herdado | — | — |
-| `/datalog/charts` | `ChartsTab` dentro de `DatalogPage` | herdado | — | — |
-| `/datalog/data` | `DataTab` dentro de `DatalogPage` | herdado | — | — |
+| `/datalog` | `DatalogPage` | — | — | redireciona para `/datalog/logs` |
+| `/datalog/logs` | `LogsTab` dentro de `DatalogPage` | — | — | — |
+| `/datalog/dashboard` | `DashboardTab` dentro de `DatalogPage` | `RequireLog` → `/datalog/logs` | — | — |
+| `/datalog/charts` | `ChartsTab` dentro de `DatalogPage` | `RequireLog` → `/datalog/logs` | — | — |
+| `/datalog/data` | `DataTab` dentro de `DatalogPage` | `RequireLog` → `/datalog/logs` | — | — |
 
 ---
 
@@ -127,7 +129,9 @@ export function RequireMap({ children }: Props) {
 
 ### `RequireLog`
 
-Protege todas as rotas `/datalog/*`. Redireciona para `/` se não houver nenhum log ativo (`activeLogs.length === 0`).
+Protege as rotas `/datalog/dashboard`, `/datalog/charts` e `/datalog/data` individualmente. **Não** envolve `DatalogPage` — a aba Logs (`/datalog/logs`) é acessível sem logs.
+
+Redireciona para `/datalog/logs` (não para `/`) quando não há logs ativos, para que o usuário possa adicionar logs sem sair da seção Datalog.
 
 ```tsx
 // components/guards/RequireLog.tsx
@@ -148,7 +152,7 @@ export function RequireLog({ children }: Props) {
   }
 
   if (activeLogs.length === 0) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/datalog/logs" replace />
   }
 
   return <>{children}</>
@@ -229,6 +233,7 @@ export function DatalogPage() {
       {/* TimeRail sempre visível dentro de DatalogPage */}
       <TimeRailContainer />
       <nav className="flex gap-1 border-b px-4 pt-2">
+        <NavLink to="logs">Logs</NavLink>
         <NavLink to="dashboard">Dashboard</NavLink>
         <NavLink to="charts">Gráficos</NavLink>
         <NavLink to="data">Dados</NavLink>
@@ -253,7 +258,7 @@ Fluxo correto:
 1. Usuário importa mapa via TopBar → store é atualizado, não há redirect.
 2. Usuário clica no card "Tuning" na HomePage → `useNavigate()('/tuning')` → redireciona para `/tuning/ve` (por causa do `<Navigate to="ve" replace />` no índice).
 3. Usuário importa log via TopBar → store é atualizado, não há redirect.
-4. Usuário clica no card "Datalog" → navega para `/datalog/dashboard`.
+4. Usuário clica no card "Datalog" → navega para `/datalog/logs` (redirect de índice).
 
 A única exceção são os redirects de índice (`<Navigate to="ve" replace />`), que garantem que `/tuning` e `/datalog` sempre resolvam para uma subrota específica — mas isso acontece por demanda do router, não por lógica de negócio.
 
@@ -362,12 +367,12 @@ isRestoring = false
 Router renderiza /
     │
     ├── Guards avaliam estado dos stores
-    │   ├── RequireMap: originalMap !== null? → deixa passar
-    │   └── RequireLog: activeLogs.length > 0? → deixa passar
-    │
+    │   ├── RequireMap (pai de /tuning/*): originalMap !== null? → deixa passar
+    │   └── RequireLog (filho /datalog/dashboard|charts|data): activeLogs.length > 0? → deixa passar
+    │                                                         sem logs → /datalog/logs
     └── Usuário interage
         ├── Clica "Tuning" → navigate('/tuning') → redirect para /tuning/ve
-        └── Clica "Datalog" → navigate('/datalog') → redirect para /datalog/dashboard
+        └── Clica "Datalog" → navigate('/datalog') → redirect para /datalog/logs
 ```
 
 ---
@@ -381,8 +386,9 @@ Router renderiza /
 | `src/pages/HomePage.tsx` | Tela inicial com cards |
 | `src/pages/TuningPage.tsx` | Layout da seção Tuning com abas |
 | `src/pages/DatalogPage.tsx` | Layout da seção Datalog com TimeRail e abas |
+| `src/features/datalog/LogsTab.tsx` | Aba de gerenciamento de logs (adicionar, reordenar, toggle, remover) |
 | `src/components/guards/RequireMap.tsx` | Guard que exige mapa carregado |
-| `src/components/guards/RequireLog.tsx` | Guard que exige ao menos 1 log ativo |
+| `src/components/guards/RequireLog.tsx` | Guard que exige ao menos 1 log ativo; redireciona para `/datalog/logs` |
 | `src/components/guards/SessionRestoringSpinner.tsx` | Spinner exibido durante restauração |
 | `src/components/TuningTabLink.tsx` | Aba de navegação com suporte a estado bloqueado |
 | `src/features/tuning/ignition/IgnitionTab.tsx` | Placeholder da aba Ignition (bloqueada) |

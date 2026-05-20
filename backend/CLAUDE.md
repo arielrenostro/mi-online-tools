@@ -14,8 +14,8 @@ uvicorn app.main:app --reload --port 8000
 
 ```bash
 # Docker
-docker build -t mft-backend .
-docker run -p 8000:8000 -e MIOT_CACHE_DIR=/tmp/mft_datalogs mft-backend
+docker build -t miot-backend .
+docker run -p 8000:8000 -e MIOT_CACHE_DIR=/tmp/miot_datalogs miot-backend
 ```
 
 ## Testar
@@ -57,9 +57,10 @@ app/
 │           ├── aggregator.py      # Etapa 4: agregação + rejeição de outliers ±σ
 │           ├── confidence.py      # Etapa 5: count_score, CV, confidence
 │           ├── cf_calculator.py   # Etapa 6: fator de correção ponderado
-│           ├── interpolator.py    # Etapa 7: interpolação 2D scipy.griddata
-│           ├── applicator.py      # Etapas 8+9: aplicação + limites absolutos
-│           └── postprocessor.py   # Etapa 10: RPM400, MAP baixo, gradiente
+│           ├── interpolator.py      # Etapa 7: interpolação 2D scipy.griddata
+│           ├── shape_propagation.py # Etapas 8+9: tendências estruturais + composição cf_final
+│           ├── applicator.py        # Etapas 10+11: aplicação + limites absolutos
+│           └── postprocessor.py     # Etapa 12: RPM400, MAP baixo, gradiente
 ├── models/                        # Pydantic request/response da API
 ├── parsers/
 │   └── datalog_parser.py          # Parseia CSV MasterInjection → DatalogModel

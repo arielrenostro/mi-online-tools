@@ -263,7 +263,7 @@ export const useLogStore = create<LogStore>()(
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function persistLogOrder(logs: LogEntry[]): void {
-  lsSet('mft:log-order', {
+  lsSet('miot:log-order', {
     orderedHashes: logs.map((l) => l.hash),
     enabledHashes: logs.filter((l) => l.enabled).map((l) => l.hash),
   })
@@ -330,8 +330,8 @@ Ver a spec completa em `stores/time-store.md`. Em resumo:
 | Dado | Onde | Quando |
 |------|------|--------|
 | `model` + `csvBlob` de cada log | IndexedDB (`logs`) | Imediatamente após `addLog()` bem-sucedido |
-| Ordem dos logs (`orderedHashes`) | localStorage (`mft:log-order`) | Após `addLog()`, `removeLog()`, `reorder()` |
-| Estado `enabled` de cada log | localStorage (`mft:log-order.enabledHashes`) | Após `toggleLog()` |
+| Ordem dos logs (`orderedHashes`) | localStorage (`miot:log-order`) | Após `addLog()`, `removeLog()`, `reorder()` |
+| Estado `enabled` de cada log | localStorage (`miot:log-order.enabledHashes`) | Após `toggleLog()` |
 | Remoção de log | IndexedDB (`logs`) | Dentro de `removeLog()` |
 
 O model completo do log (com todas as linhas, parseado client-side) fica no IndexedDB. O localStorage armazena apenas os hashes e o estado `enabled` — dados pequenos disponíveis sincronamente na restauração. O blob CSV também fica no IndexedDB, necessário para `ensureLogsOnBackend()`.

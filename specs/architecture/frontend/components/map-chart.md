@@ -44,7 +44,7 @@ O `│ ↕ │` representa o drag handle — arrastar para esquerda expande o gr
 
 ### Proporção salva no localStorage
 
-Chave `mft:map-chart-ratio` (float 0.15–0.75). Padrão: **0.5** (50/50). Salva ao soltar o drag handle (`mouseup`).
+Chave `miot:map-chart-ratio` (float 0.15–0.75). Padrão: **0.5** (50/50). Salva ao soltar o drag handle (`mouseup`).
 
 ### Cálculo de `cellWidth`
 
@@ -114,8 +114,8 @@ interface MapChartProps {
 ### Estado interno + persistência
 
 ```typescript
-const [orientation, setOrientation] = useStickyState<Orientation>('mft:map-chart-orientation', 'map_x_rpm')
-const [mode,        setMode]        = useStickyState<Mode>('mft:map-chart-mode', '2d')
+const [orientation, setOrientation] = useStickyState<Orientation>('miot:map-chart-orientation', 'map_x_rpm')
+const [mode,        setMode]        = useStickyState<Mode>('miot:map-chart-mode', '2d')
 ```
 
 `useStickyState` lê o valor inicial do localStorage e persiste automaticamente ao alterar. Padrão: `'map_x_rpm'` + `'2d'`.
@@ -129,9 +129,9 @@ const [mode,        setMode]        = useStickyState<Mode>('mft:map-chart-mode',
 
 | Chave | Tipo | Padrão |
 |-------|------|--------|
-| `mft:map-chart-orientation` | `'map_x_rpm' \| 'rpm_x_map'` | `'map_x_rpm'` |
-| `mft:map-chart-mode` | `'2d' \| '3d'` | `'2d'` |
-| `mft:map-chart-ratio` | string (float 0.15–0.75) | `'0.5'` |
+| `miot:map-chart-orientation` | `'map_x_rpm' \| 'rpm_x_map'` | `'map_x_rpm'` |
+| `miot:map-chart-mode` | `'2d' \| '3d'` | `'2d'` |
+| `miot:map-chart-ratio` | string (float 0.15–0.75) | `'0.5'` |
 
 ---
 
