@@ -222,6 +222,7 @@ export default function MapChart({
         onMouseDown={handleContainerMouseDown}
       >
         <ReactECharts
+          key={mode}
           ref={echartsRef}
           option={option}
           style={{ height, width: '100%' }}

@@ -9,9 +9,8 @@ Gerencia a navegação temporal: cursor pontual, seleção de intervalo e sinal 
 ```typescript
 interface TimeState {
   cursor_ms:       number | null      // instante atual (ms relativo ao início do 1º log ativo); null=sem cursor
-  selection:       TimeSelection | null  // intervalo selecionado; null = auto-tuning usa tudo
+  selection:       TimeSelection | null  // zoom range + intervalo de análise; null = visão completa
   sparklineSensor: string             // sinal da sparkline; deve estar em todos os logs ativos. Default "RPM"
-  chartZoom:       TimeSelection | null  // viewport dos gráficos (dataZoom); NÃO persistido
 }
 
 interface TimeActions {
@@ -19,15 +18,13 @@ interface TimeActions {
   setSelection(start: number, end: number): void
   clearSelection(): void
   setSparklineSensor(signal: string): void
-  setChartZoom(start: number, end: number): void  // do SyncedChart; não persiste
-  clearChartZoom(): void
   /** Chamado pelo logStore quando a duração total muda; ajusta cursor/selection ao novo range. */
   onTotalDurationChanged(newTotal_ms: number): void
   hydrate(data: { cursor_ms; selection; sparklineSensor }): void  // sessionRestorer
 }
 ```
 
-Valores iniciais: `cursor_ms: null`, `selection: null`, `sparklineSensor: 'RPM'`, `chartZoom: null`.
+Valores iniciais: `cursor_ms: null`, `selection: null`, `sparklineSensor: 'RPM'`.
 
 ## Implementação
 
@@ -127,7 +124,7 @@ function persistTime(state: Partial<TimeState>): void {
 
 ## Persistência (`miot:time`)
 
-`cursor_ms` e `selection` são persistidos: fazem parte do fluxo iterativo de tuning (o usuário identifica um trecho, fecha o browser, e quer continuar com a mesma seleção depois). `sparklineSensor` é uma preferência de visualização. `chartZoom` **não** é persistido — estado volátil; o zoom sempre começa na visão completa.
+`cursor_ms` e `selection` são persistidos: fazem parte do fluxo iterativo de tuning (o usuário identifica um trecho, fecha o browser, e quer continuar com a mesma seleção depois). `sparklineSensor` é uma preferência de visualização.
 
 ```json
 { "cursor_ms": 253512, "selection": { "start_ms": 145000, "end_ms": 872000 }, "sparklineSensor": "RPM" }
@@ -168,8 +165,12 @@ function TimeRailContainer() {
 
 ## Sincronização com outros componentes
 
-- **`SyncedChart`** — bidirecional: arrastar o cursor no TimeRail move a linha em todos os charts; mover o mouse num chart chama `setCursor(params.data[0])`.
-- **`HeatmapTable` (aba Dados)** — destaca a linha mais próxima do `cursor_ms` (busca o `timestamp_ms` de menor diferença).
+- **`SyncedChart`** — bidirecional:
+  - TimeRail drag → `setSelection` → `SyncedChart` detecta mudança e faz `dispatchAction({ type: 'dataZoom' })` no ECharts
+  - ECharts `datazoom` event → `setSelection` (ou `clearSelection` se volta a 0–100%)
+  - CTRL+drag no gráfico → cria selection visual → `setSelection` ao soltar
+  - Pan/scroll no gráfico → `datazoom` → `setSelection` → TimeRail mostra ViewportBand + SelectionBand
+- **`HeatmapTable` (aba Dados)** — destaca a linha mais próxima do `cursor_ms` e filtra por `selection` (= zoom range).
 
 ## `onTotalDurationChanged` — comportamento
 

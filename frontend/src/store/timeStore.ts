@@ -7,7 +7,6 @@ interface TimeState {
   cursor_ms:       number | null
   selection:       TimeSelection | null
   sparklineSensor: string
-  chartZoom:       TimeSelection | null
 }
 
 interface TimeActions {
@@ -15,8 +14,6 @@ interface TimeActions {
   setSelection(start: number, end: number): void
   clearSelection(): void
   setSparklineSensor(signal: string): void
-  setChartZoom(start: number, end: number): void
-  clearChartZoom(): void
   onTotalDurationChanged(newTotal_ms: number): void
   hydrate(data: { cursor_ms: number | null; selection: TimeSelection | null; sparklineSensor: string }): void
 }
@@ -34,7 +31,6 @@ export const useTimeStore = create<TimeState & TimeActions>()(
     cursor_ms:       null,
     selection:       null,
     sparklineSensor: 'RPM',
-    chartZoom:       null,
 
     setCursor(ms) {
       if (ms === null) {
@@ -66,13 +62,6 @@ export const useTimeStore = create<TimeState & TimeActions>()(
       set({ sparklineSensor: signal })
       persistTime({ ...get(), sparklineSensor: signal })
     },
-
-    setChartZoom(start, end) {
-      if (start >= end) return
-      set({ chartZoom: { start_ms: start, end_ms: end } })
-    },
-
-    clearChartZoom() { set({ chartZoom: null }) },
 
     onTotalDurationChanged(newTotal_ms) {
       const { cursor_ms, selection } = get()

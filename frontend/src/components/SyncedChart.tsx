@@ -6,7 +6,7 @@ import { useTimeStore } from '@/store/timeStore'
 import { useLogStore, selectAllRows, selectAllSignals } from '@/store/logStore'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
 import type { ChartLayout, ChartPanel } from '@/types/ui'
-import type { DatalogRow, TimeSelection } from '@/types/datalog'
+import type { DatalogRow } from '@/types/datalog'
 
 const GROUP_ID = 'datalog-charts'
 
@@ -38,11 +38,7 @@ function fmtMs(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-function buildOption(
-  signals: string[],
-  rows: DatalogRow[],
-  selection: TimeSelection | null,
-): object {
+function buildOption(signals: string[], rows: DatalogRow[]): object {
   if (signals.length === 0) return {}
 
   const rightCount = Math.max(0, signals.length - 1)
@@ -76,8 +72,8 @@ function buildOption(
     grid: { left: 52, right: rightCount > 0 ? rightCount * 52 + 20 : 20, top: 8, bottom: 28 },
     xAxis: {
       type: 'value',
-      min:  selection?.start_ms ?? 'dataMin',
-      max:  selection?.end_ms   ?? 'dataMax',
+      min:  'dataMin',
+      max:  'dataMax',
       axisLabel: { formatter: fmtMs, color: '#6b7280', fontSize: 9 },
       splitLine: { show: false },
       axisLine:  { lineStyle: { color: '#374151' } },
@@ -187,14 +183,12 @@ const PanelView = memo(function PanelView({
   panel,
   rows,
   cursor_ms,
-  selection,
   allSignals,
   panelCount,
 }: {
   panel:      ChartPanel
   rows:       DatalogRow[]
   cursor_ms:  number | null
-  selection:  TimeSelection | null
   allSignals: string[]
   panelCount: number
 }) {
@@ -211,8 +205,8 @@ const PanelView = memo(function PanelView({
   const available = allSignals.filter(s => !panel.signals.includes(s))
 
   const option = useMemo(
-    () => buildOption(panel.signals, rows, selection),
-    [panel.signals, rows, selection],
+    () => buildOption(panel.signals, rows),
+    [panel.signals, rows],
   )
 
   const applyMarkLine = useCallback((inst: echarts.ECharts, ms: number | null) => {
@@ -357,14 +351,12 @@ function LayoutRenderer({
   layout,
   rows,
   cursor_ms,
-  selection,
   allSignals,
   panelCount,
 }: {
   layout:     ChartLayout
   rows:       DatalogRow[]
   cursor_ms:  number | null
-  selection:  TimeSelection | null
   allSignals: string[]
   panelCount: number
 }) {
@@ -374,7 +366,6 @@ function LayoutRenderer({
         panel={layout}
         rows={rows}
         cursor_ms={cursor_ms}
-        selection={selection}
         allSignals={allSignals}
         panelCount={panelCount}
       />
@@ -386,11 +377,11 @@ function LayoutRenderer({
     return (
       <div className="flex flex-col h-full">
         <div style={{ flex: ratio, minHeight: 0, minWidth: 0 }}>
-          <LayoutRenderer layout={layout.children[0]} rows={rows} cursor_ms={cursor_ms} selection={selection} allSignals={allSignals} panelCount={panelCount} />
+          <LayoutRenderer layout={layout.children[0]} rows={rows} cursor_ms={cursor_ms} allSignals={allSignals} panelCount={panelCount} />
         </div>
         <VerticalDivider splitId={layout.splitId} ratio={ratio} />
         <div style={{ flex: 1 - ratio, minHeight: 0, minWidth: 0 }}>
-          <LayoutRenderer layout={layout.children[1]} rows={rows} cursor_ms={cursor_ms} selection={selection} allSignals={allSignals} panelCount={panelCount} />
+          <LayoutRenderer layout={layout.children[1]} rows={rows} cursor_ms={cursor_ms} allSignals={allSignals} panelCount={panelCount} />
         </div>
       </div>
     )
@@ -399,14 +390,22 @@ function LayoutRenderer({
   return (
     <div className="flex flex-row gap-1 h-full">
       <div className="flex-1 min-h-0 min-w-0">
-        <LayoutRenderer layout={layout.children[0]} rows={rows} cursor_ms={cursor_ms} selection={selection} allSignals={allSignals} panelCount={panelCount} />
+        <LayoutRenderer layout={layout.children[0]} rows={rows} cursor_ms={cursor_ms} allSignals={allSignals} panelCount={panelCount} />
       </div>
       <div className="flex-1 min-h-0 min-w-0">
-        <LayoutRenderer layout={layout.children[1]} rows={rows} cursor_ms={cursor_ms} selection={selection} allSignals={allSignals} panelCount={panelCount} />
+        <LayoutRenderer layout={layout.children[1]} rows={rows} cursor_ms={cursor_ms} allSignals={allSignals} panelCount={panelCount} />
       </div>
     </div>
   )
 }
+
+// ─── CTRL+drag state ──────────────────────────────────────────────────────────
+
+type CtrlDrag =
+  | { active: false }
+  | { active: true; inst: echarts.ECharts; chartRect: DOMRect
+      startClientX: number; currentClientX: number
+      startMs: number; currentMs: number }
 
 // ─── SyncedChart (export) ─────────────────────────────────────────────────────
 // Context to share chart instances for cross-chart hover sync
@@ -420,20 +419,57 @@ export function SyncedChart() {
   const chartLayout    = useUIStore(s => s.chartLayout)
   const cursor_ms      = useTimeStore(s => s.cursor_ms)
   const selection      = useTimeStore(s => s.selection)
-  const setChartZoom   = useTimeStore(s => s.setChartZoom)
-  const clearChartZoom = useTimeStore(s => s.clearChartZoom)
+  const setSelection   = useTimeStore(s => s.setSelection)
+  const clearSelection = useTimeStore(s => s.clearSelection)
   const allRows        = useLogStore(selectAllRows)
   const allSignals     = useLogStore(selectAllSignals)
   const panelCount     = flattenPanels(chartLayout).length
 
-  const instancesRef    = useRef<Map<string, echarts.ECharts>>(new Map())
-  const zoomListenerRef = useRef<{ inst: echarts.ECharts; handler: (p: unknown) => void } | null>(null)
+  const instancesRef       = useRef<Map<string, echarts.ECharts>>(new Map())
+  const zoomListenerRef    = useRef<{ inst: echarts.ECharts; handler: (p: unknown) => void } | null>(null)
+  const updatingFromExternal = useRef(false)
 
+  // ── CTRL key tracking ────────────────────────────────────────────────────────
+  const [ctrlHeld, setCtrlHeld] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const ctrlDragRef = useRef<CtrlDrag>({ active: false })
+  const [ctrlDrag, _setCtrlDrag] = useState<CtrlDrag>({ active: false })
+  const setCtrlDrag = useCallback((d: CtrlDrag) => { ctrlDragRef.current = d; _setCtrlDrag(d) }, [])
+
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === 'Control') setCtrlHeld(true) }
+    const up   = (e: KeyboardEvent) => {
+      if (e.key === 'Control') { setCtrlHeld(false); setCtrlDrag({ active: false }) }
+    }
+    document.addEventListener('keydown', down)
+    document.addEventListener('keyup', up)
+    return () => { document.removeEventListener('keydown', down); document.removeEventListener('keyup', up) }
+  }, [setCtrlDrag])
+
+  // ── selection → ECharts sync (TimeRail/clear → chart zoom) ──────────────────
+  useEffect(() => {
+    const instances = Array.from(instancesRef.current.values()).filter(i => !i.isDisposed())
+    if (instances.length === 0) return
+    updatingFromExternal.current = true
+    if (selection) {
+      instances.forEach(inst =>
+        inst.dispatchAction({ type: 'dataZoom', startValue: selection.start_ms, endValue: selection.end_ms })
+      )
+    } else {
+      instances.forEach(inst =>
+        inst.dispatchAction({ type: 'dataZoom', start: 0, end: 100 })
+      )
+    }
+    requestAnimationFrame(() => { updatingFromExternal.current = false })
+  }, [selection])
+
+  // ── ECharts instances registry + datazoom → store ────────────────────────────
   const registerChart = useCallback((id: string, inst: echarts.ECharts) => {
     instancesRef.current.set(id, inst)
-    // Only the first registered instance handles datazoom events
     if (zoomListenerRef.current) return
     const handler = (params: unknown) => {
+      if (updatingFromExternal.current) return
       const p = params as {
         batch?: { startValue?: number; endValue?: number; start?: number; end?: number }[]
         startValue?: number; endValue?: number; start?: number; end?: number
@@ -441,16 +477,16 @@ export function SyncedChart() {
       const startPct = p.batch?.[0]?.start ?? p.start
       const endPct   = p.batch?.[0]?.end   ?? p.end
       if (startPct !== undefined && endPct !== undefined && startPct <= 0.5 && endPct >= 99.5) {
-        clearChartZoom(); return
+        clearSelection(); return
       }
       const startVal = p.batch?.[0]?.startValue ?? p.startValue
       const endVal   = p.batch?.[0]?.endValue   ?? p.endValue
-      if (startVal == null || endVal == null) { clearChartZoom(); return }
-      setChartZoom(startVal, endVal)
+      if (startVal == null || endVal == null) return
+      setSelection(startVal, endVal)
     }
     inst.on('datazoom', handler)
     zoomListenerRef.current = { inst, handler }
-  }, [setChartZoom, clearChartZoom])
+  }, [setSelection, clearSelection])
 
   const unregisterChart = useCallback((id: string) => {
     const inst = instancesRef.current.get(id)
@@ -462,33 +498,72 @@ export function SyncedChart() {
     }
   }, [])
 
+  // ── CTRL+drag handlers ────────────────────────────────────────────────────────
+  const handleOverlayMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!ctrlHeld) return
+    const instances = Array.from(instancesRef.current.values()).filter(i => !i.isDisposed())
+    for (const inst of instances) {
+      const rect = inst.getDom().getBoundingClientRect()
+      if (e.clientX >= rect.left && e.clientX <= rect.right &&
+          e.clientY >= rect.top  && e.clientY <= rect.bottom) {
+        e.preventDefault()
+        const startMs = inst.convertFromPixel({ xAxisIndex: 0 }, e.clientX - rect.left) as number
+        setCtrlDrag({ active: true, inst, chartRect: rect,
+          startClientX: e.clientX, currentClientX: e.clientX, startMs, currentMs: startMs })
+        return
+      }
+    }
+  }, [ctrlHeld, setCtrlDrag])
+
+  useEffect(() => {
+    if (!ctrlDrag.active) return
+    const onMove = (e: MouseEvent) => {
+      const d = ctrlDragRef.current
+      if (!d.active) return
+      const px = Math.max(0, Math.min(d.chartRect.width, e.clientX - d.chartRect.left))
+      const ms = d.inst.convertFromPixel({ xAxisIndex: 0 }, px) as number
+      setCtrlDrag({ ...d, currentClientX: e.clientX, currentMs: ms })
+    }
+    const onUp = () => {
+      const d = ctrlDragRef.current
+      if (!d.active) return
+      const startMs = Math.min(d.startMs, d.currentMs)
+      const endMs   = Math.max(d.startMs, d.currentMs)
+      if (endMs - startMs > 200) setSelection(startMs, endMs)
+      setCtrlDrag({ active: false })
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+  }, [ctrlDrag.active, setSelection, setCtrlDrag])
+
+  // ── Pointer hover sync across panels ─────────────────────────────────────────
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (ctrlDragRef.current.active) return
     const instances = Array.from(instancesRef.current.values()).filter(i => !i.isDisposed())
     if (instances.length === 0) return
 
     let timeMs: number | null = null
-    let isInsideChart = false
 
-    // Find which chart the pointer is inside and convert to timestamp
     for (const inst of instances) {
       const dom = inst.getDom()
       const rect = dom.getBoundingClientRect()
       if (e.clientX >= rect.left && e.clientX <= rect.right &&
           e.clientY >= rect.top  && e.clientY <= rect.bottom) {
         timeMs = inst.convertFromPixel({ xAxisIndex: 0 }, e.clientX - rect.left) as number
-        isInsideChart = true
         break
       }
     }
 
-    if (!isInsideChart || timeMs === null) return
+    if (timeMs === null) return
 
-    // For each chart, convert timestamp to dataIndex for the left yAxis series and show tooltip
     for (const inst of instances) {
+      const pixelX = inst.convertToPixel({ xAxisIndex: 0 }, timeMs)
       const dom = inst.getDom()
       const rect = dom.getBoundingClientRect()
-      const pixelX = inst.convertToPixel({ xAxisIndex: 0 }, timeMs)
-
       if (pixelX != null) {
         inst.dispatchAction({ type: 'showTip', x: pixelX as number, y: rect.height / 2 })
       }
@@ -504,10 +579,21 @@ export function SyncedChart() {
 
   const ctx = useMemo(() => ({ registerChart, unregisterChart, instancesRef }), [registerChart, unregisterChart])
 
+  // ── Selection rectangle position ──────────────────────────────────────────────
+  const selectionRect = useMemo(() => {
+    if (!ctrlDrag.active || !containerRef.current) return null
+    const contLeft = containerRef.current.getBoundingClientRect().left
+    return {
+      left:  Math.min(ctrlDrag.startClientX, ctrlDrag.currentClientX) - contLeft,
+      width: Math.abs(ctrlDrag.currentClientX - ctrlDrag.startClientX),
+    }
+  }, [ctrlDrag])
+
   return (
     <ChartSyncContext.Provider value={ctx}>
       <div
-        className="h-full"
+        ref={containerRef}
+        className="h-full relative"
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
       >
@@ -515,10 +601,24 @@ export function SyncedChart() {
           layout={chartLayout}
           rows={allRows}
           cursor_ms={cursor_ms}
-          selection={selection}
           allSignals={allSignals}
           panelCount={panelCount}
         />
+
+        {/* CTRL+drag overlay — captura eventos só quando CTRL pressionado */}
+        <div
+          className="absolute inset-0"
+          style={{ pointerEvents: ctrlHeld ? 'all' : 'none',
+                   cursor: ctrlHeld ? 'crosshair' : 'default', zIndex: 20 }}
+          onMouseDown={handleOverlayMouseDown}
+        >
+          {selectionRect && (
+            <div
+              className="absolute top-0 bottom-0 bg-blue-500/15 border-x border-blue-400/50 pointer-events-none"
+              style={{ left: selectionRect.left, width: selectionRect.width }}
+            />
+          )}
+        </div>
       </div>
     </ChartSyncContext.Provider>
   )

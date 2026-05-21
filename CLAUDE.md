@@ -2,7 +2,20 @@
 
 App web de auto-tuning de mapas de ECU MasterInjection: importa mapa + datalogs → analisa desvios de lambda → sugere correções no mapa VE.
 
-Leia `specs/overview.md` antes de qualquer coisa.
+Sempre busque pelas specs dos assuntos relacionados. As specs estão organizadas conforme listado abaixo.
+
+## Specs
+
+```
+specs/
+├── overview.md                 # Visão geral e escopo
+├── master/map.md               # Formato CSV (#I20/#I21/#Fnn)
+├── master/datalog.md           # Colunas, conversões raw→real
+├── features/tuning-engine.md   # Pipeline 10 etapas
+├── features/tuning/ve.md       # Aba VE, atalhos de teclado
+├── features/datalog/           # Tela Datalog (overview + abas)
+└── architecture/frontend/      # Stores, persistência, componentes
+```
 
 ## Subprojetos
 
@@ -30,16 +43,3 @@ cd frontend && npm install && npm run dev
 - **Backend nunca armazena o mapa.** Enviado inline em `POST /api/tuning/run`. Frontend é o dono.
 - **Datalogs cacheados por SHA-1** (TTL 1h). Upload ocorre em `ensureLogsOnBackend()`, não no carregamento.
 - **Parsing é sempre client-side.** `parseMapClient` e `parseDatalogClient` rodam no browser. Backend reparseia o datalog ao receber o upload para construir o `DatalogModel`.
-
-## Specs
-
-```
-specs/
-├── overview.md                 # Visão geral e escopo
-├── master/map.md               # Formato CSV (#I20/#I21/#Fnn)
-├── master/datalog.md           # Colunas, conversões raw→real
-├── features/tuning-engine.md   # Pipeline 10 etapas
-├── features/tuning/ve.md       # Aba VE, atalhos de teclado
-├── features/datalog/           # Tela Datalog (overview + abas)
-└── architecture/frontend/      # Stores, persistência, componentes
-```

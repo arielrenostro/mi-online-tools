@@ -91,9 +91,12 @@ function SelectionBand({ selection, total }: { selection: TimeSelection; total: 
   const w = msToPct(selection.end_ms, total) - l
   return (
     <div
-      className="absolute top-0 bottom-0 z-20 bg-blue-500/20 border-x border-blue-400/60"
+      className="absolute top-0 bottom-0 z-20 bg-blue-500/20 border-x border-blue-400/60 cursor-grab"
       style={{ left: `${l}%`, width: `${w}%` }}
-    />
+    >
+      <div className="absolute left-0 top-0 bottom-0 w-2 -translate-x-full cursor-ew-resize bg-blue-400/40 hover:bg-blue-400/70 transition-colors" />
+      <div className="absolute right-0 top-0 bottom-0 w-2 translate-x-full cursor-ew-resize bg-blue-400/40 hover:bg-blue-400/70 transition-colors" />
+    </div>
   )
 }
 
@@ -172,6 +175,8 @@ type DragState =
   | { type: 'idle' }
   | { type: 'cursor' }
   | { type: 'selection'; startMs: number }
+  | { type: 'handle'; side: 'left' | 'right' }
+  | { type: 'move'; startMs: number; selStart: number; selEnd: number }
 
 export function TimeRail() {
   const railRef = useRef<HTMLDivElement>(null)
@@ -179,7 +184,6 @@ export function TimeRail() {
 
   const cursor_ms       = useTimeStore(s => s.cursor_ms)
   const selection       = useTimeStore(s => s.selection)
-  const chartZoom       = useTimeStore(s => s.chartZoom)
   const sparklineSensor = useTimeStore(s => s.sparklineSensor)
   const setCursor       = useTimeStore(s => s.setCursor)
   const setSelection    = useTimeStore(s => s.setSelection)
@@ -198,6 +202,17 @@ export function TimeRail() {
       .filter((_, i) => i % step === 0)
       .map(row => [row.timestamp_ms, getSignalValue(row, sparklineSensor)])
   }, [allRows, sparklineSensor, total])
+
+  function isHandleHit(clientX: number): 'left' | 'right' | null {
+    if (!selection || total === 0) return null
+    const rect = railRef.current!.getBoundingClientRect()
+    const px = clientX - rect.left
+    const startPx = (selection.start_ms / total) * rect.width
+    const endPx   = (selection.end_ms   / total) * rect.width
+    if (Math.abs(px - startPx) <= 8) return 'left'
+    if (Math.abs(px - endPx)   <= 8) return 'right'
+    return null
+  }
 
   function getRailMs(clientX: number): number {
     const rect = railRef.current!.getBoundingClientRect()
@@ -223,9 +238,15 @@ export function TimeRail() {
   function handleMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return
     e.preventDefault()
-    if (isCursorHit(e.clientX)) {
+    const handle = isHandleHit(e.clientX)
+    if (handle) {
+      setDrag({ type: 'handle', side: handle })
+    } else if (isCursorHit(e.clientX)) {
       setDrag({ type: 'cursor' })
-    } else if (!isInsideSelection(e.clientX)) {
+    } else if (isInsideSelection(e.clientX) && selection) {
+      setDrag({ type: 'move', startMs: getRailMs(e.clientX),
+                selStart: selection.start_ms, selEnd: selection.end_ms })
+    } else {
       const ms = getRailMs(e.clientX)
       setDrag({ type: 'selection', startMs: ms })
       setCursor(ms)
@@ -240,6 +261,19 @@ export function TimeRail() {
       if (Math.abs(cur - drag.startMs) > 200) {
         setSelection(Math.min(drag.startMs, cur), Math.max(drag.startMs, cur))
       }
+    } else if (drag.type === 'handle' && selection) {
+      const cur = getRailMs(e.clientX)
+      if (drag.side === 'left') {
+        setSelection(Math.min(cur, selection.end_ms - 200), selection.end_ms)
+      } else {
+        setSelection(selection.start_ms, Math.max(cur, selection.start_ms + 200))
+      }
+    } else if (drag.type === 'move') {
+      const cur = getRailMs(e.clientX)
+      const delta  = cur - drag.startMs
+      const width  = drag.selEnd - drag.selStart
+      const newStart = Math.max(0, Math.min(total - width, drag.selStart + delta))
+      setSelection(newStart, newStart + width)
     }
   }
 
@@ -270,7 +304,7 @@ export function TimeRail() {
         {/* Rail */}
         <div
           ref={railRef}
-          className="relative flex-1 h-12 rounded overflow-hidden cursor-crosshair bg-gray-800"
+          className={`relative flex-1 h-12 rounded overflow-hidden bg-gray-800 ${drag.type === 'move' ? 'cursor-grabbing' : 'cursor-crosshair'}`}
           tabIndex={0}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
@@ -279,7 +313,7 @@ export function TimeRail() {
           onKeyDown={handleKeyDown}
         >
           <SparklineSVG data={sparklineData} total={total} />
-          {chartZoom && <ViewportBand zoom={chartZoom} total={total} />}
+          {selection && <ViewportBand zoom={selection} total={total} />}
           {selection && <SelectionBand selection={selection} total={total} />}
           <LogSeparators logs={activeLogs} total={total} />
           {cursor_ms !== null && <CursorLine cursor_ms={cursor_ms} total={total} />}

@@ -13,7 +13,12 @@ Cada painel tem barra de chips: `[Sinal ×]` remove, `[+ Sinal ▾]` abre dropdo
 ## Sincronização entre painéis
 
 - **Eixo X:** sempre sincronizado — zoom/pan em qualquer painel aplica a todos
-- **Zoom → TimeRail:** exibe ViewportBand (overlay escuro fora do zoom)
+- **Zoom ↔ TimeRail (bidirecional):** `selection` é o conceito unificado de zoom e intervalo de análise
+  - Scroll/pan no gráfico → ECharts `datazoom` event → `setSelection` → TimeRail exibe ViewportBand + SelectionBand
+  - CTRL+drag no gráfico → retângulo azul semitransparente durante drag → `setSelection` ao soltar
+  - Drag no TimeRail → `setSelection` → `SyncedChart` faz `dispatchAction({ type: 'dataZoom' })` no ECharts
+  - Arrastar borda da SelectionBand no TimeRail → ajusta a borda correspondente do zoom
+  - "Limpar" / Escape → `clearSelection` → ECharts reseta para 0–100%
 - **Cursor do TimeRail:** linha vertical vermelha em todos os painéis
 - **Tooltip:** mover o mouse sobre qualquer painel exibe tooltip em todos no mesmo instante t. Via `onPointerMove` no container pai (persiste entre gaps). Mostra o último ponto antes do cursor quando não há ponto exato.
 
