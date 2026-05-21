@@ -192,8 +192,9 @@ const PanelView = memo(function PanelView({
   allSignals: string[]
   panelCount: number
 }) {
-  const chartRef = useRef<ReactECharts>(null)
-  const cursorRef = useRef(cursor_ms)
+  const chartRef    = useRef<ReactECharts>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const cursorRef   = useRef(cursor_ms)
   cursorRef.current = cursor_ms
 
   const syncCtx = useContext(ChartSyncContext)
@@ -249,7 +250,7 @@ const PanelView = memo(function PanelView({
   }, [syncCtx, panel.panelId])
 
   return (
-    <div className="flex flex-col h-full min-h-0 border border-gray-700 rounded">
+    <div ref={containerRef} className="flex flex-col h-full min-h-0 border border-gray-700 rounded">
       {/* Control bar */}
       <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-900 border-b border-gray-700 flex-shrink-0 flex-wrap">
         {panel.signals.map((sig, i) => (
@@ -271,7 +272,7 @@ const PanelView = memo(function PanelView({
             className="px-1.5 py-0.5 text-xs text-gray-500 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded"
           >↔</button>
           <button
-            onClick={() => addChartPanel(panel.panelId, 'vertical')}
+            onClick={() => addChartPanel(panel.panelId, 'vertical', containerRef.current?.clientHeight)}
             title="Adicionar abaixo"
             className="px-1.5 py-0.5 text-xs text-gray-500 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded"
           >+ ↓</button>
@@ -418,6 +419,7 @@ const ChartSyncContext = React.createContext<{
 export function SyncedChart() {
   const chartLayout    = useUIStore(s => s.chartLayout)
   const cursor_ms      = useTimeStore(s => s.cursor_ms)
+  const setCursor      = useTimeStore(s => s.setCursor)
   const selection      = useTimeStore(s => s.selection)
   const setSelection   = useTimeStore(s => s.setSelection)
   const clearSelection = useTimeStore(s => s.clearSelection)
@@ -540,25 +542,36 @@ export function SyncedChart() {
     }
   }, [ctrlDrag.active, setSelection, setCtrlDrag])
 
+  // ── Shared: find time at client position ─────────────────────────────────────
+  const getTimeAtClient = useCallback((clientX: number, clientY: number): number | null => {
+    const instances = Array.from(instancesRef.current.values()).filter(i => !i.isDisposed())
+    for (const inst of instances) {
+      const dom = inst.getDom()
+      const rect = dom.getBoundingClientRect()
+      if (clientX >= rect.left && clientX <= rect.right &&
+          clientY >= rect.top  && clientY <= rect.bottom) {
+        return inst.convertFromPixel({ xAxisIndex: 0 }, clientX - rect.left) as number
+      }
+    }
+    return null
+  }, [])
+
+  // ── Click → move TimeRail cursor ─────────────────────────────────────────────
+  const handleContainerClick = useCallback((e: React.MouseEvent) => {
+    const timeMs = getTimeAtClient(e.clientX, e.clientY)
+    if (timeMs !== null) setCursor(timeMs)
+  }, [getTimeAtClient, setCursor])
+
   // ── Pointer hover sync across panels ─────────────────────────────────────────
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (ctrlDragRef.current.active) return
     const instances = Array.from(instancesRef.current.values()).filter(i => !i.isDisposed())
     if (instances.length === 0) return
 
-    let timeMs: number | null = null
-
-    for (const inst of instances) {
-      const dom = inst.getDom()
-      const rect = dom.getBoundingClientRect()
-      if (e.clientX >= rect.left && e.clientX <= rect.right &&
-          e.clientY >= rect.top  && e.clientY <= rect.bottom) {
-        timeMs = inst.convertFromPixel({ xAxisIndex: 0 }, e.clientX - rect.left) as number
-        break
-      }
-    }
-
+    const timeMs = getTimeAtClient(e.clientX, e.clientY)
     if (timeMs === null) return
+
+    if (ctrlHeld) setCursor(timeMs)
 
     for (const inst of instances) {
       const pixelX = inst.convertToPixel({ xAxisIndex: 0 }, timeMs)
@@ -568,7 +581,7 @@ export function SyncedChart() {
         inst.dispatchAction({ type: 'showTip', x: pixelX as number, y: rect.height / 2 })
       }
     }
-  }, [])
+  }, [ctrlHeld, getTimeAtClient, setCursor])
 
   const handlePointerLeave = useCallback(() => {
     const instances = Array.from(instancesRef.current.values()).filter(i => !i.isDisposed())
@@ -594,6 +607,7 @@ export function SyncedChart() {
       <div
         ref={containerRef}
         className="h-full relative"
+        onClick={handleContainerClick}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
       >

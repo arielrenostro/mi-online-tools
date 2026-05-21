@@ -30,4 +30,5 @@ export interface UIState {
   columnVisibility:     Record<string, boolean>
   chartLayout:          ChartLayout
   chartsHeight:         number
+  chartSidebarOpen:     boolean
 }

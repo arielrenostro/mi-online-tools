@@ -12,6 +12,7 @@ const initialState: UIState = {
   columnVisibility:     {},
   chartLayout:          { type: 'panel', panelId: INITIAL_PANEL_ID, signals: ['RPM'] },
   chartsHeight:         400,
+  chartSidebarOpen:     true,
 }
 
 interface UIActions {
@@ -20,11 +21,12 @@ interface UIActions {
   setDatalogTab(tab: DatalogTab): void
   setColumnVisibility(signal: string, visible: boolean): void
   setChartLayout(layout: ChartLayout): void
-  addChartPanel(parentId: string, direction: 'horizontal' | 'vertical'): void
+  addChartPanel(parentId: string, direction: 'horizontal' | 'vertical', extraHeight?: number): void
   removeChartPanel(panelId: string): void
   updatePanelSignals(panelId: string, signals: string[]): void
   updateSplitRatio(splitId: string, ratio: number): void
   setChartsHeight(h: number): void
+  setChartSidebarOpen(v: boolean): void
   hydrate(state: Partial<UIState>): void
 }
 
@@ -43,10 +45,15 @@ export const useUIStore = create<UIState & UIActions>()(
 
     setChartLayout(layout) { set({ chartLayout: layout }); persist() },
 
-    addChartPanel(parentId, direction) {
+    addChartPanel(parentId, direction, extraHeight) {
       const newPanel: ChartPanel = { type: 'panel', panelId: crypto.randomUUID(), signals: [] }
       const updated = splitPanel(get().chartLayout, parentId, direction, newPanel)
-      if (updated) { set({ chartLayout: updated }); persist() }
+      if (updated) {
+        const update: Partial<UIState> = { chartLayout: updated }
+        if (extraHeight && direction === 'vertical') update.chartsHeight = get().chartsHeight + extraHeight
+        set(update)
+        persist()
+      }
     },
 
     removeChartPanel(panelId) {
@@ -67,6 +74,7 @@ export const useUIStore = create<UIState & UIActions>()(
     },
 
     setChartsHeight(h) { set({ chartsHeight: h }); persist() },
+    setChartSidebarOpen(v) { set({ chartSidebarOpen: v }); persist() },
 
     hydrate(savedState) {
       const migratedLayout = savedState.chartLayout ? migrateSplitIds(savedState.chartLayout) : undefined
@@ -84,6 +92,7 @@ function persist() {
     columnVisibility:     s.columnVisibility,
     chartLayout:          s.chartLayout,
     chartsHeight:         s.chartsHeight,
+    chartSidebarOpen:     s.chartSidebarOpen,
   })
 }
 
