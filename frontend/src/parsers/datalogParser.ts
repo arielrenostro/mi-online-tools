@@ -23,7 +23,6 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
 
     const fields = trimmed.split(';')
     const isHeaderLine = fields.find(f => f == 'RPM') && fields.find(f => f == 'MAP') && fields.find(f => f == 'Lambda 1')
-    console.log(fields, 'RPM' in fields)
     if (isHeaderLine) {
       colMap = {}
       fields.forEach((f, i) => { colMap[f.trim()] = i })
