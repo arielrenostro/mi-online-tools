@@ -2,7 +2,9 @@
 
 **Rota:** `/datalog`
 
-Layout: `TopBar` → `TimeRail` (sempre visível) → abas `[Logs][Dashboard][Gráficos][Dados]` → conteúdo da aba ativa.
+Layout: `TopBar` → barra de abas `[Logs][Dashboard][Gráficos][Dados]` com botão de ajuda `?` à direita → `TimeRail` (sempre visível) → conteúdo da aba ativa.
+
+O botão `?` abre `DatalogHelpModal` (`features/datalog/DatalogHelpModal.tsx`): modal com documentação de todas as abas, comportamentos do TimeRail e atalhos de teclado. Fecha com Escape ou clique no backdrop.
 
 | Aba | Guard | Spec |
 |-----|-------|------|

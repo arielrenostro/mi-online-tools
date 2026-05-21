@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { TimeRail } from '@/components/TimeRail'
+import DatalogHelpModal from '@/features/datalog/DatalogHelpModal'
 
 function TabLink({ to, label }: { to: string; label: string }) {
   return (
@@ -17,14 +19,26 @@ function TabLink({ to, label }: { to: string; label: string }) {
 }
 
 export function DatalogPage() {
+  const [helpOpen, setHelpOpen] = useState(false)
+
   return (
     <div className="flex flex-col h-full">
-      <nav className="flex gap-1 border-b border-gray-800 px-4 pt-2 flex-shrink-0">
+      <nav className="flex items-end gap-1 border-b border-gray-800 px-4 pt-2 flex-shrink-0">
         <TabLink to="logs" label="Logs" />
         <TabLink to="dashboard" label="Dashboard" />
         <TabLink to="charts" label="Gráficos" />
         <TabLink to="data" label="Dados" />
+        <div className="ml-auto pb-2">
+          <button
+            onClick={() => setHelpOpen(true)}
+            title="Ajuda"
+            className="w-6 h-6 flex items-center justify-center rounded-full border border-gray-600 text-gray-400 hover:text-white hover:border-gray-400 text-xs font-bold transition-colors"
+          >
+            ?
+          </button>
+        </div>
       </nav>
+      <DatalogHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
       <TimeRail />
       <div className="flex-1 overflow-auto min-h-0">
         <Outlet />
