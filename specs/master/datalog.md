@@ -73,9 +73,13 @@ for line in file:
         rows.append(row)
 ```
 
-### 3. Validação de linhas
+### 3. Coluna Timestamp
 
-Descartar se: nº de campos ≠ esperado pelo header atual; `Timestamp` não numérico; `RPM` ou `MAP` não inteiros válidos.
+Se presente no header, usar como timestamp absoluto (ms Unix). Se **ausente**, gerar dinamicamente: primeira linha = `0`, cada linha seguinte += `100` (ms).
+
+### 4. Validação de linhas
+
+Descartar se: nº de campos ≠ esperado pelo header atual; `Timestamp` (quando presente) não numérico; `RPM` ou `MAP` não inteiros válidos.
 
 Linhas com `Event` preenchido (alarmes) podem virar metadados, mas não entram na análise.
 

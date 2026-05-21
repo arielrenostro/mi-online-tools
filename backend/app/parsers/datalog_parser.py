@@ -1,7 +1,7 @@
 from __future__ import annotations
 from app.models.datalog_model import DatalogModel, DatalogRowModel
 
-_REQUIRED = {"Timestamp", "RPM", "MAP", "Lambda 1", "VE Value", "CLT", "Lambda Loop", "Lambda Target", "Lambda Corr"}
+_REQUIRED = {"RPM", "MAP", "Lambda 1", "VE Value", "CLT", "Lambda Loop", "Lambda Target", "Lambda Corr"}
 _SIGNALS  = ["RPM", "MAP", "Lambda 1", "Lambda Target", "CLT", "Lambda Corr", "Lambda Loop"]
 
 
@@ -10,6 +10,7 @@ def parse_datalog(content: bytes, filename: str, hash_str: str) -> DatalogModel:
     lines = text.splitlines()
 
     col_map: dict[str, int] = {}
+    has_timestamp_col = False
     raw_rows: list[DatalogRowModel] = []
     first_ts: int | None = None
 
@@ -22,6 +23,7 @@ def parse_datalog(content: bytes, filename: str, hash_str: str) -> DatalogModel:
 
         if fields[0].strip() == "Timestamp":
             col_map = {name.strip(): idx for idx, name in enumerate(fields)}
+            has_timestamp_col = "Timestamp" in col_map
             missing = _REQUIRED - col_map.keys()
             if missing:
                 raise ValueError(f"Colunas obrigatórias ausentes: {missing}")
@@ -33,10 +35,13 @@ def parse_datalog(content: bytes, filename: str, hash_str: str) -> DatalogModel:
         if len(fields) < len(col_map):
             continue
 
-        try:
-            raw_ts = int(fields[col_map["Timestamp"]].strip())
-        except (ValueError, IndexError):
-            continue
+        if has_timestamp_col:
+            try:
+                raw_ts = int(fields[col_map["Timestamp"]].strip())
+            except (ValueError, IndexError):
+                continue
+        else:
+            raw_ts = len(raw_rows) * 100
 
         try:
             rpm         = float(fields[col_map["RPM"]].strip())
@@ -59,7 +64,7 @@ def parse_datalog(content: bytes, filename: str, hash_str: str) -> DatalogModel:
                 pass
 
         if first_ts is None:
-            first_ts = raw_ts
+            first_ts = raw_ts if has_timestamp_col else 0
 
         raw_rows.append(DatalogRowModel(
             timestamp_ms    = raw_ts - first_ts,

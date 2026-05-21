@@ -13,6 +13,7 @@ export async function parseDatalogClient(file: File): Promise<DatalogModel> {
 export function parseDatalogText(text: string, filename: string, hash: string): DatalogModel {
   const lines = text.split(/\r?\n/)
   let colMap: Record<string, number> = {}
+  let hasTimestampCol = false
   const rows: DatalogRow[] = []
   let firstTs: number | null = null
 
@@ -21,12 +22,15 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
     if (!trimmed) continue
 
     const fields = trimmed.split(';')
-
-    if (fields[0].trim() === 'Timestamp') {
+    const isHeaderLine = fields.find(f => f == 'RPM') && fields.find(f => f == 'MAP') && fields.find(f => f == 'Lambda 1')
+    console.log(fields, 'RPM' in fields)
+    if (isHeaderLine) {
       colMap = {}
       fields.forEach((f, i) => { colMap[f.trim()] = i })
       const missing = REQUIRED_COLUMNS.filter(c => !(c in colMap))
-      if (missing.length > 0) throw new Error(`Colunas ausentes: ${missing.join(', ')}`)
+      if (missing.length > 0) {
+        throw new Error(`Colunas ausentes: ${missing.join(', ')}`)
+      }
       continue
     }
 
@@ -35,8 +39,13 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
 
     const g = (col: string) => fields[colMap[col]]?.trim() ?? ''
 
-    const rawTs = parseInt(g('Timestamp'), 10)
-    if (isNaN(rawTs)) continue
+    let rawTs: number
+    if (hasTimestampCol) {
+      rawTs = parseInt(g('Timestamp'), 10)
+      if (isNaN(rawTs)) continue
+    } else {
+      rawTs = rows.length * 100
+    }
 
     const row: DatalogRow = { timestamp_ms: 0 }
     let valid = true
@@ -49,7 +58,7 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
 
     if (!valid) continue
 
-    if (firstTs === null) firstTs = rawTs
+    if (firstTs === null) firstTs = hasTimestampCol ? rawTs : 0
     row.timestamp_ms = rawTs - firstTs
     rows.push(row)
   }
