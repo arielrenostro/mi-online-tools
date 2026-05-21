@@ -3,7 +3,7 @@ import { TopBar } from '@/components/TopBar'
 
 export function RootLayout() {
   return (
-    <div className="flex flex-col min-h-screen bg-gray-950 text-gray-100">
+    <div className="flex flex-col h-screen bg-gray-950 text-gray-100">
       <TopBar />
       <main className="flex-1 overflow-auto">
         <Outlet />

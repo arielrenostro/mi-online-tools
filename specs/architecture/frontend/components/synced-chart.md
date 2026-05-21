@@ -49,7 +49,7 @@ Pilha vertical de painéis, cada um com sua instância ECharts (canvas). Por pai
 
 ## Sincronização entre painéis
 
-- **Zoom (eixo X)** — `echarts.connect(groupId)` propaga o `dataZoom` a todos os painéis simultaneamente
+- **Zoom (eixo X)** — `echarts.connect(groupId)` sincroniza o estado visual de zoom entre painéis; o evento `datazoom`, porém, só dispara na instância que originou a interação (não é propagado às demais). Por isso o listener é registrado individualmente em cada instância via `registerChart`.
 - **Cursor/tooltip** — gerenciados pelo container pai (não por `mouseenter`/`mouseleave` individuais, que causariam flash entre painéis): um React Context registra cada instância ECharts; o container converte px↔ms e dispara `showTip`/`hideTip` em todas as instâncias
 
 ## Integração com o `TimeRail` (`useTimeStore`)

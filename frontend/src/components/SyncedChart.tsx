@@ -427,8 +427,11 @@ export function SyncedChart() {
   const allSignals     = useLogStore(selectAllSignals)
   const panelCount     = flattenPanels(chartLayout).length
 
+  const allRowsRef         = useRef(allRows)
+  useEffect(() => { allRowsRef.current = allRows }, [allRows])
+
   const instancesRef       = useRef<Map<string, echarts.ECharts>>(new Map())
-  const zoomListenerRef    = useRef<{ inst: echarts.ECharts; handler: (p: unknown) => void } | null>(null)
+  const zoomListenersRef   = useRef<Map<string, (p: unknown) => void>>(new Map())
   const updatingFromExternal = useRef(false)
 
   // ── CTRL key tracking ────────────────────────────────────────────────────────
@@ -467,9 +470,13 @@ export function SyncedChart() {
   }, [selection])
 
   // ── ECharts instances registry + datazoom → store ────────────────────────────
+  // echarts.connect propaga o zoom visual entre painéis, mas o evento datazoom
+  // só dispara na instância que originou a interação. Por isso o listener deve
+  // ser registrado em cada instância individualmente.
   const registerChart = useCallback((id: string, inst: echarts.ECharts) => {
     instancesRef.current.set(id, inst)
-    if (zoomListenerRef.current) return
+    const prev = zoomListenersRef.current.get(id)
+    if (prev) inst.off('datazoom', prev)
     const handler = (params: unknown) => {
       if (updatingFromExternal.current) return
       const p = params as {
@@ -481,23 +488,30 @@ export function SyncedChart() {
       if (startPct !== undefined && endPct !== undefined && startPct <= 0.5 && endPct >= 99.5) {
         clearSelection(); return
       }
-      const startVal = p.batch?.[0]?.startValue ?? p.startValue
-      const endVal   = p.batch?.[0]?.endValue   ?? p.endValue
-      if (startVal == null || endVal == null) return
+      let startVal: number | null = p.batch?.[0]?.startValue ?? p.startValue ?? null
+      let endVal:   number | null = p.batch?.[0]?.endValue   ?? p.endValue   ?? null
+      if (startVal == null || endVal == null) {
+        // ECharts inside datazoom envia só start/end percentuais (0–100); converter
+        if (startPct == null || endPct == null) return
+        const rows = allRowsRef.current
+        const tMin = rows[0]?.timestamp_ms ?? 0
+        const tMax = rows[rows.length - 1]?.timestamp_ms ?? 0
+        if (tMax <= tMin) return
+        startVal = tMin + (startPct / 100) * (tMax - tMin)
+        endVal   = tMin + (endPct / 100)   * (tMax - tMin)
+      }
       setSelection(startVal, endVal)
     }
     inst.on('datazoom', handler)
-    zoomListenerRef.current = { inst, handler }
+    zoomListenersRef.current.set(id, handler)
   }, [setSelection, clearSelection])
 
   const unregisterChart = useCallback((id: string) => {
     const inst = instancesRef.current.get(id)
     instancesRef.current.delete(id)
-    const zl = zoomListenerRef.current
-    if (zl && zl.inst === inst) {
-      inst?.off('datazoom', zl.handler)
-      zoomListenerRef.current = null
-    }
+    const handler = zoomListenersRef.current.get(id)
+    if (handler && inst) inst.off('datazoom', handler)
+    zoomListenersRef.current.delete(id)
   }, [])
 
   // ── CTRL+drag handlers ────────────────────────────────────────────────────────

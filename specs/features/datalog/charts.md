@@ -36,3 +36,11 @@ Estado (`chartSidebarOpen`) persiste em `miot:ui`.
 ## Altura e persistência
 
 Alça de redimensionamento no rodapé: min 200px, max 1200px, default 400px. Layout (árvore de divisões + sinais por painel), altura e estado da sidebar persistem em `miot:ui` (localStorage).
+
+## Layout e scroll
+
+O `ChartsTab` preenche toda a altura disponível (`h-full`) abaixo do `TimeRail`. Internamente:
+
+- **Coluna de gráficos** (esquerda): `overflow-y-auto`; o conteúdo tem altura `chartsHeight` — permite scroll independente da sidebar.
+- **Sidebar de Sinais** (direita): permanece sempre visível ao lado dos gráficos; sua tabela tem `overflow-y-auto` próprio para listas longas de sinais.
+- **ResizeHandle**: fixo no rodapé do tab (sempre visível); redimensionar aumenta/diminui a altura do conteúdo rolável dos gráficos.

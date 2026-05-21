@@ -112,10 +112,12 @@ export function ChartsTab() {
   const setChartsHeight = useUIStore(s => s.setChartsHeight)
 
   return (
-    <div className="flex flex-col" style={{ height: chartsHeight }}>
+    <div className="h-full flex flex-col">
       <div className="flex flex-1 min-h-0">
-        <div className="flex-1 min-w-0 p-2">
-          <SyncedChart />
+        <div className="flex-1 min-w-0 overflow-y-auto">
+          <div style={{ height: chartsHeight }}>
+            <SyncedChart />
+          </div>
         </div>
         <SignalSidebar />
       </div>
