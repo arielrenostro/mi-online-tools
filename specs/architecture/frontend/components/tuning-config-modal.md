@@ -16,11 +16,11 @@ export interface TuningConfigModalProps {
 }
 ```
 
-O modal mantém uma cópia local da config — não atualiza o store em tempo real.
+O modal mantém uma cópia local da config — **não** atualiza o store em tempo real (evita disparar o indicador "config alterada" e propagar valores inválidos antes de confirmar).
 
 ## JSON Schema estendido
 
-O backend retorna JSON Schema padrão + propriedades `x-*` para a renderização. O frontend itera sobre `x-groups` para as seções e usa o tipo de cada campo para escolher o componente.
+O backend retorna JSON Schema padrão + propriedades `x-*` para a renderização.
 
 ```typescript
 export interface JSONSchema {
@@ -45,238 +45,70 @@ export interface JSONSchemaProperty {
   default?: unknown              // usado por "Restaurar padrões"
   minimum?: number
   maximum?: number
-  enum?: unknown[]               // string com enum → Select
+  enum?: unknown[]               // string/number com enum → Select
   'x-unit'?: string              // unidade à direita do input. Ex: "ºC", "%", "kPa", "λ"
   'x-nullable-label'?: string    // label quando o campo nullable está null. Ex: "Desabilitado"
   'x-controls'?: string          // este campo (boolean) habilita/desabilita outro
 }
 ```
 
-### Exemplo de schema
-
-```json
-{
-  "type": "object",
-  "x-groups": [
-    { "title": "Filtros de Dados", "fields": ["min_clt", "lambda_loop_closed_only",
-      "skip_first_closed_loop", "skip_first_rpm_bucket", "skip_first_map_bucket",
-      "max_delta_rpm", "max_delta_map", "max_delta_lambda_target", "max_lambda", "max_delta_pedal"] },
-    { "title": "Qualidade por Célula", "fields": ["outlier_sigma", "cv_threshold"] },
-    { "title": "Correção", "fields": ["weight_sample_base", "max_correction_pct"] },
-    { "title": "Convergência", "fields": ["convergence_threshold"] },
-    { "title": "Pós-processamento", "fields": ["rpm400_rule_enabled", "rpm400_discount",
-      "low_map_rule_enabled", "low_map_threshold", "low_map_discount", "max_adjacent_gradient_pct"] }
-  ],
-  "properties": {
-    "min_clt": { "type": "number", "title": "Temperatura mínima do motor (CLT)",
-      "description": "Pontos com CLT abaixo deste valor são descartados",
-      "x-unit": "ºC", "default": 80, "minimum": 0, "maximum": 120 },
-    "lambda_loop_closed_only": { "type": "boolean", "title": "Apenas loop fechado",
-      "description": "Descarta pontos em open loop (lambda_loop = 0)" },
-    "max_delta_pedal": { "type": ["number", "null"], "title": "Máximo delta pedal entre amostras",
-      "description": "Descarta pontos com variação de pedal acima deste valor. null = desabilitado",
-      "x-unit": "%", "default": null, "x-nullable-label": "Desabilitado", "minimum": 0, "maximum": 100 },
-    "rpm400_rule_enabled": { "type": "boolean", "title": "Aplicar regra RPM 400",
-      "description": "Calcula coluna 400 RPM como 800 RPM menos o desconto abaixo",
-      "x-controls": "rpm400_discount" },
-    "rpm400_discount": { "type": "number", "title": "Desconto sobre 800 RPM",
-      "x-unit": "%", "default": 4.5, "minimum": 0, "maximum": 20 }
-  }
-}
-```
+Os grupos de `x-groups` definem as seções colapsáveis e a ordem dos campos. Fallback: todos os campos num único grupo "Configurações".
 
 ## Mapeamento tipo → componente (`fieldTypes.ts`)
 
-```typescript
-export type FieldComponentType =
-  | 'number-input'    // <Input type="number"> + badge de unit
-  | 'switch'          // <Switch>
-  | 'nullable-number' // <Switch> enable/disable + <Input> condicional
-  | 'select'          // <Select> com options do enum
-  | 'text-input'      // <Input type="text">
+`getFieldType(prop)` escolhe o componente shadcn/ui:
 
-export function getFieldType(prop: JSONSchemaProperty): FieldComponentType {
-  if (Array.isArray(prop.type)) return 'nullable-number'   // ["number","null"]
-  switch (prop.type) {
-    case 'boolean': return 'switch'
-    case 'number': case 'integer': return prop.enum ? 'select' : 'number-input'
-    case 'string': return prop.enum ? 'select' : 'text-input'
-    default: return 'number-input'
-  }
-}
-```
+| `FieldComponentType` | Quando | Visual |
+|----------------------|--------|--------|
+| `nullable-number` | `type` é array (`["number","null"]`) | `<Switch>` habilita o `<Input>`; desligado mostra `x-nullable-label` |
+| `switch` | `type: 'boolean'` | `<Switch>` + label/description |
+| `select` | `number`/`integer`/`string` com `enum` | `<Select>` com options do `enum` |
+| `number-input` | `number`/`integer` sem `enum` | `<Input type="number">` + badge de unidade + badge de range "[min – max]" |
+| `text-input` | `string` sem `enum` | `<Input type="text">` |
 
-| Tipo | Componente shadcn/ui | Visual |
-|------|---------------------|--------|
-| `number-input` | `<Input type="number">` | Badge de unidade à direita; badge de range "[min – max]" abaixo |
-| `switch` | `<Switch>` | Switch à esquerda, label/description à direita |
-| `nullable-number` | `<Switch>` + `<Input>` | Switch habilita o campo; desabilitado → exibe `x-nullable-label` |
-| `select` | `<Select>` | Dropdown com options do `enum` |
-| `text-input` | `<Input type="text">` | Input simples |
-
-## `SchemaField`
-
-Renderiza um campo: label + description à esquerda, controle à direita conforme `getFieldType(prop)`. Exibe erro de validação em vermelho abaixo e badge de range se `minimum` e `maximum` definidos. `disabled` (quando controlado por `x-controls`) aplica `opacity-50`.
-
-**`NumberInput`** — mantém `localValue` (string) sincronizado via `useEffect` quando o valor externo muda (ex.: "Restaurar padrões"); confirma no `onBlur` se `!isNaN`. Badge de unidade à direita.
-
-**`NullableNumberInput`** — `<Switch>` (`checked = value !== null`): ligar → `onChange(0)`; desligar → `onChange(null)`. Quando ligado mostra `NumberInput`; desligado mostra o `x-nullable-label`.
+`SchemaField` renderiza: label + description à esquerda, controle à direita; erro em vermelho abaixo. `NumberInput` confirma no `onBlur` se `!isNaN` e mantém o valor sincronizado quando o valor externo muda (ex.: "Restaurar padrões").
 
 ## Campos dependentes (`x-controls`)
 
-Propriedade com `x-controls: "outro_campo"` → o campo controlado é renderizado **indentado** (`ml-8 pl-3 border-l`) e desabilitado quando o Switch controlador está `false`.
-
-```tsx
-// SchemaForm.tsx — renderiza o controlador + o dependente indentado
-const controlledKey  = prop['x-controls']
-const controlledProp = controlledKey ? schema.properties[controlledKey] : null
-const isControllerOn = typeof formValues[fieldKey] === 'boolean' ? formValues[fieldKey] : true
-// renderiza SchemaField(controlador) e, abaixo, SchemaField(controlado, disabled=!isControllerOn)
-```
+Uma propriedade com `x-controls: "outro_campo"` torna o campo controlado renderizado **indentado** (`ml-8 pl-3 border-l`) logo abaixo do controlador, e desabilitado (`opacity-50`) quando o Switch controlador está `false`. O `CollapsibleGroup` pula os campos controlados ao iterar — eles são renderizados junto do controlador.
 
 ```
 Aplicar regra RPM 400              [✓ Switch]
-└── Desconto sobre 800 RPM         [4.5] %        ← habilitado
-Aplicar regra RPM 400              [ ○ Switch]
-└── Desconto sobre 800 RPM         [4.5] %        ← desabilitado (opacity-50)
+└── Desconto sobre 800 RPM         [4.5] %      ← habilitado / desabilitado conforme o Switch
 ```
 
-## Seção colapsável (`CollapsibleGroup`)
-
-Cada grupo de `x-groups` vira uma seção com header colapsável (`defaultCollapsed`). Ao renderizar os campos, pula os que são **controlados** por outro campo do mesmo grupo (`schema.properties[k]?.['x-controls'] === fieldKey`) — eles são renderizados junto com o controlador.
-
 ## Hook `useSchemaForm`
+
+Mantém o estado local do formulário a partir de `initialValues` (a `config` atual) e `defaultValues` (`engineInfo.defaultConfig`):
 
 ```typescript
 interface UseSchemaFormReturn {
   formValues: Record<string, unknown>
   errors: Record<string, string>
-  isDirty: boolean
-  handleChange: (key: string, value: unknown) => void
-  handleReset: () => void
-  validate: () => boolean
+  isDirty: boolean                          // algum campo difere de initialValues
+  handleChange: (key, value) => void        // atualiza + valida o campo imediatamente
+  handleReset: () => void                   // recarrega defaultValues, limpa erros
+  validate: () => boolean                   // valida todos os campos; preenche errors
   getSubmitValue: () => Record<string, unknown>
 }
-
-export function useSchemaForm({ schema, initialValues, defaultValues }: UseSchemaFormOptions) {
-  const [formValues, setFormValues] = useState(() => ({ ...initialValues }))
-  const [errors, setErrors] = useState<Record<string, string>>({})
-
-  const isDirty = useMemo(() =>
-    Object.keys(formValues).some(key => formValues[key] !== initialValues[key]),
-    [formValues, initialValues])
-
-  function handleChange(key: string, value: unknown) {
-    setFormValues(prev => ({ ...prev, [key]: value }))
-    const fieldError = validateField(key, value, schema.properties[key])
-    setErrors(prev => {
-      if (fieldError) return { ...prev, [key]: fieldError }
-      const { [key]: _, ...rest } = prev
-      return rest
-    })
-  }
-
-  function handleReset() { setFormValues({ ...defaultValues }); setErrors({}) }
-
-  function validate(): boolean {
-    const newErrors: Record<string, string> = {}
-    for (const [key, prop] of Object.entries(schema.properties)) {
-      const error = validateField(key, formValues[key], prop)
-      if (error) newErrors[key] = error
-    }
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  return { formValues, errors, isDirty, handleChange, handleReset, validate,
-           getSubmitValue: () => ({ ...formValues }) }
-}
-
-/** Valida um campo conforme o schema. Retorna a mensagem de erro ou undefined. */
-function validateField(key: string, value: unknown, prop: JSONSchemaProperty | undefined): string | undefined {
-  if (!prop) return undefined
-  if (Array.isArray(prop.type) && prop.type.includes('null') && value === null) return undefined  // nullable
-  if (prop.type === 'number' || prop.type === 'integer' || Array.isArray(prop.type)) {
-    const num = typeof value === 'number' ? value : parseFloat(String(value))
-    if (isNaN(num)) return 'Valor inválido'
-    if (prop.type === 'integer' && !Number.isInteger(num)) return 'Deve ser um número inteiro'
-    if (prop.minimum !== undefined && num < prop.minimum)
-      return `Mínimo: ${prop.minimum}${prop['x-unit'] ? ` ${prop['x-unit']}` : ''}`
-    if (prop.maximum !== undefined && num > prop.maximum)
-      return `Máximo: ${prop.maximum}${prop['x-unit'] ? ` ${prop['x-unit']}` : ''}`
-  }
-  return undefined
-}
 ```
 
-## Componente principal
+**Regras de validação por campo** (`validateField`): campo nullable com valor `null` é válido; campos numéricos rejeitam não-números ("Valor inválido"), `integer` rejeita decimais ("Deve ser um número inteiro"), e valores fora de `minimum`/`maximum` geram "Mínimo: X unit" / "Máximo: X unit".
 
-`TuningConfigModal` usa `<Dialog>` do shadcn/ui. `useSchemaForm` é inicializado com `config` (initialValues) e `engineInfo.defaultConfig` (defaultValues). Grupos: `schema['x-groups']` ou fallback (todos os campos num único grupo "Configurações").
-
-```tsx
-function handleSave() {
-  if (!validate()) return  // rola até o primeiro erro
-  onSave(getSubmitValue() as unknown as TuningConfig)
-  onClose()
-}
-```
-
-Layout: Header (nome + descrição do engine) · `ScrollArea` com os `CollapsibleGroup` · Footer com `[Restaurar padrões]` (à esquerda) e `[Cancelar]` `[Salvar]` (à direita; botão "Salvar"/"Fechar" conforme `isDirty`, desabilitado se há erros).
-
-## Validação
-
-- **Tempo real** — `onChange` valida o campo imediatamente; `onBlur` revalida
-- **Ao salvar** — `validate()` percorre todos os campos; se há erros, o modal não fecha e rola até o primeiro:
-
-```typescript
-function scrollToFirstError(errors: Record<string, string>) {
-  const firstErrorKey = Object.keys(errors)[0]
-  if (firstErrorKey) document.getElementById(firstErrorKey)
-    ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-}
-```
-
-| Situação | Mensagem |
-|----------|----------|
-| Valor não numérico | "Valor inválido" |
-| Integer com decimal | "Deve ser um número inteiro" |
-| Abaixo do mínimo | "Mínimo: 0 ºC" |
-| Acima do máximo | "Máximo: 120 ºC" |
-
-## Estado local vs. store
-
-O modal **não atualiza o `useTuningStore` em tempo real** — evita disparar o indicador "config alterada" antes de confirmar e propagar valores inválidos.
+## Comportamento
 
 ```
-Abrir modal     → useSchemaForm inicializa com a config do store
-Usuário edita   → estado local do formulário; store NÃO é tocado
-"Salvar"        → validate() → onSave(newConfig) → pai chama updateConfig() → onClose()
-"Cancelar"/Esc  → onClose() sem onSave; store mantém a config anterior
+Abrir         → useSchemaForm inicializa com a config do store
+Editar        → estado local; store NÃO é tocado; onChange valida o campo, onBlur revalida
+"Salvar"      → validate(): se há erros, não fecha e rola até o primeiro (scrollIntoView);
+                senão onSave(getSubmitValue() as TuningConfig) → pai chama updateConfig() → onClose()
+"Cancelar"/Esc → onClose() sem onSave; store mantém a config anterior
+"Restaurar padrões" → recarrega engineInfo.defaultConfig no formulário local (NÃO salva);
+                "Salvar" fica ativo se isDirty após o reset
 ```
 
-## Botão "Restaurar Padrões"
+Layout do `<Dialog>`: header (nome + descrição do engine) · `ScrollArea` com os `CollapsibleGroup` · footer com `[Restaurar padrões]` (esquerda) e `[Cancelar]` `[Salvar]` (direita; "Salvar" desabilitado se há erros).
 
-Recarrega `engineInfo.defaultConfig` no formulário local (**não salva**), limpa erros. "Salvar" fica ativo se `isDirty` após o reset (padrões podem diferir da config atual). O usuário ainda precisa clicar "Salvar" para persistir.
+## Integração com a aba VE
 
-## Integração com a Aba VE
-
-```tsx
-function VETabHeader() {
-  const [modalOpen, setModalOpen] = useState(false)
-  const config       = useTuningStore(s => s.config)
-  const updateConfig = useTuningStore(s => s.updateConfig)
-  const engineInfo   = useEngineInfo(useTuningStore(s => s.selectedEngineId))  // busca/cache GET /api/engines/{id}
-
-  if (!engineInfo) return null
-  return (
-    <>
-      <button onClick={() => setModalOpen(true)}>⚙ Config</button>
-      <TuningConfigModal
-        open={modalOpen} engineInfo={engineInfo} config={config}
-        onSave={newConfig => updateConfig(newConfig)}
-        onClose={() => setModalOpen(false)}
-      />
-    </>
-  )
-}
-```
+O cabeçalho da aba VE abre o modal passando a `config` e o `updateConfig` do `useTuningStore`, e o `engineInfo` obtido via `useEngineInfo(selectedEngineId)` (busca/cache de `GET /api/engines/{id}`).

@@ -81,23 +81,7 @@ Linhas com `Event` preenchido (alarmes) podem virar metadados, mas não entram n
 
 ### 4. Estrutura resultante por linha
 
-```python
-@dataclass
-class DatalogRow:
-    timestamp: int          # ms
-    rpm: int
-    map_kpa: int            # kPa
-    lambda_measured: float  # λ convertido
-    lambda_target: float    # λ convertido
-    lambda_corr_pct: float  # % convertido (ex: +2.0)
-    lambda_loop_closed: bool
-    clt: int                # ºC
-    iat: int                # ºC
-    pedal_pct: float        # %
-    inj_duty: int           # %
-    ve: float               # %
-    speed_kmh: int          # km/h
-```
+Cada linha vira um `DatalogRow` (campos em [architecture/frontend/types.md](../architecture/frontend/types.md)): `timestamp_ms`, `rpm`, `mapKpa`, `lambda1`, `lambdaCorrecao`, `lambdaTarget`, `veValueRaw`, `clt`, `lambdaLoop` (0/1), `pedal`. As colunas não usadas na v1 são descartadas no parsing.
 
 ## Performance
 

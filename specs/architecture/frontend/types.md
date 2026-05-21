@@ -10,7 +10,10 @@ export interface MapModel {
   name:            string      // nome do CSV original
   rpmBreakpoints:  number[]    // #I20; tamanho = n_rpm (colunas)
   mapBreakpoints:  number[]    // #I21 (kPa); tamanho = n_map (linhas)
-  cells:           number[][]  // cells[map_i][rpm_j] = raw 100–9999; índice 0 = menor MAP
+  cells:           number[][]  // VE (#F01–#F16); cells[map_i][rpm_j] = raw 100–9999; índice 0 = menor MAP
+  ignitionCells:   number[][]  // Ignição (#I01–#I16); mesma grade; inteiros 0–100
+  lambdaCells:     number[][]  // Lambda alvo (#A01–#A16); mesma grade; inteiros 0–2000
+  rawLines:        string[]    // todas as linhas originais do CSV, em ordem (reuso na exportação)
 }
 
 /** Espelha o enum MapType do backend (engines/ve_lambda/engine.py). */
@@ -141,6 +144,13 @@ export interface TuningConfig {
   low_map_threshold:          number   // kPa máximo para a regra. Default 20
   low_map_discount:           number   // desconto sobre a linha superior. Default 0.025
   max_adjacent_gradient_pct:  number   // % máx entre vizinhas antes do warning. Default 20.0
+  // Propagação estrutural (etapas 8+9)
+  shape_propagation_enabled:  boolean  // ativa tendências estruturais. Default true
+  shape_rpm_weight:           number   // peso α da tendência por RPM. Default 0.50
+  shape_map_weight:           number   // peso β da tendência por MAP. Default 0.30
+  shape_gradient_weight:      number   // peso (1-α-β) do gradiente. Default 0.20
+  global_shape_weight:        number   // peso do fator global no cf_final. Default 0.10
+  gradient_min_samples:       number   // mín. de pontos p/ computar gradiente. Default 2
 }
 
 /** Defaults — base para o store e o formulário. Espelha o backend. */
@@ -155,6 +165,9 @@ export const DEFAULT_TUNING_CONFIG: TuningConfig = {
   rpm400_rule_enabled: true, rpm400_discount: 0.045,
   low_map_rule_enabled: true, low_map_threshold: 20, low_map_discount: 0.025,
   max_adjacent_gradient_pct: 20.0,
+  shape_propagation_enabled: true,
+  shape_rpm_weight: 0.50, shape_map_weight: 0.30, shape_gradient_weight: 0.20,
+  global_shape_weight: 0.10, gradient_min_samples: 2,
 }
 ```
 
@@ -276,11 +289,13 @@ export type TuningAnalysisMode =
 
 export type DatalogTab = 'dashboard' | 'charts' | 'data'
 
-/** Série de sinais para o SyncedChart. */
+/** Série de sinais para o SyncedChart. Ver components/synced-chart.md. */
 export interface SignalSeries {
   name:   string             // coincide com DatalogModel.signals
+  unit:   string             // exibição no eixo Y/tooltip. Ex: "kPa", "λ"
   data:   [number, number][] // [timestamp_ms, valor], ordenado por timestamp
   color?: string             // CSS; auto se omitido
+  yAxis?: 'left' | 'right'   // padrão 'left'
 }
 
 /** Ponto de scatter para overlay no MapChart. */
@@ -306,13 +321,15 @@ export interface TooltipContent {
   }
 }
 
-/** Estado de UI no useUIStore, persistido em localStorage. */
+/** Estado de UI no useUIStore, persistido em localStorage (`miot:ui`). */
 export interface UIState {
   originalMapCollapsed: boolean             // painel "Mapa Original" colapsado. Default false
   tuningAnalysisMode:   TuningAnalysisMode  // heatmap ativo na Análise. Default 've_lambda'
   datalogTab:           DatalogTab          // aba ativa no Datalog. Default 'dashboard'
   columnVisibility:     Record<string, boolean>  // colunas da aba Dados; ausência = visível
   chartLayout:          ChartLayout         // layout de painéis; inicial: painel único ['RPM']
+  chartsHeight:         number              // altura da área de gráficos (px). Default 400
+  chartSidebarOpen:     boolean             // sidebar de sinais aberta. Default true
 }
 ```
 

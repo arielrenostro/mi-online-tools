@@ -1,49 +1,8 @@
 # Tuning › Configurações (modal)
 
-Acessível via ícone `⚙` na TopBar ou pelo botão `⚙ Config` dentro de qualquer aba de tuning. Exibido como modal ou drawer lateral — não é rota separada.
+Acessível via ícone `⚙` na TopBar ou pelo botão `⚙ Config` dentro de uma aba de tuning. Exibido como modal — não é rota separada. As configurações são **globais** e se aplicam a todas as abas de tuning.
 
-As configurações são globais e se aplicam a todas as abas de tuning.
-
----
-
-## Layout
-
-```
-┌─ Configurações de Tuning ──────────────────────────────────────────────────┐
-│                                                                              │
-│  FILTROS DE DADOS                                                            │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│  Temperatura mínima do motor (CLT)              [  80 ] ºC                 │
-│  Apenas loop fechado                            [✓]                        │
-│  Ignorar primeiros N pontos ao entrar em        [  10 ] amostras           │
-│    closed loop                                                               │
-│  Ignorar primeiros N pontos ao mudar bucket     [   0 ] amostras           │
-│    de RPM                                                                    │
-│  Ignorar primeiros N pontos ao mudar bucket     [   0 ] amostras           │
-│    de MAP                                                                    │
-│  Máximo delta RPM entre amostras                [99999] RPM                │
-│  Máximo delta MAP entre amostras                [99999] kPa                │
-│  Máximo desvio lambda vs. target                [ 0.20] λ                  │
-│  Lambda máximo aceito                           [ 1.09] λ                  │
-│                                                                              │
-│  CORREÇÃO                                                                    │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│  Base de amostras para peso (K)                 [  40 ]                    │
-│    weight = n / (n + K)  →  K=40: 40 amostras = peso 0.5                  │
-│  Correção máxima por iteração                   [  15 ] %                  │
-│  Suavização em células sem dados                [✓]   raio: [ 1 ]         │
-│                                                                              │
-│  EXTRAPOLAÇÃO                                                                │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│  Aplicar regra RPM 400 (col. 800 menos X%)      [✓]   desconto: [ 4.5] %  │
-│  Aplicar regra MAP baixo sem dados (≤ X kPa)   [✓]   limite: [  20] kPa  │
-│    desconto sobre linha superior:               [ 2.5] %                   │
-│                                                                              │
-│                               [ Restaurar padrões ]       [ Salvar ]       │
-└──────────────────────────────────────────────────────────────────────────────┘
-```
-
----
+O formulário é renderizado dinamicamente a partir do JSON Schema do engine (ver [architecture/frontend/components/tuning-config-modal.md](../../architecture/frontend/components/tuning-config-modal.md)). Os campos são agrupados em seções colapsáveis.
 
 ## Campos
 
@@ -51,51 +10,64 @@ As configurações são globais e se aplicam a todas as abas de tuning.
 
 | Campo | Tipo | Padrão | Descrição |
 |-------|------|--------|-----------|
-| `min_clt` | inteiro (ºC) | 80 | Descarta pontos com temperatura do motor abaixo desse valor — motor frio tem enriquecimento de partida ativo que distorce o VE Lambda |
-| `lambda_loop_closed_only` | boolean | true | Descarta pontos em open loop — o método VE Lambda depende do feedback de lambda em closed loop |
-| `skip_first_closed_loop` | inteiro (amostras) | 10 | Descarta os primeiros N pontos após a ECU entrar em closed loop — a correção demora alguns ciclos para estabilizar |
-| `skip_first_rpm_bucket` | inteiro (amostras) | 0 | Descarta os primeiros N pontos após mudar de bucket de RPM — elimina transientes de entrada na célula |
-| `skip_first_map_bucket` | inteiro (amostras) | 0 | Descarta os primeiros N pontos após mudar de bucket de MAP — elimina transientes de carga |
-| `max_delta_rpm` | inteiro (RPM) | 99999 | Descarta pontos onde a variação de RPM entre amostras excede esse valor |
-| `max_delta_map` | inteiro (kPa) | 99999 | Descarta pontos onde a variação de MAP entre amostras excede esse valor |
-| `max_delta_lambda_target` | float (λ) | 0.200 | Descarta pontos onde `abs(lambda_medido - lambda_target) > valor` — leitura muito fora do alvo indica sinal ruidoso ou transiente não detectado |
-| `max_lambda` | float (λ) | 1.090 | Descarta pontos com lambda medido acima desse valor — leituras excessivamente pobres são provavelmente inválidas |
+| `min_clt` | inteiro (ºC) | 80 | Descarta pontos com temperatura do motor abaixo do valor — motor frio tem enriquecimento de partida que distorce o VE Lambda |
+| `lambda_loop_closed_only` | boolean | true | Descarta open loop — o método VE Lambda depende do feedback de closed loop |
+| `skip_first_closed_loop` | inteiro | 10 | Descarta os primeiros N pontos após entrar em closed loop — a correção demora a estabilizar |
+| `skip_first_rpm_bucket` | inteiro | 0 | Descarta os primeiros N pontos após mudar de bucket de RPM (transiente) |
+| `skip_first_map_bucket` | inteiro | 0 | Descarta os primeiros N pontos após mudar de bucket de MAP (transiente) |
+| `max_delta_rpm` | inteiro (RPM) | 99999 | Descarta pontos com variação de RPM entre amostras acima do valor |
+| `max_delta_map` | inteiro (kPa) | 99999 | Descarta pontos com variação de MAP entre amostras acima do valor |
+| `max_delta_lambda_target` | float (λ) | 0.200 | Descarta se `abs(lambda_medido − lambda_target) > valor` — leitura fora do alvo |
+| `max_lambda` | float (λ) | 1.090 | Descarta pontos com lambda medido acima do valor — leituras muito pobres são inválidas |
+| `max_delta_pedal` | float (%) \| null | null | Descarta pontos com variação de pedal acima do valor; `null` = desabilitado. Requer a coluna de pedal no log |
+
+### Qualidade por célula
+
+| Campo | Tipo | Padrão | Descrição |
+|-------|------|--------|-----------|
+| `outlier_sigma` | float | 2.0 | Rejeita amostras a mais de N desvios padrão da média da célula (só quando a célula tem ≥5 amostras) |
+| `cv_threshold` | float | 0.15 | CV (`std/média`) a partir do qual o `stability_score` cai a 0 — 15% de variação já indica célula instável |
 
 ### Correção
 
 | Campo | Tipo | Padrão | Descrição |
 |-------|------|--------|-----------|
-| `weight_sample_base` (K) | inteiro | 40 | Parâmetro K da fórmula `weight = n / (n + K)`. Controla a "inércia" da correção: K alto → mais amostras necessárias para atingir peso alto; K baixo → poucas amostras já dominam. Com K=40: 40 amostras = peso 0.5, 200 amostras = peso 0.83 |
-| `max_correction_pct` | inteiro (%) | 15 | Limite máximo de correção por célula em uma única rodada. Células que precisariam de mais são clampeadas nesse valor |
-| `smoothing_enabled` | boolean | true | Aplica suavização gaussiana 3×3 em células sem dados usando vizinhos com dados como âncoras |
-| `smoothing_radius` | inteiro | 1 | Raio do kernel de suavização (1 = vizinhos imediatos, 2 = dois saltos, etc.) |
+| `weight_sample_base` (K) | inteiro | 40 | Parâmetro K de `count_score = n/(n+K)`. Controla a inércia da correção: K alto → mais amostras para peso alto. Com K=40: 40 amostras = peso 0.5, 200 amostras = peso 0.83 |
+| `max_correction_pct` | inteiro (%) | 15 | Correção máxima por célula em uma única rodada; células que precisariam de mais são clampeadas |
+
+### Convergência
+
+| Campo | Tipo | Padrão | Descrição |
+|-------|------|--------|-----------|
+| `convergence_threshold` | float (%) | 5.0 | Erro residual abaixo do qual a célula é considerada convergida |
+
+### Pós-processamento (extrapolação)
+
+| Campo | Tipo | Padrão | Descrição |
+|-------|------|--------|-----------|
+| `rpm400_rule_enabled` | boolean | true | Aplica a regra de RPM 400: usa a coluna 800 RPM descontada de `rpm400_discount` |
+| `rpm400_discount` | float | 0.045 | Desconto sobre a coluna 800 RPM. `val_400 = val_800 × (1 − 0.045)` |
+| `low_map_rule_enabled` | boolean | true | Extrapola linhas de MAP baixo sem dados a partir da linha superior |
+| `low_map_threshold` | inteiro (kPa) | 20 | Linhas de MAP até este valor sem dados usam a linha imediatamente superior como base |
+| `low_map_discount` | float | 0.025 | Desconto sobre a linha de MAP superior. `val_20kpa = val_30kpa × (1 − 0.025)` |
+| `max_adjacent_gradient_pct` | float (%) | 20.0 | Diferença máxima entre células vizinhas antes de emitir um warning de gradiente |
 
 ### Propagação estrutural
 
-| Campo | Tipo | Padrão | Descrição |
-|-------|------|--------|-----------|
-| `shape_propagation_enabled` | boolean | true | Ativa as etapas 8+9 do pipeline: extração de tendências estruturais (RPM, MAP, gradiente) e composição do `cf_final` com pesos normalizados. Se desativado, o mapa usa apenas a interpolação 2D local (etapa 7) |
-| `shape_rpm_weight` | float | 0.50 | Peso α da tendência por RPM no fator estrutural: `cf_structural = rpm_cf^α × map_cf^β × gradient_cf^(1−α−β)` |
-| `shape_map_weight` | float | 0.30 | Peso β da tendência por MAP no fator estrutural |
-| `shape_gradient_weight` | float | 0.20 | Peso `(1−α−β)` do gradiente local no fator estrutural. Deve satisfazer `shape_rpm_weight + shape_map_weight + shape_gradient_weight = 1.0` |
-| `global_shape_weight` | float | 0.10 | Peso do fator global (`cf_global`) no `cf_final`. Desconta proporcionalmente os componentes local e estrutural: `w = 1 − global_shape_weight`, garantindo que a soma dos pesos seja 1.0 |
-| `gradient_min_samples` | inteiro | 2 | Número mínimo de pontos observados para computar gradiente em uma linha ou coluna. Abaixo desse valor usa o valor constante observado (1 ponto) ou 1.0 (nenhum ponto) |
-
-### Extrapolação
+Etapas 8+9 do pipeline (ver [tuning-engine.md](../tuning-engine.md)).
 
 | Campo | Tipo | Padrão | Descrição |
 |-------|------|--------|-----------|
-| `rpm400_rule_enabled` | boolean | true | Aplica a regra de extrapolação da coluna RPM 400: usa o valor da coluna 800 RPM descontado de `rpm400_discount` |
-| `rpm400_discount` | float (%) | 4.5 | Percentual de desconto aplicado sobre a coluna 800 RPM para calcular o valor de 400 RPM. Ex.: `val_400 = val_800 × (1 - 0.045)` |
-| `low_map_rule_enabled` | boolean | true | Aplica a regra de extrapolação para linhas de MAP muito baixo sem dados suficientes |
-| `low_map_threshold` | inteiro (kPa) | 20 | Linhas de MAP até este valor (inclusive) sem dados usam a linha imediatamente superior como base |
-| `low_map_discount` | float (%) | 2.5 | Percentual de desconto aplicado sobre a linha de MAP superior. Ex.: `val_20kpa = val_30kpa × (1 - 0.025)` |
-
----
+| `shape_propagation_enabled` | boolean | true | Ativa a extração de tendências estruturais e a composição do `cf_final`. Desativado → usa só a interpolação 2D local (etapa 7) |
+| `shape_rpm_weight` | float | 0.50 | Peso α da tendência por RPM: `cf_structural = rpm_cf^α × map_cf^β × gradient_cf^(1−α−β)` |
+| `shape_map_weight` | float | 0.30 | Peso β da tendência por MAP |
+| `shape_gradient_weight` | float | 0.20 | Peso `(1−α−β)` do gradiente local. Deve satisfazer `α + β + gradient_weight = 1.0` |
+| `global_shape_weight` | float | 0.10 | Peso do fator global no `cf_final`; desconta proporcionalmente os componentes local e estrutural (`w = 1 − global_shape_weight`) |
+| `gradient_min_samples` | inteiro | 2 | Mínimo de pontos observados para computar um gradiente em uma linha/coluna; abaixo disso usa o valor constante observado ou 1.0 |
 
 ## Comportamento
 
-- **Salvar**: persiste as configurações em `localStorage`; o botão "Rodar Auto-tuning" usa os novos valores na próxima execução
-- **Restaurar padrões**: reverte todos os campos para os valores padrão listados acima; não salva automaticamente
-- As configurações **não retroagem** sobre um auto-tuning já executado — é necessário rodar novamente
-- Alterar qualquer filtro invalida o resultado do último auto-tuning exibido (indicação visual no botão "Rodar Auto-tuning")
+- **Salvar** — persiste em `localStorage` (`miot:config`); o botão "Rodar Auto-tuning" usa os novos valores na próxima execução.
+- **Restaurar padrões** — reverte os campos para os valores padrão; não salva automaticamente.
+- As configurações **não retroagem** sobre um auto-tuning já executado — é necessário rodar novamente.
+- Alterar qualquer campo marca o último resultado como desatualizado (indicação visual no botão "Rodar Auto-tuning").
