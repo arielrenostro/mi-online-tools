@@ -1,7 +1,25 @@
 # Frontend — Master Injection Online Tools
 
-**Stack:** React 18 · TypeScript 5 · Vite 5 · Tailwind CSS 3 · Zustand 4 · idb 8  
-**Specs:** `../specs/architecture/frontend/frontend.md` · Atalhos VE: `../specs/features/tuning/ve.md`
+**Stack:** React 18 · TypeScript 5 · Vite 5 · Tailwind CSS 3 · Zustand 4 · idb 8
+
+## Specs do frontend
+
+Veja o índice completo de specs no `CLAUDE.md` da raiz. As mais relevantes para esta área:
+
+| Spec | Cobre |
+|------|-------|
+| `../specs/architecture/frontend/frontend.md` | Índice da arquitetura frontend |
+| `../specs/architecture/frontend/api-client.md` | Camada `src/api/` — HTTP, serialização, erros |
+| `../specs/architecture/frontend/persistence.md` | IndexedDB + localStorage, restauração de sessão |
+| `../specs/architecture/frontend/routes.md` | React Router v6, guards, navegação, F5 |
+| `../specs/architecture/frontend/types.md` | Tipos TypeScript compartilhados (`src/types/`) |
+| `../specs/architecture/frontend/stores/` | Um arquivo por store (`map`, `log`, `tuning`, `time`, `ui`) |
+| `../specs/architecture/frontend/components/` | Um arquivo por componente central (`HeatmapTable`, `SyncedChart`, `TimeRail`, etc.) |
+| `../specs/features/datalog/` | Telas da área Datalog (overview, logs, dashboard, charts, data) |
+| `../specs/features/tuning/` | Telas de tuning (overview, ve, ignition, lambda, config) — atalhos VE em `ve.md` |
+| `../specs/master/map.md` · `../specs/master/datalog.md` | Formatos CSV parseados client-side |
+
+**IMPORTANT — specs e código andam juntos:** sempre que alterar o código, atualize na mesma mudança a(s) spec(s) correspondente(s) em `specs/`. Specs e código DEVEM permanecer sincronizados.
 
 ```bash
 npm run dev    # http://localhost:5173

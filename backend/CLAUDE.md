@@ -2,8 +2,20 @@
 
 **Stack:** Python 3.12 · FastAPI 0.115 · Pydantic v2 · NumPy 2.1 · SciPy 1.14
 
-Spec de referência: `../specs/architecture/backend/backend.md`  
-Pipeline do tuning engine: `../specs/features/tuning-engine.md`
+## Specs do backend
+
+Veja o índice completo de specs no `CLAUDE.md` da raiz. As mais relevantes para esta área:
+
+| Spec | Cobre |
+|------|-------|
+| `../specs/architecture/backend/backend.md` | SOLID, engines plugáveis, API REST, session store |
+| `../specs/features/tuning-engine.md` | Pipeline de 12 etapas do motor VE Lambda |
+| `../specs/features/tuning/research-insights.md` | Análise comparativa do algoritmo vs. indústria |
+| `../specs/master/datalog.md` | Formato CSV do datalog, colunas, conversões raw→real |
+| `../specs/master/map.md` | Formato do mapa (cells inline em `TuningRunRequest`) |
+| `../specs/architecture/overview.md` | Stack, fluxo de dados, fronteiras de responsabilidade |
+
+**IMPORTANT — specs e código andam juntos:** sempre que alterar o código, atualize na mesma mudança a(s) spec(s) correspondente(s) em `specs/`. Specs e código DEVEM permanecer sincronizados.
 
 ## Rodar
 
