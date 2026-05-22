@@ -1,11 +1,12 @@
 """
 Test runner — executes the VE Lambda engine pipeline against local CSV files.
+Optionally compares the suggested map against a manually tuned reference map.
+
 Usage: python run_engine.py
 """
 from __future__ import annotations
 import sys
 import os
-import pprint
 
 # Make sure imports resolve from the backend root
 sys.path.insert(0, os.path.dirname(__file__))
@@ -26,6 +27,9 @@ LOG_FILES: list[str] = [
 ]
 
 MAP_FILE: str = "/mnt/c/Users/ariel/OneDrive/Carros/206/Master Injection/Mapas/4bar - 28 - Download ecu.csv"
+
+# Optional: path to a manually tuned map for comparison; set to "" to skip.
+REFERENCE_MAP_FILE: str = "/mnt/c/Users/ariel/OneDrive/Carros/206/Master Injection/Mapas/4bar - 33 - Download ecu_tuned.csv"
 
 # ---------------------------------------------------------------------------
 # Map parser (mirrors the client-side TypeScript parser)
@@ -172,6 +176,88 @@ def _print_matrix(matrix, fmt) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Comparison against a reference (manually tuned) map
+# ---------------------------------------------------------------------------
+
+def print_comparison(
+    suggested_map: list[list[int]],
+    reference_map: list[list[int]],
+    rpm_bps: list[int],
+    map_bps: list[int],
+    sample_count_map: list[list[int]],
+) -> None:
+    n_map = len(suggested_map)
+    n_rpm = len(suggested_map[0]) if suggested_map else 0
+
+    diffs: list[list[int]] = []
+    pct_diffs: list[list[float]] = []
+    flat_diffs: list[int] = []
+    flat_pct: list[float] = []
+    covered_diffs: list[int] = []
+    covered_pct: list[float] = []
+
+    for i in range(n_map):
+        row_d: list[int] = []
+        row_p: list[float] = []
+        for j in range(n_rpm):
+            s = suggested_map[i][j]
+            r = reference_map[i][j]
+            d = s - r
+            p = (s - r) / r * 100 if r != 0 else 0.0
+            row_d.append(d)
+            row_p.append(p)
+            flat_diffs.append(d)
+            flat_pct.append(p)
+            if sample_count_map[i][j] > 0:
+                covered_diffs.append(d)
+                covered_pct.append(p)
+        diffs.append(row_d)
+        pct_diffs.append(row_p)
+
+    def _stats(values: list, label: str) -> None:
+        if not values:
+            print(f"  {label}: (sem dados)")
+            return
+        mean_v = sum(values) / len(values)
+        abs_values = [abs(v) for v in values]
+        mean_abs = sum(abs_values) / len(abs_values)
+        max_abs = max(abs_values)
+        within_1pct = sum(1 for v in values if abs(v) <= 1.0)
+        within_5pct = sum(1 for v in values if abs(v) <= 5.0)
+        print(f"  {label}:")
+        print(f"    Média            : {mean_v:+.2f}")
+        print(f"    Média |desvio|   : {mean_abs:.2f}")
+        print(f"    Máx  |desvio|   : {max_abs:.2f}")
+        print(f"    Dentro de ±1%   : {within_1pct}/{len(values)} células ({within_1pct/len(values)*100:.0f}%)")
+        print(f"    Dentro de ±5%   : {within_5pct}/{len(values)} células ({within_5pct/len(values)*100:.0f}%)")
+
+    total_cells = n_map * n_rpm
+    print("\n=== COMPARISON: SUGGESTED vs REFERENCE ===")
+    print(f"  Células totais   : {total_cells}")
+    print(f"  Células com dados: {len(covered_diffs)}")
+    print()
+    _stats(flat_pct, "Todas as células (%)")
+    print()
+    _stats(covered_pct, "Células com dados (%)")
+
+    print("\n=== DIFF MAP: sugerido − referência (raw) ===")
+    _print_matrix(diffs, fmt=lambda v: f"{v:+5d}")
+
+    print("\n=== DIFF MAP: sugerido − referência (%) ===")
+    _print_matrix(pct_diffs, fmt=lambda v: f"{v:+5.1f}")
+
+    print("\n=== TOP 10 maiores desvios (sugerido vs referência) ===")
+    cells_sorted = sorted(
+        [(abs(pct_diffs[i][j]), i, j, diffs[i][j], pct_diffs[i][j])
+         for i in range(n_map) for j in range(n_rpm)],
+        reverse=True,
+    )[:10]
+    print(f"  {'MAP(kPa)':>10}  {'RPM':>6}  {'Sugerido':>10}  {'Ref':>10}  {'Δ raw':>7}  {'Δ %':>7}  {'Amostras':>8}")
+    for _, i, j, d, p in cells_sorted:
+        print(f"  {map_bps[i]:>10}  {rpm_bps[j]:>6}  {suggested_map[i][j]:>10}  {reference_map[i][j]:>10}  {d:>+7}  {p:>+7.1f}%  {sample_count_map[i][j]:>8}")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -220,6 +306,17 @@ def main() -> None:
     output = engine.run(tuning_input)
 
     print_output(output)
+
+    if REFERENCE_MAP_FILE:
+        print(f"\nParsing reference map: {REFERENCE_MAP_FILE}")
+        _, _, ref_cells = parse_map(REFERENCE_MAP_FILE)
+        print_comparison(
+            suggested_map    = output.suggested_map,
+            reference_map    = ref_cells,
+            rpm_bps          = rpm_bps,
+            map_bps          = map_bps,
+            sample_count_map = output.sample_count_map,
+        )
 
 
 if __name__ == "__main__":
