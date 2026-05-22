@@ -69,6 +69,7 @@ export const useLogStore = create<LogState & LogActions>()(
         set({ logs: newLogs, isUploading: false })
         await logPersistence.saveLog({ hash, filename: file.name, model, csvBlob: file, savedAt: Date.now() })
         persistOrder(newLogs)
+        useTimeStore.getState().clearSelection()
       } catch (err) {
         set({ isUploading: false, lastError: err instanceof Error ? err.message : 'Erro ao carregar log.' })
       }

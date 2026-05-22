@@ -66,7 +66,7 @@ export default function DatalogHelpModal({ open, onClose }: Props) {
               <Item>O cursor popula a <strong>aba Dashboard</strong> com os valores de cada sinal naquele instante exato.</Item>
               <Item>O cursor também destaca a linha correspondente na <strong>aba Dados</strong> com rolagem automática.</Item>
               <Item>Clique e arraste para criar uma <strong>seleção temporal</strong>; os handles laterais permitem ajustar os limites.</Item>
-              <Item>Com seleção ativa, a <strong>aba Dados</strong> exibe apenas as linhas dentro do intervalo, e o Auto-Tuning usa esse range.</Item>
+              <Item>Com seleção ativa, a <strong>aba Dados</strong> exibe apenas as linhas dentro do intervalo.</Item>
               <Item>Arraste o interior da seleção para movê-la sem redimensionar.</Item>
               <Item>O botão <span className="text-gray-400">[Limpar]</span> ou <Kbd>Esc</Kbd> remove a seleção.</Item>
               <Item>Escolha o sinal exibido como mini-gráfico (sparkline) no seletor à direita da barra.</Item>
@@ -87,8 +87,14 @@ export default function DatalogHelpModal({ open, onClose }: Props) {
             <ul className="space-y-1.5 list-disc list-inside">
               <Item>Gráficos sincronizados: o cursor e o zoom se propagam entre todos os painéis simultaneamente.</Item>
               <Item>Redimensione cada gráfico individualmente arrastando a alça na parte inferior.</Item>
-              <Item>O painel lateral mostra os valores de cada sinal na posição do cursor; pode ser recolhido.</Item>
+              <Item>O painel lateral mostra os valores de cada sinal na posição do cursor; pode ser recolhido com o botão no topo.</Item>
+              <Item>Para selecionar um intervalo, use <strong className="text-yellow-300">CTRL + clique e arraste</strong>. A seleção é o conceito central de zoom e define o range de análise para todos os componentes.</Item>
+              <Item><strong>Sincronia Total (Bidirecional):</strong> Todos os painéis compartilham o mesmo eixo X, sendo o estado do TimeRail a fonte única da verdade. Se você alterar o zoom em qualquer gráfico, todos são ajustados; e vice-versa.</Item>
+              <Item>O <strong className="text-yellow-300">CTRL + mousemove</strong> permite rastrear e atualizar os valores dos sinais em tempo real, mesmo sem clicar, ideal para inspeção precisa.</Item>
               <Item>O zoom aplicado nos gráficos é refletido como faixa escurecida no TimeRail.</Item>
+              <Item>[↔] divide o painel lado a lado; [+ ↓] adiciona um novo painel abaixo com metade da altura.</Item>
+              <Item>Cada painel tem chip [Sinal ×] para remover e [+ Sinal ▾] para adicionar sinais. Sinais múltiplos compartilham o eixo X mas podem ter eixos Y independentes.</Item>
+              <Item>O tooltip é sincronizado entre todos os painéis — mover o mouse sobre qualquer painel atualiza todas as legendas no mesmo instante.</Item>
             </ul>
           </Section>
 
@@ -106,29 +112,34 @@ export default function DatalogHelpModal({ open, onClose }: Props) {
             <p className="text-xs text-gray-500 mb-3">Clique no TimeRail para que ele receba o foco antes de usar os atalhos.</p>
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
               <div className="flex items-center gap-1">
-                <Kbd>←</Kbd>
-              </div>
-              <span className="text-sm text-gray-300">Move o cursor 100 ms para trás</span>
+                 <Kbd>←</Kbd>
+               </div>
+               <span className="text-sm text-gray-300">Move o cursor 100 ms para trás</span>
 
-              <div className="flex items-center gap-1">
-                <Kbd>→</Kbd>
-              </div>
-              <span className="text-sm text-gray-300">Move o cursor 100 ms para frente</span>
+               <div className="flex items-center gap-1">
+                 <Kbd>→</Kbd>
+               </div>
+               <span className="text-sm text-gray-300">Move o cursor 100 ms para frente</span>
 
-              <div className="flex items-center gap-1">
-                <Kbd>Shift</Kbd><span className="text-gray-500 text-xs">+</span><Kbd>←</Kbd>
-              </div>
-              <span className="text-sm text-gray-300">Move o cursor 1 segundo para trás</span>
+               <div className="flex items-center gap-1">
+                 <Kbd>Shift</Kbd><span className="text-gray-500 text-xs">+</span><Kbd>←</Kbd>
+               </div>
+               <span className="text-sm text-gray-300">Move o cursor 1 segundo para trás</span>
 
-              <div className="flex items-center gap-1">
-                <Kbd>Shift</Kbd><span className="text-gray-500 text-xs">+</span><Kbd>→</Kbd>
-              </div>
-              <span className="text-sm text-gray-300">Move o cursor 1 segundo para frente</span>
+               <div className="flex items-center gap-1">
+                 <Kbd>Shift</Kbd><span className="text-gray-500 text-xs">+</span><Kbd>→</Kbd>
+               </div>
+               <span className="text-sm text-gray-300">Move o cursor 1 segundo para frente</span>
 
-              <div className="flex items-center gap-1">
-                <Kbd>Esc</Kbd>
-              </div>
-              <span className="text-sm text-gray-300">Limpa a seleção temporal</span>
+               <div className="flex items-center gap-1">
+                 <Kbd>CTRL</Kbd> + Mousemove (sobre qualquer gráfico)
+               </div>
+               <span className="text-sm text-gray-300">Atualiza o cursor continuamente em tempo real.</span>
+
+               <div className="flex items-center gap-1">
+                 <Kbd>Esc</Kbd>
+               </div>
+               <span className="text-sm text-gray-300">Limpa a seleção temporal</span>
             </div>
           </Section>
 

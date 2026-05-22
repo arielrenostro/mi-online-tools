@@ -25,3 +25,19 @@ Componente fixo abaixo da TopBar, sempre visível. Impacta todas as abas.
 - **Viewport band** — ao dar zoom nos gráficos, o rail escurece as regiões fora do zoom.
 
 Persistência: `miot:time` (cursor_ms, selection, sparklineSensor).
+
+## Modal de Ajuda
+
+A modal `DatalogHelpModal` documenta todos os comportamentos das abas. As specs individuais (`dashboard.md`, `charts.md`, etc.) devem refletir exatamente o que está listado na modal correspondente.
+
+### Aba Gráficos (exemplo)
+
+A spec deve listar **todos** os itens documentados:
+- Sincronização entre painéis (cursor, zoom bidirecional)
+- Redimensionamento individual por arraste de alça
+- Painel lateral colapsável com tabela "Nome | Valor"
+- Seleção via CTRL+click e arraste como conceito unificado de zoom
+- Tooltip sincronizado entre todos os painéis
+- Divisão de painéis: [↔] divide lado a lado, [+ ↓] adiciona abaixo
+- Chips de sinal: [Sinal ×] remove, [+ Sinal ▾] adiciona
+- Persistência em `miot:ui` (layout, altura, sidebar)

@@ -11,7 +11,8 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Sort-Object)",
       "Bash(Get-ChildItem -Path \"D:\\\\Users\\\\ariel\\\\Documents\\\\Projetos\\\\mi-fuel-tuner\\\\frontend\\\\src\" -Recurse -File)",
-      "Bash(Get-ChildItem -Path \"D:\\\\Users\\\\ariel\\\\Documents\\\\Projetos\\\\mi-fuel-tuner\\\\specs\" -Recurse -File)"
+      "Bash(Get-ChildItem -Path \"D:\\\\Users\\\\ariel\\\\Documents\\\\Projetos\\\\mi-fuel-tuner\\\\specs\" -Recurse -File)",
+      "Bash(grep -E \"\\\\.\\(ts|tsx|py\\)$\")"
     ]
   }
 }

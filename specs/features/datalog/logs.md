@@ -25,5 +25,6 @@ Aceita múltiplos `.csv`; chama `addLog(file)` em sequência. Hash SHA-1 detecta
 |------|------|--------|
 | Blob CSV + model | IndexedDB `logs` | `addLog()` |
 | Ordem + enabled | `miot:log-order` (localStorage) | `addLog/remove/reorder/toggle` |
+| Seleção do TimeRail | Limpa automaticamente | Ao carregar novo log |
 
 Reordenação não invalida tuning nem modifica IndexedDB — só atualiza localStorage.

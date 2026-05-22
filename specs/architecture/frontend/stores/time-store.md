@@ -65,6 +65,8 @@ Caso prático: 3 logs (30 min), seleção [10min, 25min]; remove o 2º log → n
 
 `TimeRailContainer` lê os stores, monta os props do `TimeRail` (mapeando `activeLogs`, `totalDuration`, `availableSensors` do `useLogStore`) e liga as actions. `onSelectionChange(sel)` → `setSelection` ou `clearSelection` conforme `sel` seja objeto ou `null`.
 
+**`addLog()` no `logStore`** — chama `clearSelection()` ao carregar um novo log para limpar a seleção anterior.
+
 ## Sincronização com outros componentes
 
 - **`SyncedChart`** — bidirecional via `selection` (zoom dos gráficos = intervalo de análise): `datazoom` do ECharts → `setSelection`/`clearSelection`; CTRL+drag → `setSelection`; mudança de `selection` → `dispatchAction({ type: 'dataZoom' })`. Ver [components/synced-chart.md](../components/synced-chart.md).
