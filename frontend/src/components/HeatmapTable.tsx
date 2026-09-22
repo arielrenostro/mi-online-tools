@@ -5,7 +5,7 @@ export type ColorScale = 'warm' | 'diverging' | 'confidence' | 'coverage' | 'con
 
 interface HeatmapTableProps {
   cells:               (number | boolean | null)[][]
-  rowHeaders:          number[]      // MAP breakpoints (kPa), cells[0] = lowest MAP
+  rowHeaders:          number[]      // MAP breakpoints (kPa), cells[0] = highest MAP (top row)
   colHeaders:          number[]      // RPM breakpoints
   colorScale?:         ColorScale
   readOnly?:           boolean
@@ -120,9 +120,6 @@ export default function HeatmapTable({
   const wrapRef  = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Highest MAP at top → reverse render order
-  const rowOrder = [...rowHeaders.keys()].reverse()
-
   const allNums = cells.flat().filter((v): v is number => typeof v === 'number')
   const cMin    = min ?? (allNums.length ? Math.min(...allNums) : 0)
   const cMax    = max ?? (allNums.length ? Math.max(...allNums) : 1)
@@ -143,7 +140,8 @@ export default function HeatmapTable({
     return { r: Math.max(0, Math.min(nRows - 1, r)), c: Math.max(0, Math.min(nCols - 1, c)) }
   }
 
-  // dr/dc in DATA space: dr=-1 = lower MAP = visually DOWN; dr=+1 = visually UP
+  // Data index now matches visual order 1:1 (row 0 = top = highest MAP), so
+  // dr/dc map directly to screen direction: dr=+1 = visually DOWN.
   function move(dr: number, dc: number, extend: boolean) {
     if (!anchor) return
     const base = extend ? (selEnd ?? anchor) : anchor
@@ -206,8 +204,8 @@ export default function HeatmapTable({
     const mod = ctrlKey || metaKey
 
     // Arrow navigation
-    if (key === 'ArrowDown')  { e.preventDefault(); move(-1,  0, shiftKey); return }
-    if (key === 'ArrowUp')    { e.preventDefault(); move( 1,  0, shiftKey); return }
+    if (key === 'ArrowDown')  { e.preventDefault(); move( 1,  0, shiftKey); return }
+    if (key === 'ArrowUp')    { e.preventDefault(); move(-1,  0, shiftKey); return }
     if (key === 'ArrowRight') { e.preventDefault(); move( 0,  1, shiftKey); return }
     if (key === 'ArrowLeft')  { e.preventDefault(); move( 0, -1, shiftKey); return }
 
@@ -217,7 +215,7 @@ export default function HeatmapTable({
       if (!readOnly && !shiftKey && (!sr || (sr.r0 === sr.r1 && sr.c0 === sr.c1))) {
         startEdit(anchor.r, anchor.c)
       } else {
-        shiftKey ? move(1, 0, false) : move(-1, 0, false)
+        shiftKey ? move(-1, 0, false) : move(1, 0, false)
       }
       return
     }
@@ -336,7 +334,7 @@ export default function HeatmapTable({
     if (key === 'Enter') {
       e.preventDefault()
       commitEdit(editing.r, editing.c)
-      setAnchor(clamp(editing.r - 1, editing.c)); setSelEnd(null)
+      setAnchor(clamp(editing.r + 1, editing.c)); setSelEnd(null)
       return
     }
     if (key === 'Tab') {
@@ -353,13 +351,13 @@ export default function HeatmapTable({
     if (key === 'ArrowDown') {
       e.preventDefault()
       commitEdit(editing.r, editing.c)
-      setAnchor(clamp(editing.r - 1, editing.c)); setSelEnd(null)
+      setAnchor(clamp(editing.r + 1, editing.c)); setSelEnd(null)
       return
     }
     if (key === 'ArrowUp') {
       e.preventDefault()
       commitEdit(editing.r, editing.c)
-      setAnchor(clamp(editing.r + 1, editing.c)); setSelEnd(null)
+      setAnchor(clamp(editing.r - 1, editing.c)); setSelEnd(null)
       return
     }
   }
@@ -453,7 +451,7 @@ export default function HeatmapTable({
             </tr>
           </thead>
           <tbody>
-            {rowOrder.map(ri => (
+            {cells.map((_, ri) => (
               <tr key={ri}>
                 <td className="sticky left-0 z-10 bg-gray-800 border border-gray-700 p-1 text-gray-300 font-bold text-center whitespace-nowrap">
                   {rowHeaders[ri]}

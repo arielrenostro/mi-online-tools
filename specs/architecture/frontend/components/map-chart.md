@@ -39,7 +39,7 @@ Arrastar um ponto verticalmente mapeia o pixel Y → valor VE (`convertFromPixel
 
 ```typescript
 interface MapChartProps {
-  data:               number[][]   // cells[row][col], row 0 = menor MAP
+  data:               number[][]   // cells[row][col], row 0 = maior MAP (índice agnóstico — usa rowLabels[row] como coordenada, não a posição)
   rowLabels:          number[]     // MAP breakpoints (kPa)
   colLabels:          number[]     // RPM breakpoints
   selectedCells?:     Set<string>  // "row:col" — dot azul
@@ -59,7 +59,7 @@ Switches no topo: **Orientação** `MAP×RPM` / `RPM×MAP` · **Modo** `2D` / `3
 
 ### Modo 2D
 
-Uma linha por MAP (orientação `map_x_rpm`, X = RPM) ou por RPM (`rpm_x_map`, X = MAP) — 16 séries. Cores: gradiente warm interpolado entre as N séries. Símbolos selecionados maiores e azuis; não-selecionados pequenos com `opacity: 0.5` (necessário para o ECharts disparar eventos de mouse). Eixo Y com 5% de padding sobre o range dos dados. Tooltip `trigger: 'axis'`.
+Uma linha por MAP (orientação `map_x_rpm`, X = RPM) ou por RPM (`rpm_x_map`, X = MAP) — 16 séries. Cores: gradiente warm interpolado pelo **valor** do breakpoint da série (kPa ou RPM, normalizado pelo min/max do próprio eixo de séries) — não pela posição/índice da série, para não depender da ordem em que `rowLabels`/`colLabels` estão armazenados. O eixo X (category) também é sempre exibido em ordem ascendente por valor (`xAxisIndexOrder`, `useMapChartOptions.ts`), independente da ordem de armazenamento — `rowLabels`/MAP é descendente internamente (ver `../types.md`), `colLabels`/RPM é ascendente; os pontos de cada série e as interações do gráfico (clique, arraste, seleção por caixa em `MapChart.tsx`) usam essa mesma permutação para traduzir a posição visual de volta ao índice bruto em `data`. Símbolos selecionados maiores e azuis; não-selecionados pequenos com `opacity: 0.5` (necessário para o ECharts disparar eventos de mouse). Eixo Y com 5% de padding sobre o range dos dados. Tooltip `trigger: 'axis'`.
 
 ### Modo 3D
 

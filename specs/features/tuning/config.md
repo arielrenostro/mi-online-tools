@@ -52,18 +52,13 @@ O formulário é renderizado dinamicamente a partir do JSON Schema do engine (ve
 | `low_map_discount` | float | 0.025 | Desconto sobre a linha de MAP superior. `val_20kpa = val_30kpa × (1 − 0.025)` |
 | `max_adjacent_gradient_pct` | float (%) | 20.0 | Diferença máxima entre células vizinhas antes de emitir um warning de gradiente |
 
-### Propagação estrutural
+### Campo de correção
 
-Etapas 8+9 do pipeline (ver [tuning-engine.md](../tuning-engine.md)).
+Etapa 7 do pipeline (ver [tuning-engine.md](../tuning-engine.md)).
 
 | Campo | Tipo | Padrão | Descrição |
 |-------|------|--------|-----------|
-| `shape_propagation_enabled` | boolean | true | Ativa a extração de tendências estruturais e a composição do `cf_final`. Desativado → usa só a interpolação 2D local (etapa 7) |
-| `shape_rpm_weight` | float | 0.50 | Peso α da tendência por RPM: `cf_structural = rpm_cf^α × map_cf^β × gradient_cf^(1−α−β)` |
-| `shape_map_weight` | float | 0.30 | Peso β da tendência por MAP |
-| `shape_gradient_weight` | float | 0.20 | Peso `(1−α−β)` do gradiente local. Deve satisfazer `α + β + gradient_weight = 1.0` |
-| `global_shape_weight` | float | 0.10 | Peso do fator global no `cf_final`; desconta proporcionalmente os componentes local e estrutural (`w = 1 − global_shape_weight`) |
-| `gradient_min_samples` | inteiro | 2 | Mínimo de pontos observados para computar um gradiente em uma linha/coluna; abaixo disso usa o valor constante observado ou 1.0 |
+| `smoothing_strength` | float | 0.5 | Suavização do campo de correção (`μ`). ↑ = campo mais liso e uniforme, células de confiança média cedem mais aos vizinhos; ↓ = campo gruda mais nos dados medidos. Células de alta confiança permanecem ~verdade em qualquer valor razoável |
 
 ## Comportamento
 

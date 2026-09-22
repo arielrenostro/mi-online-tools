@@ -21,6 +21,17 @@ function warmColor(t: number): string {
   return `rgb(${r},${g},${bl})`
 }
 
+/** Índices de `labels` ordenados ascendentemente por valor. Identidade quando
+ * `labels` já é ascendente (ex.: RPM) — sem efeito nesse caso. Usado para o
+ * eixo X (category) sempre exibir os valores crescendo da esquerda pra
+ * direita, independente da ordem em que o array de origem está armazenado
+ * (`rowLabels`/MAP é descendente — ver `mapParser.ts`). Reexportado para
+ * `MapChart.tsx` traduzir `dataIndex`/posição visual de volta pro índice
+ * bruto nas interações de clique/arraste/seleção por caixa. */
+export function xAxisIndexOrder(labels: number[]): number[] {
+  return labels.map((_, i) => i).sort((a, b) => labels[a] - labels[b])
+}
+
 export function build2DOptions(
   data:          number[][],
   rowLabels:     number[],
@@ -35,17 +46,24 @@ export function build2DOptions(
   const xName        = orientation === 'map_x_rpm' ? 'RPM' : 'MAP (kPa)'
   const seriesUnit   = orientation === 'map_x_rpm' ? ' kPa' : ''
 
-  const nSeries = seriesLabels.length
+  const xOrder       = xAxisIndexOrder(xLabels)
+  const xLabelsSorted = xOrder.map(i => xLabels[i])
 
   const allVals = data.flat().filter((v): v is number => typeof v === 'number')
   const allMin  = allVals.length ? Math.min(...allVals) : 0
   const allMax  = allVals.length ? Math.max(...allVals) : 100
   const axisPad = (allMax - allMin) * 0.05
 
-  const series: EChartsOption['series'] = seriesLabels.map((label, si) => {
-    const color = warmColor(si / Math.max(nSeries - 1, 1))
+  // Cor por valor real de seriesLabels (kPa/RPM), não pelo índice da série —
+  // fica correto independente da ordem do array (asc/desc).
+  const seriesMin   = Math.min(...seriesLabels)
+  const seriesMax   = Math.max(...seriesLabels)
+  const seriesRange = seriesMax - seriesMin || 1
 
-    const dataPoints = xLabels.map((_, xi) => {
+  const series: EChartsOption['series'] = seriesLabels.map((label, si) => {
+    const color = warmColor((label - seriesMin) / seriesRange)
+
+    const dataPoints = xOrder.map(xi => {
       const row = orientation === 'map_x_rpm' ? si : xi
       const col = orientation === 'map_x_rpm' ? xi : si
       const isSelected = selectedCells.has(`${row}:${col}`)
@@ -73,7 +91,7 @@ export function build2DOptions(
     grid: { top: 24, right: 16, bottom: 44, left: 56 },
     xAxis: {
       type:         'category',
-      data:         xLabels.map(String),
+      data:         xLabelsSorted.map(String),
       name:         xName,
       nameLocation: 'middle',
       nameGap:      28,
@@ -103,7 +121,7 @@ export function build2DOptions(
         const pts = Array.isArray(params) ? params : [params]
         if (!pts.length) return ''
         const xi    = pts[0].dataIndex
-        const xVal  = xLabels[xi]
+        const xVal  = xLabelsSorted[xi]
         const head  = orientation === 'map_x_rpm'
           ? `<b>RPM:</b> ${xVal}`
           : `<b>MAP:</b> ${xVal} kPa`

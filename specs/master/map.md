@@ -27,7 +27,7 @@ Todos compartilham os mesmos breakpoints (`#I20` e `#I21`).
 
 Mesmo layout para VE (`#Fnn`), ignição (`#Inn`) e lambda (`#Ann`):
 
-- **Linhas** → MAP: `#F01` = primeiro breakpoint (`#I21[0]`=10 kPa), `#F16` = último (`#I21[15]`=200 kPa)
+- **Linhas** → MAP: no **arquivo**, `#F01` = primeiro breakpoint (`#I21[0]`=10 kPa), `#F16` = último (`#I21[15]`=200 kPa) — sempre ascendente. O `MapModel` em memória (frontend) inverte essa ordem uma vez no parsing (ver abaixo) para bater com a exibição da tabela (maior MAP no topo); a exportação desfaz a inversão ao escrever de volta
 - **Colunas** → RPM: cada valor segue a ordem de `#I20`
 - Dimensão padrão: 16×16. Valores em unidade interna da ECU (inteiros)
 
@@ -54,31 +54,32 @@ Lambda alvo: CSV armazena como inteiro (`1000`=λ1.000). UI exibe ÷1000 com 2 c
 
 1. Ler linha a linha; ignorar linhas em branco
 2. Identificar instrução pelo prefixo (até o primeiro `;`); valores vêm após, separados por `;`
-3. `#I20`/`#I21`: converter cada valor para `int` → listas de breakpoints
-4. `#F01`–`#F16`: sufixo 01–16 = índice da linha MAP (1-based); valores `int` → `cells[map_idx][rpm_idx]`
-5. `#I01`–`#I16`: mesmo esquema → `ignitionCells[map_idx][rpm_idx]`
-6. `#A01`–`#A16`: mesmo esquema → `lambdaCells[map_idx][rpm_idx]` (inteiros 0–2000)
-7. Demais linhas: armazenar como string literal para reuso na exportação
+3. `#I20`/`#I21`: converter cada valor para `int` → listas de breakpoints (ordem do arquivo, ascendente)
+4. `#F01`–`#F16`: sufixo 01–16 = índice da linha MAP no arquivo (1-based); valores `int` → posição `idx = sufixo - 1` num array temporário ascendente
+5. `#I01`–`#I16`: mesmo esquema, array temporário próprio
+6. `#A01`–`#A16`: mesmo esquema (inteiros 0–2000), array temporário próprio
+7. Demais linhas: armazenar como string literal para reuso na exportação (`rawLines`)
+8. **Inverter** `mapBreakpoints` e os três arrays de células (`cells`, `ignitionCells`, `lambdaCells`) — mesma permutação nos quatro, para manter alinhamento posicional — antes de retornar o `MapModel`. A partir daqui, índice 0 = **maior** MAP. `rawLines` não é invertido.
 
 ```typescript
-// MapModel
+// MapModel — já invertido (índice 0 = maior MAP)
 {
   name:            "mapa.csv",
-  rpmBreakpoints:  [400, 800, ..., 6800],   // #I20
-  mapBreakpoints:  [10, 20, ..., 200],       // #I21
-  cells:           [[...], ...],             // VE — [map_idx][rpm_idx]
+  rpmBreakpoints:  [400, 800, ..., 6800],   // #I20, ordem do arquivo (ascending)
+  mapBreakpoints:  [200, ..., 20, 10],       // #I21 invertido (descending)
+  cells:           [[...], ...],             // VE — [map_idx][rpm_idx], map_idx 0 = maior MAP
   ignitionCells:   [[...], ...],             // Ignição — mesma grade
   lambdaCells:     [[...], ...],             // Lambda alvo — inteiros 0–2000
-  rawLines:        [...]                      // todas as linhas originais, em ordem
+  rawLines:        [...]                      // todas as linhas originais, em ordem de arquivo (intocado)
 }
 ```
 
 ## Regras de exportação
 
 1. Iterar `rawLines` na ordem original
-2. Linha `#Fnn` (01–16): substituir pelos valores editados de VE
-3. Linha `#Inn` (01–16): substituir pelos valores editados de ignição
-4. Linha `#Ann` (01–16): substituir pelos valores de lambda × 1000, arredondados
+2. Linha `#Fnn` (01–16): `idx = nn - 1` é a posição no **arquivo** (ascendente); os arrays editáveis estão invertidos (descendente), então ler de `editableCells[length - 1 - idx]`, não `editableCells[idx]` — substituir pelos valores editados de VE
+3. Linha `#Inn` (01–16): mesma inversão de índice, valores editados de ignição
+4. Linha `#Ann` (01–16): mesma inversão de índice, valores de lambda × 1000, arredondados
 5. Demais linhas: escrever exatamente como em `rawLines`
 6. Separador `;`, encoding UTF-8
 

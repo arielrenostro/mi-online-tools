@@ -9,16 +9,12 @@ const GROUPS: Record<string, string[]> = {
   ],
   'Qualidade por célula': ['outlier_sigma','cv_threshold'],
   'Correção': ['weight_sample_base','max_correction_pct'],
+  'Campo de correção': ['smoothing_strength'],
   'Convergência': ['convergence_threshold'],
   'Pós-processamento': [
     'rpm400_rule_enabled','rpm400_discount',
     'low_map_rule_enabled','low_map_threshold','low_map_discount',
     'max_adjacent_gradient_pct',
-  ],
-  'Propagação estrutural': [
-    'shape_propagation_enabled',
-    'shape_rpm_weight','shape_map_weight','shape_gradient_weight',
-    'global_shape_weight','gradient_min_samples',
   ],
 }
 

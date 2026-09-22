@@ -43,14 +43,18 @@ Valores iniciais: `config: DEFAULT_TUNING_CONFIG`, `selectedEngineId: 've_lambda
 Validação 1: originalMap e editableMap != null?  → não: set lastError, return
 Validação 2: activeLogs.length > 0?              → não: set lastError, return
 Monta TuningRunRequest:
-  engineId, rpmBreakpoints/mapBreakpoints (de originalMap), cells = editableMap,
+  engineId, rpmBreakpoints (de originalMap),
+  mapBreakpoints/cells = reverseArray(originalMap.mapBreakpoints) / reverseRows(editableMap)
+    — originalMap/editableMap estão em ordem DESCENDING (interna); o backend exige
+    ascending, então `utils/mapRowOrder.ts` inverte só aqui, na montagem da request,
   logHashes (dos logs ativos), timeRange = useTimeStore.selection (null = tudo), config
 set isRunning = true
 ensureLogsOnBackend(logHashes)        → erro: set isRunning=false, lastError, return
 apiRunTuning(request) [timeout 120s]
-  sucesso → set lastOutput, isRunning=false, configDirty=false
+  sucesso → output = toDescendingOutput(rawOutput) (mapRowOrder.ts; matrizes +
+            rowI/neighborI de volta pra descending)
+          → set lastOutput = output, isRunning=false
           → saveTuningOutput(output) no IndexedDB (~200KB; falha é não-fatal)
-          → useMapStore.applyTuningOutput(output.suggestedMap)
   erro    → set isRunning=false, lastError = formatTuningError(err)
 ```
 

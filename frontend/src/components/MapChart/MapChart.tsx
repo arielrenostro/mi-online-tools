@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import ReactECharts from 'echarts-for-react'
-import { build2DOptions } from './useMapChartOptions'
+import { build2DOptions, xAxisIndexOrder } from './useMapChartOptions'
 import { build3DOptions } from './mapChart3DOptions'
 
 type Orientation = 'map_x_rpm' | 'rpm_x_map'
@@ -54,6 +54,7 @@ export default function MapChart({
   const dataRef            = useRef(data)
   const rowLabelsRef       = useRef(rowLabels)
   const colLabelsRef       = useRef(colLabels)
+  const xIndexOrderRef     = useRef<number[]>([])
 
   orientRef.current        = orientation
   modeRef.current          = mode
@@ -62,6 +63,9 @@ export default function MapChart({
   dataRef.current          = data
   rowLabelsRef.current     = rowLabels
   colLabelsRef.current     = colLabels
+  // Posição visual no eixo X (category, sempre ascendente) → índice bruto em
+  // `data` — ver xAxisIndexOrder em useMapChartOptions.ts.
+  xIndexOrderRef.current   = xAxisIndexOrder(orientation === 'map_x_rpm' ? colLabels : rowLabels)
 
   const { colorMin, colorMax } = useMemo(() => {
     const nums = data.flat().filter((v): v is number => typeof v === 'number')
@@ -82,8 +86,9 @@ export default function MapChart({
       if (params.componentType !== 'series') return
       const { seriesIndex, dataIndex } = params
       const o   = orientRef.current
-      const row = o === 'map_x_rpm' ? seriesIndex : dataIndex
-      const col = o === 'map_x_rpm' ? dataIndex   : seriesIndex
+      const xi  = xIndexOrderRef.current[dataIndex] ?? dataIndex
+      const row = o === 'map_x_rpm' ? seriesIndex : xi
+      const col = o === 'map_x_rpm' ? xi          : seriesIndex
       onChartClickRef.current?.(new Set([`${row}:${col}`]))
     },
     mousedown(params: any) {
@@ -93,8 +98,9 @@ export default function MapChart({
       boxStartRef.current  = null   // cancel any pending box select
       const { seriesIndex, dataIndex } = params
       const o   = orientRef.current
-      const row = o === 'map_x_rpm' ? seriesIndex : dataIndex
-      const col = o === 'map_x_rpm' ? dataIndex   : seriesIndex
+      const xi  = xIndexOrderRef.current[dataIndex] ?? dataIndex
+      const row = o === 'map_x_rpm' ? seriesIndex : xi
+      const col = o === 'map_x_rpm' ? xi          : seriesIndex
       dragRef.current = { row, col }
     },
   }).current
@@ -148,17 +154,19 @@ export default function MapChart({
           const inst    = echartsRef.current.getEchartsInstance()
           const o       = orientRef.current
           const d       = dataRef.current
-          const nSeries = (o === 'map_x_rpm' ? rowLabelsRef : colLabelsRef).current.length
-          const nX      = (o === 'map_x_rpm' ? colLabelsRef : rowLabelsRef).current.length
-          const sel     = new Set<string>()
+          const nSeries      = (o === 'map_x_rpm' ? rowLabelsRef : colLabelsRef).current.length
+          const nX           = (o === 'map_x_rpm' ? colLabelsRef : rowLabelsRef).current.length
+          const xIndexOrder  = xIndexOrderRef.current
+          const sel          = new Set<string>()
 
           for (let si = 0; si < nSeries; si++) {
-            for (let xi = 0; xi < nX; xi++) {
+            for (let pos = 0; pos < nX; pos++) {
+              const xi  = xIndexOrder[pos] ?? pos   // raw índice em `d`/`sel`
               const row = o === 'map_x_rpm' ? si : xi
               const col = o === 'map_x_rpm' ? xi : si
               const val = d[row]?.[col]
               if (typeof val !== 'number') continue
-              const px = inst.convertToPixel({ gridIndex: 0 }, [xi, val])
+              const px = inst.convertToPixel({ gridIndex: 0 }, [pos, val])   // pos = posição visual no eixo
               if (!Array.isArray(px)) continue
               const [pixX, pixY] = px as [number, number]
               if (pixX >= x1 && pixX <= x2 && pixY >= y1 && pixY <= y2)

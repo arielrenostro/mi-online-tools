@@ -11,13 +11,11 @@ Algoritmo de auto-tuning do mapa de VE. Baseado na planilha `4Bar - 30 - subida 
   3. Cálculo de VE Lambda por ponto
   4. Agregação por célula (rejeição ±2σ → média + desvio padrão)
   5. Peso de correção (count_score) e confiança combinada
-  6. Fator de correção ponderado por célula
-  7. Interpolação 2D local do fator
-  8. Extração de tendências estruturais (RPM / MAP / gradiente)
-  9. Composição do fator final preservando forma
-  10. Aplicação ao mapa
-  11. Limites absolutos
-  12. Pós-processamento
+  6. Fator de correção por célula (âncoras esparsas)
+  7. Campo de correção suave ancorado
+  8. Aplicação ao mapa
+  9. Limites absolutos
+  10. Pós-processamento
 [Mapa VE sugerido]
 ```
 
@@ -78,6 +76,8 @@ class TuningConfig:
     # Correção
     weight_sample_base:         int   = 40
     max_correction_pct:         float = 15.0
+    # Campo de correção (etapa 7)
+    smoothing_strength:         float = 0.5
     # Convergência
     convergence_threshold:      float = 5.0
     # Pós-processamento
@@ -87,13 +87,6 @@ class TuningConfig:
     low_map_threshold:          int   = 20
     low_map_discount:           float = 0.025
     max_adjacent_gradient_pct:  float = 20.0
-    # Propagação estrutural
-    shape_propagation_enabled:  bool  = True
-    shape_rpm_weight:           float = 0.50
-    shape_map_weight:           float = 0.30
-    shape_gradient_weight:      float = 0.20
-    global_shape_weight:        float = 0.10
-    gradient_min_samples:       int   = 2
 ```
 
 ### Saída — `TuningOutput`
@@ -125,7 +118,7 @@ class TuningOutput:
 class CellExtrapolation:
     row_i: int
     col_j: int
-    rule:  str   # "interpolation_2d" | "rpm400" | "low_map"
+    rule:  str   # "smoothing_field" | "rpm400" | "low_map"
 
 
 @dataclass
@@ -194,7 +187,7 @@ if rpm_snapped is None or map_snapped is None:
     continue
 ```
 
-Internamente a engine trabalha com **índices** de linha/coluna; os valores físicos são usados apenas no snap e na interpolação 2D (etapa 7).
+Internamente a engine trabalha com **índices** de linha/coluna; os valores físicos são usados apenas no snap.
 
 ```python
 row_i = map_breakpoints.index(map_snapped)
@@ -290,160 +283,67 @@ confidence = count_score * 0.7 + stability_score * 0.3
 
 `confidence` vai para a UI; `count_score` vai para o blending (célula consistente mas com poucas amostras não deve puxar o mapa só por ser estável).
 
-## 6. Fator de correção ponderado
+## 6. Fator de correção por célula (âncoras esparsas)
 
-A engine opera no **espaço do fator de correção** (matriz de multiplicadores), o que permite propagar correções suavemente para células sem dados (etapa 7).
+A engine opera no **espaço do fator de correção** (multiplicador). Cada célula **com dados** produz uma âncora; células sem dados ficam ausentes do dicionário e são preenchidas na etapa 7.
 
 ```python
 # Célula com dados (n > 0):
-cf_raw = ve_lambda_avg / current_map_value     # 1.05 = mapa 5% baixo
-cf[map][rpm] = 1 + count_score * (cf_raw - 1)  # suavizado pelo count_score
-# Célula sem dados (n = 0):
-cf[map][rpm] = None   # preenchido na etapa 7
+cf_raw = ve_lambda_avg / current_map_value          # 1.05 = mapa 5% baixo
+cf_val = 1 + count_score * (cf_raw - 1)             # amortecido por count_score
+cf_sparse[(map, rpm)] = clamp(cf_val, 1 ± max_correction_pct/100)
+# Célula sem dados (n = 0): ausente de cf_sparse
 ```
 
-**Equivalência:** `round(current × cf)` ≡ `round(count_score × ve_lambda_avg + (1-count_score) × current)` para células com dados. Operar com `cf` permite interpolar o multiplicador antes de aplicá-lo.
+`count_score` amortece células com poucas amostras (poucos dados → `cf` perto de 1.0). O `clamp` garante que a âncora nunca puxe o campo (etapa 7) além do limite de correção por rodada.
 
-| weight | cf_raw | cf ponderado | efeito |
-|--------|--------|--------------|--------|
-| 0.0 | qualquer | 1.00 | sem alteração |
-| 0.5 | 1.10 | 1.05 | metade da correção |
-| 1.0 | 1.10 | 1.10 | correção total |
+## 7. Campo de correção suave ancorado
 
-## 7. Interpolação 2D do fator
+Substitui a antiga interpolação 2D + propagação estrutural. Mecanismo único de **preservação de forma**, **anti-spike** e **propagação de tendência**.
 
-Mecanismo central de **preservação de forma** e **anti-spike**.
+### Princípio
 
-### Problema
+O mapa de correção é um campo que **(1) gruda nas células confiáveis — a fonte da verdade — e (2) é o mais liso possível em todo o resto**. Resolve-se o campo `cf` que minimiza:
 
-Motor turbo tem dados em duas regiões disjuntas: cruzeiro (2000–3600 RPM × 30–70 kPa) e WOT (3600–6800 RPM × 100–200 kPa). Região 5000 RPM × 100 kPa não existe no log. Corrigir só as células com dados cria **spikes** nas bordas. Padrões consistentes (ex.: +4% em 3200 RPM em todo MAP coberto) devem **propagar** para MAP não coberto.
+```
+E = Σ_células  W·(cf - cf_sparse)²   +   μ·Σ_arestas (cf_a - cf_b)²
+```
 
-### Solução: interpolar o fator, não os valores
+- **1º termo (âncora):** puxa o campo para o `cf` medido nas células com dados.
+- **2º termo (suavidade):** penaliza a diferença entre células vizinhas da grade → campo liso, sem spikes; `μ = smoothing_strength`.
+
+### Peso da âncora
 
 ```python
-# Células com dados têm cf (etapa 6); a interpolação preenche as None.
-# Fora do convex hull dos dados → cf = 1.0 (conservador).
-data_points = [(map_kpa, rpm, cf_value)
-               for (row_i, col_j), cf_value in cf.items() if cf_value is not None
-               for map_kpa, rpm in [(map_breakpoints[row_i], rpm_breakpoints[col_j])]]
-cf_full = interpolate_cf(data_points, map_breakpoints, rpm_breakpoints, fill_value=1.0)
+W = clip(confidence / (1 - confidence), 0, 100)   # célula com dados
+W = 0                                              # célula sem dados
 ```
 
-> Usa valores físicos (RPM/kPa), não índices: os breakpoints não são uniformemente espaçados (MAP tem 10 kPa abaixo de 120, 20 kPa acima). Índices distorceriam a interpolação.
+A razão de chances faz a confiança alta dominar: confiança 0.95 → W≈19, 0.99 → W≈99 (célula praticamente imóvel = verdade); confiança 0.3 (ruidosa) → W≈0.43 (âncora fraca, será suavizada); sem dados → W=0 (preenchida apenas pela suavidade).
 
-| Garantia | Mecanismo |
+### Resolução
+
+Minimizar `E` é um sistema linear:
+
+```
+(diag(W) + μ·L)·cf = W·cf_sparse        L = Laplaciano da grade (4-vizinhança)
+```
+
+Resolvido direto (`np.linalg.solve`) — a grade VE é 16×16, determinístico. A suavidade é célula-a-célula na grade (não em coordenadas físicas): o alvo é uma tabela de calibração lisa e a grade do motor é quase uniforme; ao contrário da interpolação, aqui o índice é o critério correto.
+
+### Comportamento
+
+| Situação | Resultado |
 |----------|-----------|
-| Sem spikes nas bordas | cf transita suave de ~1.0 (borda) até o valor corrigido no centro |
-| Preservação de forma | `new = current × cf_interp`; o mapa original já tem a topologia correta |
-| Propagação por coluna | cf ≈ 1.04 em 3200 RPM × 40–80 kPa estende para 90–200 kPa na mesma coluna |
-| Conservadorismo | `fill_value = 1.0` fora do convex hull |
+| Célula de alta confiança | `cf ≈ cf medido` — verdade aplicada integralmente |
+| Entre duas âncoras | rampa lisa ligando-as → tendência observada preservada |
+| Além das âncoras (sem dados) | campo achata e segura no valor da âncora mais próxima → tendência mantida, sem disparar |
+| Célula ruidosa, baixa confiança | puxada para a média dos vizinhos → spike eliminado |
+| `new = current × cf` | forma das curvas do mapa atual preservada onde não há dados |
 
-### Preservação de forma (Shape Preservation)
+Não há mais componente global, estrutural nem composição ponderada: **o campo resolvido é o fator final**. Células com dados não são diluídas por médias de coluna/linha nem por um fator global — o "tradeoff" foi removido.
 
-A engine assume `VE = f(RPM, MAP)` (superfície contínua). Regiões sem amostra herdam: tendências por RPM, tendências por carga (MAP), inclinações da superfície e desvios globais. Objetivo: reproduzir um calibrador humano.
-
-### Implementação
-
-```python
-from scipy.interpolate import griddata
-import numpy as np
-
-def interpolate_cf(
-    data_points: list[tuple[int, int, float]],  # (map_kpa, rpm, cf_value)
-    map_breakpoints: list[int],
-    rpm_breakpoints: list[int],
-    fill_value: float = 1.0,
-) -> np.ndarray:
-    """Matriz (n_map × n_rpm) com cf interpolado. Usa kPa/RPM físicos como coordenadas."""
-    map_kpas, rpms, values = zip(*data_points)
-    points = np.column_stack([map_kpas, rpms])
-    grid_map, grid_rpm = np.meshgrid(map_breakpoints, rpm_breakpoints, indexing='ij')
-    return griddata(points, values, (grid_map, grid_rpm), method='linear', fill_value=fill_value)
-```
-
-## 8. Extração de tendências estruturais (Shape Propagation)
-
-A interpolação local (etapa 7) evita descontinuidades mas não preserva padrões globais quando regiões inteiras não têm amostras. A engine modela três componentes adicionais.
-
-### 8.1 Tendência por RPM (rpm_cf)
-
-Quanto uma coluna tende a corrigir, independente da carga.
-
-```python
-rpm_cf[col_j] = weighted_mean(
-    cf[row_i][col_j] for células válidas da coluna,
-    weight = sample_count * confidence
-)
-```
-
-### 8.2 Tendência por MAP (map_cf)
-
-```python
-map_cf[row_i] = weighted_mean(
-    cf[row_i][col_j] para células válidas da linha,
-    weight = sample_count * confidence
-)
-```
-
-**Linhas sem dados:** `map_cf[row_i]` estimado por extrapolação linear usando o gradiente MAP entre as linhas vizinhas com dados (ver 8.3). Sem vizinhos suficientes (`gradient_min_samples < 2`) → `map_cf[row_i] = 1.0`.
-
-### 8.3 Gradiente local (slope propagation)
-
-Modela a variação da correção ao longo dos eixos.
-
-```python
-rpm_gradient = (cf2 - cf1) / (rpm2 - rpm1)
-map_gradient = (cf2 - cf1) / (map2 - map1)
-```
-
-Com mais de dois pontos, o gradiente é a média ponderada dos gradientes entre pares consecutivos; peso de cada segmento = `min(sample_count)` dos dois extremos:
-
-```python
-gradient = weighted_mean(
-    values=[(cf[i+1] - cf[i]) / (axis[i+1] - axis[i]) for i in range(len(observed) - 1)],
-    weights=[min(sample_count[i], sample_count[i+1]) for i in range(len(observed) - 1)]
-)
-```
-
-Exemplo: 3000 RPM × 30 kPa → -8%, × 130 kPa → +2% ⇒ gradiente +10%/100 kPa = 0.10%/kPa ⇒ estima 3000 RPM × 180 kPa ≈ +7%.
-
-### 8.4 Campo estrutural previsto
-
-```python
-cf_structural = rpm_cf[col]^α * map_cf[row]^β * gradient_cf^(1-α-β)
-# α = shape_rpm_weight (0.50), β = shape_map_weight (0.30), gradient = shape_gradient_weight (0.20)
-```
-
-## 9. Composição do fator final
-
-```python
-w = 1 - global_weight   # global_weight = global_shape_weight = 0.10 → w = 0.90
-
-cf_final = (
-    cf_interp      ^ (confidence * w)        # componente local: confiança alta → mais peso
-    * cf_structural ^ ((1 - confidence) * w) # componente estrutural: domina onde confidence→0
-    * cf_global     ^ global_weight          # componente global: desvio uniforme do mapa
-)
-```
-
-- **Local** — correção das células medidas; peso = `confidence`
-- **Estrutural** — propaga a forma da superfície VE; peso = `1 - confidence`
-- **Global** — corrige desvios uniformes (troca de injetores/combustível, erro global de VE); `cf_global = weighted_mean(todos cf observados)`, peso pequeno (0.10)
-
-Verificação: `confidence*w + (1-confidence)*w + global_weight = w + 0.10 = 1.00`.
-
-Equivalente em blending linear:
-
-```python
-cf_final = (
-    1
-    + confidence * w       * (cf_interp - 1)
-    + (1 - confidence) * w * (cf_structural - 1)
-    + global_weight        * (cf_global - 1)
-)
-```
-
-## 10. Aplicação do fator ao mapa
+## 8. Aplicação do fator ao mapa
 
 ```python
 for row_i, map_kpa in enumerate(map_breakpoints):
@@ -459,7 +359,7 @@ for row_i, map_kpa in enumerate(map_breakpoints):
 
 `residual_pct` mede quanto o mapa ainda precisa evoluir: com weight baixo o `new_value` fica perto do `current` e o residual pode ser alto (mais rodadas necessárias).
 
-## 11. Limites absolutos
+## 9. Limites absolutos
 
 ```python
 # Limite de correção por rodada
@@ -470,11 +370,11 @@ if abs(correction_pct) > config.max_correction_pct:
 new_value = max(100, min(9999, new_value))
 ```
 
-## 12. Pós-processamento
+## 10. Pós-processamento
 
-Regras específicas do motor e verificações de consistência para casos que a interpolação não cobre.
+Regras específicas do motor e verificações de consistência para casos que o campo de correção não cobre.
 
-### 12.1 RPM 400 (idle instável)
+### 10.1 RPM 400 (idle instável)
 
 400 RPM raramente tem dados. Sobrescrever explicitamente com base na coluna de 800 RPM:
 
@@ -486,7 +386,7 @@ if config.rpm400_rule_enabled:
         # rpm400_discount padrão 0.045 (4.5%)
 ```
 
-### 12.2 MAP muito baixo sem dados (ex.: 20 kPa)
+### 10.2 MAP muito baixo sem dados (ex.: 20 kPa)
 
 Linhas de MAP baixo sem nenhuma amostra extrapolam da linha imediatamente superior:
 
@@ -501,7 +401,7 @@ if config.low_map_rule_enabled:
         # low_map_threshold padrão 20 kPa; low_map_discount padrão 0.025 (2.5%)
 ```
 
-### 12.3 Verificação de monotonicidade MAP
+### 10.3 Verificação de monotonicidade MAP
 
 Em motor turbo, VE cresce monotonicamente com a pressão. Verificar e sinalizar violações (não corrige):
 
@@ -516,7 +416,7 @@ for col_j in range(n_rpm):
 
 A UI exibe como warning — o usuário decide se suaviza.
 
-### 12.4 Verificação de gradiente entre vizinhos
+### 10.4 Verificação de gradiente entre vizinhos
 
 Spike isolado indica dado ruim ou descontinuidade improvável. Verifica a magnitude (não só direção):
 
@@ -545,6 +445,7 @@ TuningConfig(
     max_delta_lambda_target=0.200, max_lambda=1.090, max_delta_pedal=None,
     outlier_sigma=2.0, cv_threshold=0.15,
     weight_sample_base=40, max_correction_pct=15,
+    smoothing_strength=0.5,
     convergence_threshold=5.0,
     rpm400_rule_enabled=True, rpm400_discount=0.045,
     low_map_rule_enabled=True, low_map_threshold=20, low_map_discount=0.025,

@@ -8,17 +8,28 @@ Tipos compartilhados entre stores, componentes e a camada API. Ficam em `src/typ
 /** Modelo do mapa após parsing do CSV. Fonte de verdade imutável; o usuário edita só `editableMap`. */
 export interface MapModel {
   name:            string      // nome do CSV original
-  rpmBreakpoints:  number[]    // #I20; tamanho = n_rpm (colunas)
-  mapBreakpoints:  number[]    // #I21 (kPa); tamanho = n_map (linhas)
-  cells:           number[][]  // VE (#F01–#F16); cells[map_i][rpm_j] = raw 100–9999; índice 0 = menor MAP
+  rpmBreakpoints:  number[]    // #I20; tamanho = n_rpm (colunas); ascending
+  mapBreakpoints:  number[]    // #I21 (kPa); tamanho = n_map (linhas); DESCENDING — índice 0 = maior MAP
+  cells:           number[][]  // VE (#F01–#F16); cells[map_i][rpm_j] = raw 100–9999; índice 0 = maior MAP
   ignitionCells:   number[][]  // Ignição (#I01–#I16); mesma grade; inteiros 0–100
   lambdaCells:     number[][]  // Lambda alvo (#A01–#A16); mesma grade; inteiros 0–2000
-  rawLines:        string[]    // todas as linhas originais do CSV, em ordem (reuso na exportação)
+  rawLines:        string[]    // todas as linhas originais do CSV, em ordem de arquivo (ascending; reuso na exportação)
 }
 
 /** Espelha o enum MapType do backend (engines/ve_lambda/engine.py). */
 export type MapType = 'fuel_ve' | 'ignition' | 'lambda' | 'boost'
 ```
+
+**Ordem das linhas — descendente é a convenção interna.** `mapParser.ts` inverte
+`mapBreakpoints`/`cells`/`ignitionCells`/`lambdaCells` uma única vez, logo após o
+parse do CSV (que é ascendente, `#F01` = menor MAP), para que o índice 0 já seja a
+linha que aparece no topo da tabela (maior MAP). `rawLines` fica intocado (texto
+literal do arquivo). Todo o resto do frontend — `HeatmapTable`, `mapStore`,
+navegação, cópia/colagem — opera sobre essa convenção de forma literal, sem
+inversões adicionais. O backend e o CSV exigem ascendente; a conversão de volta
+acontece só nas duas fronteiras de I/O: `mapExporter.ts` (export) e
+`utils/mapRowOrder.ts`, usado por `tuningStore.ts` no request/response de
+`/api/tuning/run` (ver `../stores/tuning-store.md`).
 
 ## `types/datalog.ts`
 
@@ -135,6 +146,8 @@ export interface TuningConfig {
   // Correção
   weight_sample_base:         number   // K em count_score = n/(n+K). Default 40
   max_correction_pct:         number   // correção máx por iteração por célula (%). Default 15.0
+  // Campo de correção (etapa 7)
+  smoothing_strength:         number   // suavização do campo (μ). Default 0.5
   // Convergência
   convergence_threshold:      number   // residual abaixo do qual a célula "convergiu". Default 5.0
   // Pós-processamento
@@ -144,13 +157,6 @@ export interface TuningConfig {
   low_map_threshold:          number   // kPa máximo para a regra. Default 20
   low_map_discount:           number   // desconto sobre a linha superior. Default 0.025
   max_adjacent_gradient_pct:  number   // % máx entre vizinhas antes do warning. Default 20.0
-  // Propagação estrutural (etapas 8+9)
-  shape_propagation_enabled:  boolean  // ativa tendências estruturais. Default true
-  shape_rpm_weight:           number   // peso α da tendência por RPM. Default 0.50
-  shape_map_weight:           number   // peso β da tendência por MAP. Default 0.30
-  shape_gradient_weight:      number   // peso (1-α-β) do gradiente. Default 0.20
-  global_shape_weight:        number   // peso do fator global no cf_final. Default 0.10
-  gradient_min_samples:       number   // mín. de pontos p/ computar gradiente. Default 2
 }
 
 /** Defaults — base para o store e o formulário. Espelha o backend. */
@@ -161,13 +167,11 @@ export const DEFAULT_TUNING_CONFIG: TuningConfig = {
   max_delta_lambda_target: 0.200, max_lambda: 1.090, max_delta_pedal: null,
   outlier_sigma: 2.0, cv_threshold: 0.15,
   weight_sample_base: 40, max_correction_pct: 15.0,
+  smoothing_strength: 0.5,
   convergence_threshold: 5.0,
   rpm400_rule_enabled: true, rpm400_discount: 0.045,
   low_map_rule_enabled: true, low_map_threshold: 20, low_map_discount: 0.025,
   max_adjacent_gradient_pct: 20.0,
-  shape_propagation_enabled: true,
-  shape_rpm_weight: 0.50, shape_map_weight: 0.30, shape_gradient_weight: 0.20,
-  global_shape_weight: 0.10, gradient_min_samples: 2,
 }
 ```
 
@@ -186,9 +190,22 @@ export interface TuningRunRequest {
 }
 ```
 
+`mapBreakpoints`/`cells` aqui já estão no formato de fio (ascending) que o backend
+exige — `originalMap.mapBreakpoints`/`editableMap` (`MapModel`, descending) só
+chegam nesse shape depois de passar por `reverseArray`/`reverseRows`
+(`utils/mapRowOrder.ts`), dentro de `tuningStore.runTuning`. Não montar esse objeto
+em nenhum outro lugar do código sem essa conversão.
+
 ### `TuningOutput`
 
-Todas as matrizes têm shape (n_map × n_rpm).
+Todas as matrizes têm shape (n_map × n_rpm). A resposta crua do backend vem
+ascendente (mesma ordem do `map_breakpoints` enviado na request); `tuningStore.ts`
+converte para descending com `toDescendingOutput` (`utils/mapRowOrder.ts`) —
+matrizes e também `rowI`/`neighborI` de `cellsNoData`, `cellsExtrapolated`,
+`monotonicityWarnings`, `gradientWarnings` — **antes** de expor o resultado (`set`
++ `tuningPersistence.saveTuningOutput`). Todo `TuningOutput` visível fora de
+`tuningStore.ts`/`api/tuning.ts` já está nessa convenção descending, consistente
+com `MapModel`.
 
 ```typescript
 export interface TuningOutput {
@@ -196,7 +213,7 @@ export interface TuningOutput {
   veLambdaMap:           (number | null)[][]     // VE Lambda médio (pós-outlier); null=sem dados
   sampleCountMap:        number[][]              // amostras por célula pós-outlier
   correctionPctMap:      number[][]              // correção aplicada em %
-  cfMap:                 number[][]              // fator interpolado (1.0=sem alteração)
+  cfMap:                 number[][]              // campo de correção resolvido (1.0=sem alteração)
   confidenceMap:         (number | null)[][]     // confiança 0–1 = count_score×0.7 + stability×0.3
   cvMap:                 (number | null)[][]     // CV = std/mean
   convergenceMap:        (boolean | null)[][]    // residual < convergence_threshold
@@ -210,8 +227,8 @@ export interface TuningOutput {
 export interface CellExtrapolation {
   rowI:  number
   colJ:  number
-  /** "interpolation_2d" (scipy.griddata) | "rpm400" | "low_map" */
-  rule:  'interpolation_2d' | 'rpm400' | 'low_map'
+  /** "smoothing_field" (campo de correção, etapa 7) | "rpm400" | "low_map" */
+  rule:  'smoothing_field' | 'rpm400' | 'low_map'
 }
 
 export interface GradientWarning {

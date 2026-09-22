@@ -29,7 +29,8 @@ LOG_FILES: list[str] = [
 MAP_FILE: str = "/mnt/c/Users/ariel/OneDrive/Carros/206/Master Injection/Mapas/4bar - 28 - Download ecu.csv"
 
 # Optional: path to a manually tuned map for comparison; set to "" to skip.
-REFERENCE_MAP_FILE: str = "/mnt/c/Users/ariel/OneDrive/Carros/206/Master Injection/Mapas/4bar - 33 - Download ecu_tuned.csv"
+#REFERENCE_MAP_FILE: str = "/mnt/c/Users/ariel/OneDrive/Carros/206/Master Injection/Mapas/4bar - 33 - Download ecu_tuned.csv"
+REFERENCE_MAP_FILE: str = "/mnt/c/Users/ariel/OneDrive/Carros/206/Master Injection/Mapas/4bar - 32 - VE manual, trip lauro mueler.csv"
 
 # ---------------------------------------------------------------------------
 # Map parser (mirrors the client-side TypeScript parser)

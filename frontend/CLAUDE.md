@@ -76,7 +76,9 @@ src/
 
 **ApiError 404 em `runTuning`:** log sumiu do cache do backend — re-enviar os logs.
 
-**HeatmapTable:** `cells[0]` = menor MAP; exibido invertido (maior no topo). Valores inteiros 100–9999 (VE% × 10). `onCellChange` = 1 undo; `onBulkChange` = 1 undo para o batch.
+**Ordem das linhas do mapa:** convenção interna do frontend é **descendente** por MAP — `cells[0]`/`mapBreakpoints[0]` = **maior** MAP, batendo 1:1 com a exibição (`HeatmapTable` renderiza literal, sem inversão). O backend e o arquivo CSV exigem ascendente (`cells[0]` = menor MAP); a conversão acontece só em dois pontos de fronteira: `mapParser.ts`/`mapExporter.ts` (parse/export do CSV) e `tuningStore.ts` via `utils/mapRowOrder.ts` (request/response de `/api/tuning/run`). Não introduzir mais nenhum ponto de inversão — se precisar mexer em ordem de linha, é nesses arquivos.
+
+**HeatmapTable:** valores inteiros 100–9999 (VE% × 10). `onCellChange` = 1 undo; `onBulkChange` = 1 undo para o batch.
 
 ## Invariantes
 

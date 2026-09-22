@@ -41,23 +41,43 @@ export function parseMapText(text: string, name: string): MapModel {
   if (rpmBreakpoints.length === 0) throw new Error('Breakpoints de RPM (#I20) não encontrados.')
   if (mapBreakpoints.length === 0) throw new Error('Breakpoints de MAP (#I21) não encontrados.')
 
-  const cells:         number[][] = []
-  const ignitionCells: number[][] = []
-  const lambdaCells:   number[][] = []
+  const cellsAsc:         number[][] = []
+  const ignitionCellsAsc: number[][] = []
+  const lambdaCellsAsc:   number[][] = []
 
   for (let i = 0; i < mapBreakpoints.length; i++) {
     const fuel = fuelRows.get(i)
     if (!fuel) throw new Error(`Linha de células #F${String(i + 1).padStart(2, '0')} não encontrada.`)
-    cells.push(fuel)
+    cellsAsc.push(fuel)
 
     const ign = ignitionRows.get(i)
     if (!ign) throw new Error(`Linha de ignição #I${String(i + 1).padStart(2, '0')} não encontrada.`)
-    ignitionCells.push(ign)
+    ignitionCellsAsc.push(ign)
 
     const lam = lambdaRows.get(i)
     if (!lam) throw new Error(`Linha de lambda #A${String(i + 1).padStart(2, '0')} não encontrada.`)
-    lambdaCells.push(lam)
+    lambdaCellsAsc.push(lam)
   }
 
-  return { name, rpmBreakpoints, mapBreakpoints, cells, ignitionCells, lambdaCells, rawLines }
+  // O arquivo (#I21/#Fnn/#Inn/#Ann) vem sempre ascendente por MAP (índice 0 =
+  // menor kPa) — é o formato exigido pelo CSV do MasterInjection e pelo backend.
+  // A representação interna do frontend é descendente (índice 0 = maior kPa),
+  // batendo 1:1 com a exibição da tabela (maior MAP no topo). A inversão
+  // acontece uma única vez, aqui — o resto do frontend passa a operar de forma
+  // literal sobre esses arrays. `mapExporter.ts` desfaz a inversão ao escrever
+  // de volta no CSV; `tuningStore.ts` desfaz ao falar com o backend.
+  const mapBreakpointsDesc  = [...mapBreakpoints].reverse()
+  const cells               = [...cellsAsc].reverse()
+  const ignitionCells       = [...ignitionCellsAsc].reverse()
+  const lambdaCells         = [...lambdaCellsAsc].reverse()
+
+  return {
+    name,
+    rpmBreakpoints,
+    mapBreakpoints: mapBreakpointsDesc,
+    cells,
+    ignitionCells,
+    lambdaCells,
+    rawLines,
+  }
 }

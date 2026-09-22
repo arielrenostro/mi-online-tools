@@ -106,8 +106,8 @@ Prioridade: acrescentar > definir > percentual. Confirma com `Enter`/`Aplicar`, 
 |--------|------|
 | `Ctrl+I` | Aumenta 1% as células selecionadas (× 1,01) |
 | `Ctrl+U` | Diminui 1% as células selecionadas (× 0,99) |
-| `Ctrl+C` | Copia a seleção como TSV (compatível Excel/Sheets) |
-| `Ctrl+V` | Cola TSV a partir do âncora |
+| `Ctrl+C` | Copia a seleção como TSV (compatível Excel/Sheets), linhas na ordem visual (topo → base) |
+| `Ctrl+V` | Cola TSV a partir do âncora, primeira linha na âncora, avançando visualmente para baixo |
 | `Delete`/`Backspace` (célula única) | Abre edição inline com campo vazio |
 | `Delete`/`Backspace` (range) | Zera o range (valor → 0, clampado para 100 no backend) |
 

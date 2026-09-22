@@ -13,8 +13,7 @@ from app.engines.ve_lambda.pipeline.formula import Formula
 from app.engines.ve_lambda.pipeline.aggregator import Aggregator
 from app.engines.ve_lambda.pipeline.confidence import Confidence
 from app.engines.ve_lambda.pipeline.cf_calculator import CFCalculator
-from app.engines.ve_lambda.pipeline.interpolator import Interpolator
-from app.engines.ve_lambda.pipeline.shape_propagation import ShapePropagation
+from app.engines.ve_lambda.pipeline.field_solver import FieldSolver
 from app.engines.ve_lambda.pipeline.applicator import Applicator
 from app.engines.ve_lambda.pipeline.postprocessor import Postprocessor
 
@@ -69,25 +68,22 @@ class VELambdaEngine(TuningEngine):
         # Step 5: Confidence
         stats = Confidence(cfg).compute(agg_result)
 
-        # Step 6: Correction factor
-        cf_sparse = CFCalculator().compute(stats, input.current_map)
+        # Step 6: Correction factor (sparse anchors, one per cell with data)
+        cf_sparse = CFCalculator(cfg).compute(stats, input.current_map)
 
-        # Step 7: 2D interpolation — mark cells filled by interpolation
+        # Step 7: anchored smooth correction field — mark cells without data
         n_map = len(input.map_breakpoints)
         n_rpm = len(input.rpm_breakpoints)
-        cells_interp: list[CellExtrapolation] = [
-            CellExtrapolation(row_i=ri, col_j=cj, rule="interpolation_2d")
+        cells_filled: list[CellExtrapolation] = [
+            CellExtrapolation(row_i=ri, col_j=cj, rule="smoothing_field")
             for ri in range(n_map)
             for cj in range(n_rpm)
             if (ri, cj) not in cf_sparse
         ]
 
-        cf_full = Interpolator(input.map_breakpoints, input.rpm_breakpoints).interpolate(cf_sparse)
-
-        # Steps 8+9: Shape propagation — structural tendencies + cf_final composition
-        cf_final = ShapePropagation(
-            cfg, input.map_breakpoints, input.rpm_breakpoints
-        ).compose(cf_full, cf_sparse, stats)
+        cf_final = FieldSolver(cfg.smoothing_strength).solve(
+            cf_sparse, stats, n_map, n_rpm
+        )
 
         # Step 10+11: Apply + limits
         applied = Applicator(cfg).apply(cf_final, input.current_map, stats)
@@ -113,5 +109,5 @@ class VELambdaEngine(TuningEngine):
 
         # Step 12: Post-processing
         return Postprocessor(cfg, input.map_breakpoints, input.rpm_breakpoints).run(
-            applied, filter_stats, cells_interp
+            applied, filter_stats, cells_filled
         )

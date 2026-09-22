@@ -4,6 +4,7 @@ import type { TuningConfig, TuningOutput } from '@/types/tuning'
 import { DEFAULT_TUNING_CONFIG } from '@/types/tuning'
 import { runTuning as apiRunTuning } from '@/api/tuning'
 import { ApiError, NetworkError, TimeoutError } from '@/api/client'
+import { reverseArray, reverseRows, toDescendingOutput } from '@/utils/mapRowOrder'
 import * as tuningPersistence from '@/persistence/tuningPersistence'
 import { lsSet } from '@/persistence/localStorage'
 import { useMapStore } from './mapStore'
@@ -75,17 +76,21 @@ export const useTuningStore = create<TuningState & TuningActions>()(
         throw new Error(msg)
       }
 
+      // originalMap.mapBreakpoints / editableMap estão em ordem descendente
+      // (convenção interna do frontend — ver mapParser.ts). O backend exige
+      // ascendente, então invertemos só nesta fronteira.
       let output: TuningOutput
       try {
-        output = await apiRunTuning({
+        const rawOutput = await apiRunTuning({
           engineId:       resolvedEngineId,
           rpmBreakpoints: originalMap.rpmBreakpoints,
-          mapBreakpoints: originalMap.mapBreakpoints,
-          cells:          editableMap,
+          mapBreakpoints: reverseArray(originalMap.mapBreakpoints),
+          cells:          reverseRows(editableMap),
           logHashes,
           timeRange,
           config,
         })
+        output = toDescendingOutput(rawOutput)
       } catch (err) {
         const msg = fmtError(err)
         set({ isRunning: false, lastError: msg })

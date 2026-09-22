@@ -15,6 +15,7 @@ export interface TuningConfig {
   cv_threshold:              number
   weight_sample_base:        number
   max_correction_pct:        number
+  smoothing_strength:        number
   convergence_threshold:     number
   rpm400_rule_enabled:       boolean
   rpm400_discount:           number
@@ -22,14 +23,6 @@ export interface TuningConfig {
   low_map_threshold:         number
   low_map_discount:          number
   max_adjacent_gradient_pct: number
-
-  // Shape propagation (steps 8+9)
-  shape_propagation_enabled: boolean
-  shape_rpm_weight:          number
-  shape_map_weight:          number
-  shape_gradient_weight:     number
-  global_shape_weight:       number
-  gradient_min_samples:      number
 }
 
 export const DEFAULT_TUNING_CONFIG: TuningConfig = {
@@ -47,6 +40,7 @@ export const DEFAULT_TUNING_CONFIG: TuningConfig = {
   cv_threshold:              0.15,
   weight_sample_base:        40,
   max_correction_pct:        15.0,
+  smoothing_strength:        0.5,
   convergence_threshold:     5.0,
   rpm400_rule_enabled:       true,
   rpm400_discount:           0.045,
@@ -54,13 +48,6 @@ export const DEFAULT_TUNING_CONFIG: TuningConfig = {
   low_map_threshold:         20,
   low_map_discount:          0.025,
   max_adjacent_gradient_pct: 20.0,
-
-  shape_propagation_enabled: true,
-  shape_rpm_weight:          0.50,
-  shape_map_weight:          0.30,
-  shape_gradient_weight:     0.20,
-  global_shape_weight:       0.10,
-  gradient_min_samples:      2,
 }
 
 export interface TuningRunRequest {

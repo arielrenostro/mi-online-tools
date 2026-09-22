@@ -38,6 +38,9 @@ class TuningConfig:
     weight_sample_base:        int          = 40
     max_correction_pct:        float        = 15.0
 
+    # Correction field (step 7)
+    smoothing_strength:        float        = 0.5
+
     # Convergence
     convergence_threshold:     float        = 5.0
 
@@ -48,14 +51,6 @@ class TuningConfig:
     low_map_threshold:         int          = 20
     low_map_discount:          float        = 0.025
     max_adjacent_gradient_pct: float        = 20.0
-
-    # Shape propagation (steps 8+9)
-    shape_propagation_enabled: bool         = True
-    shape_rpm_weight:          float        = 0.50
-    shape_map_weight:          float        = 0.30
-    shape_gradient_weight:     float        = 0.20
-    global_shape_weight:       float        = 0.10
-    gradient_min_samples:      int          = 2
 
 
 @dataclass

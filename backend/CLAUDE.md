@@ -62,17 +62,16 @@ app/
 │       ├── engine.py              # VELambdaEngine — orquestra o pipeline
 │       ├── config.py              # default_config(), config_from_dict()
 │       ├── schema.py              # JSON Schema para o modal do frontend
-│       └── pipeline/              # 10 etapas, cada uma em seu módulo
+│       └── pipeline/              # 8 etapas, cada uma em seu módulo
 │           ├── filter.py          # Etapa 1: filtragem de pontos
 │           ├── snap.py            # Etapa 2: snap para breakpoints
 │           ├── formula.py         # Etapa 3: cálculo ve_lambda por ponto
 │           ├── aggregator.py      # Etapa 4: agregação + rejeição de outliers ±σ
 │           ├── confidence.py      # Etapa 5: count_score, CV, confidence
-│           ├── cf_calculator.py   # Etapa 6: fator de correção ponderado
-│           ├── interpolator.py      # Etapa 7: interpolação 2D scipy.griddata
-│           ├── shape_propagation.py # Etapas 8+9: tendências estruturais + composição cf_final
-│           ├── applicator.py        # Etapas 10+11: aplicação + limites absolutos
-│           └── postprocessor.py     # Etapa 12: RPM400, MAP baixo, gradiente
+│           ├── cf_calculator.py   # Etapa 6: fator de correção por célula (âncoras)
+│           ├── field_solver.py    # Etapa 7: campo de correção suave ancorado
+│           ├── applicator.py      # Etapas 8+9: aplicação + limites absolutos
+│           └── postprocessor.py   # Etapa 10: RPM400, MAP baixo, gradiente
 ├── models/                        # Pydantic request/response da API
 ├── parsers/
 │   └── datalog_parser.py          # Parseia CSV MasterInjection → DatalogModel
@@ -112,8 +111,8 @@ ve_lambda = (lambda1 + lambda_correcao - lambda_target) × ve_value_raw
 | `clt` | `raw - 273` (Kelvin → Celsius) |
 | `pedal` | `min(100, raw / 990 * 100)` |
 
-### Interpolação 2D
-`scipy.griddata(method='linear', fill_value=1.0)` com coordenadas físicas (kPa, RPM) — **não** índices de array. Essencial para respeitar o espaçamento não uniforme dos breakpoints.
+### Campo de correção (etapa 7)
+`FieldSolver` resolve o sistema linear `(diag(W) + μ·L)·cf = W·cf_sparse` (L = Laplaciano da grade). Células com dados são âncoras de peso `W = amostras_efetivas / 120` (limitado a 100); o termo `μ` (`smoothing_strength`) suaviza. Não usa `scipy.griddata` nem coordenadas físicas — a suavidade é célula-a-célula na grade.
 
 ### Orientação das células
 `cells[0]` = linha com o **menor MAP** (ex.: 20 kPa). `cells[-1]` = maior MAP. O frontend inverte a exibição (maior MAP no topo da tabela).

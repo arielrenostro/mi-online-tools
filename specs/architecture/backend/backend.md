@@ -27,7 +27,7 @@ backend/app/
 ├── models/                 # Pydantic models da API (DatalogModel, EngineInfo, TuningRunRequest)
 ├── engines/ve_lambda/      # VELambdaEngine: engine.py, config.py, schema.py,
 │                           # pipeline/ (filter, snap, formula, aggregator, confidence,
-│                           #            cf_calculator, interpolator, shape_propagation,
+│                           #            cf_calculator, field_solver,
 │                           #            applicator, postprocessor)
 ├── parsers/datalog_parser.py   # CSV datalog → DatalogModel + conversão raw→real
 ├── registry/default_registry.py
