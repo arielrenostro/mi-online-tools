@@ -12,8 +12,12 @@ Veja o índice completo de specs no `CLAUDE.md` da raiz. As mais relevantes para
 | `../specs/features/tuning-engine.md` | Pipeline de 12 etapas do motor VE Lambda |
 | `../specs/features/tuning/research-insights.md` | Análise comparativa do algoritmo vs. indústria |
 | `../specs/master/datalog.md` | Formato CSV do datalog, colunas, conversões raw→real |
-| `../specs/master/map.md` | Formato do mapa (cells inline em `TuningRunRequest`) |
 | `../specs/architecture/overview.md` | Stack, fluxo de dados, fronteiras de responsabilidade |
+
+O backend nunca lê o CSV do mapa — `cells`/`rpm_breakpoints`/`map_breakpoints` chegam inline em
+`TuningRunRequest`, já parseados pelo frontend (ver `TuningInput.current_map` em
+`../specs/features/tuning-engine.md`). O formato do arquivo CSV do mapa é documentado na capability
+OpenSpec `map-import-export` (`../openspec/specs/map-import-export/spec.md`), que é frontend-only.
 
 **IMPORTANT — specs e código andam juntos:** sempre que alterar o código, atualize na mesma mudança a(s) spec(s) correspondente(s) em `specs/`. Specs e código DEVEM permanecer sincronizados.
 

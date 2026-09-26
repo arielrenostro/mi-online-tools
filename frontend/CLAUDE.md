@@ -4,20 +4,31 @@
 
 ## Specs do frontend
 
-Veja o índice completo de specs no `CLAUDE.md` da raiz. As mais relevantes para esta área:
+Todo o comportamento do frontend vive como capabilities do OpenSpec em
+`../openspec/specs/<capability>/spec.md` (Purpose + Requirements + Scenarios). Rode
+`openspec list --specs` na raiz do repo para o índice, ou `openspec show <capability> --type spec`
+para o conteúdo completo. Veja também o índice geral no `CLAUDE.md` da raiz.
 
-| Spec | Cobre |
+| Capability | Cobre |
 |------|-------|
-| `../specs/architecture/frontend/frontend.md` | Índice da arquitetura frontend |
-| `../specs/architecture/frontend/api-client.md` | Camada `src/api/` — HTTP, serialização, erros |
-| `../specs/architecture/frontend/persistence.md` | IndexedDB + localStorage, restauração de sessão |
-| `../specs/architecture/frontend/routes.md` | React Router v6, guards, navegação, F5 |
-| `../specs/architecture/frontend/types.md` | Tipos TypeScript compartilhados (`src/types/`) |
-| `../specs/architecture/frontend/stores/` | Um arquivo por store (`map`, `log`, `tuning`, `time`, `ui`) |
-| `../specs/architecture/frontend/components/` | Um arquivo por componente central (`HeatmapTable`, `SyncedChart`, `TimeRail`, etc.) |
-| `../specs/features/datalog/` | Telas da área Datalog (overview, logs, dashboard, charts, data) |
-| `../specs/features/tuning/` | Telas de tuning (overview, ve, ignition, lambda, config) — atalhos VE em `ve.md` |
-| `../specs/master/map.md` · `../specs/master/datalog.md` | Formatos CSV parseados client-side |
+| `home` | Tela Home (`/`), cards de entrada |
+| `map-import-export` | Parsing/exportação client-side do CSV de mapa; controle na TopBar |
+| `datalog-import` | Parsing client-side do CSV de datalog; aba Logs; controle na TopBar |
+| `datalog-timeline` | TimeRail: cursor, seleção de intervalo, sparkline, múltiplos logs |
+| `datalog-dashboard` | Aba Dashboard |
+| `datalog-charts` | Aba Gráficos: painéis sincronizados, sidebar de sinais |
+| `datalog-table` | Aba Dados: tabela, colunas, exportação CSV |
+| `heatmap-editing` | Edição de tabela N×M (seleção, atalhos de teclado, undo/redo) — usada por VE/Ignition/Lambda |
+| `tuning-ve` | Aba VE: edição manual, trigger de auto-tuning, exibição do resultado |
+| `tuning-ignition` | Aba Ignition (bloqueada na v1) |
+| `tuning-lambda` | Aba Lambda (bloqueada na v1) |
+| `tuning-config` | Modal de configuração do engine de tuning |
+| `navigation-guards` | Rotas, guards (`RequireMap`/`RequireLog`), padrão de aba bloqueada |
+| `session-persistence` | O que sobrevive a um reload, ordem de restauração, invalidação |
+
+`../specs/master/datalog.md` documenta o formato CSV do datalog (compartilhado com o parser do
+backend). O formato do mapa CSV é coberto pela capability `map-import-export` acima — o backend
+nunca o parseia.
 
 **IMPORTANT — specs e código andam juntos:** sempre que alterar o código, atualize na mesma mudança a(s) spec(s) correspondente(s) em `specs/`. Specs e código DEVEM permanecer sincronizados.
 

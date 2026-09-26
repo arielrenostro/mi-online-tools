@@ -122,7 +122,7 @@ Datalogs são recuperados do cache por hash SHA-1 (1h TTL).
 - **Pós-proc** — `rpm400_rule_enabled`, `low_map_rule_enabled`, `max_adjacent_gradient_pct`
 - **Propagação** — `shape_propagation_enabled`, `shape_rpm_weight`, `shape_map_weight`, `shape_gradient_weight`, `global_shape_weight`, `gradient_min_samples`
 
-Ver `specs/features/tuning/config.md` para defaults e significado de cada campo.
+Ver `specs/features/tuning-engine.md` para defaults e significado de cada campo.
 
 ## Cache de datalogs
 

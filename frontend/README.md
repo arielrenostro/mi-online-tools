@@ -188,7 +188,9 @@ Ambos rodam antes de enviar ao backend. Backend reparseia o datalog ao receber u
 - `Click + drag` — seleciona intervalo (200ms debounce)
 - `Shift+click` — estende seleção
 
-Ver [`specs/features/tuning/ve.md`](../specs/features/tuning/ve.md) para lista completa.
+Ver [`openspec/specs/heatmap-editing/spec.md`](../openspec/specs/heatmap-editing/spec.md) para o
+contrato completo de edição/atalhos, e [`openspec/specs/tuning-ve/spec.md`](../openspec/specs/tuning-ve/spec.md)
+para o restante da aba VE.
 
 ## Routing
 
@@ -213,7 +215,7 @@ React Router v6:
 - `/tuning` requer mapa carregado + logs ativos
 - `/tuning/...?tab=analysis` requer output de tuning válido
 
-Ver [`specs/architecture/frontend/routes.md`](../specs/architecture/frontend/routes.md).
+Ver [`openspec/specs/navigation-guards/spec.md`](../openspec/specs/navigation-guards/spec.md).
 
 ## Testes
 
@@ -241,4 +243,5 @@ Vitest + React Testing Library.
 
 Ver [`frontend/CLAUDE.md`](CLAUDE.md) para convenções, arquitetura de stores, persistência.
 
-Ver [`specs/architecture/frontend/`](../specs/architecture/frontend/) para specs detalhadas de cada camada.
+Ver [`openspec/specs/`](../openspec/specs/) (rode `openspec list --specs`) para as capabilities
+detalhadas de cada área do frontend.

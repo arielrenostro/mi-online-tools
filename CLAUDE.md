@@ -10,43 +10,49 @@ App web de auto-tuning de mapas de ECU MasterInjection: importa mapa + datalogs 
 
 Mapa "assunto / área de código → arquivo(s) de spec". Use-o para achar a spec certa antes de codar.
 
-### Geral e features
+**Frontend:** todo o comportamento do navegador (telas, abas, componentes compartilhados,
+navegação, persistência) vive como capabilities do OpenSpec em `openspec/specs/<capability>/spec.md`,
+no formato Purpose + Requirements + Scenarios (`WHEN`/`THEN`). Rode `openspec list --specs` para o
+índice ou `openspec show <capability> --type spec` para o conteúdo completo. Estrutura de pastas,
+dependências e tipos TypeScript não são duplicados como spec — são deriváveis lendo o código.
+
+### Frontend — capabilities (OpenSpec)
+
+| Capability | Cobre |
+|------|-------|
+| `home` | Tela Home (`/`), cards de entrada |
+| `map-import-export` | Parsing/exportação client-side do CSV de mapa; controle de mapa na TopBar |
+| `datalog-import` | Parsing client-side do CSV de datalog; aba Logs; controle de logs na TopBar |
+| `datalog-timeline` | TimeRail: cursor, seleção de intervalo, sparkline, múltiplos logs |
+| `datalog-dashboard` | Aba Dashboard |
+| `datalog-charts` | Aba Gráficos: painéis sincronizados, sidebar de sinais |
+| `datalog-table` | Aba Dados: tabela, colunas, exportação CSV |
+| `heatmap-editing` | Contrato compartilhado de edição de tabela N×M (seleção, atalhos, undo/redo) |
+| `tuning-ve` | Aba VE: edição manual, trigger de auto-tuning, exibição do resultado |
+| `tuning-ignition` | Aba Ignition (bloqueada na v1) |
+| `tuning-lambda` | Aba Lambda (bloqueada na v1) |
+| `tuning-config` | Modal de configuração do engine de tuning |
+| `navigation-guards` | Rotas, guards (`RequireMap`/`RequireLog`), padrão de aba bloqueada |
+| `session-persistence` | O que sobrevive a um reload, ordem de restauração, invalidação |
+
+### Geral
 
 | Spec | Cobre |
 |------|-------|
-| `specs/overview.md` | Visão geral, escopo da v1, fluxo importar→analisar→exportar |
-| `specs/features/overview.md` | Mapa de todas as telas, navegação, pré-requisitos e status v1 |
-| `specs/features/home/home.md` | Tela Home (`/`), cards de entrada |
-| `specs/features/topbar/topbar.md` | TopBar global: seções Mapa, Logs e Exportar |
+| `specs/overview.md` | Visão geral do projeto, escopo da v1, roadmap, usuários-alvo |
+
+### Motor de tuning (backend — regra não exposta ao frontend)
+
+| Spec | Cobre |
+|------|-------|
 | `specs/features/tuning-engine.md` | Algoritmo de auto-tuning VE — pipeline de 12 etapas |
-
-### Tuning (`/tuning`, `frontend/src/features/tuning/`)
-
-| Spec | Cobre |
-|------|-------|
-| `specs/features/tuning/overview.md` | Visão geral da tela de tuning, layout, abas |
-| `specs/features/tuning/ve.md` | Aba VE (`#F01`–`#F16`), atalhos de teclado |
-| `specs/features/tuning/ignition.md` | Aba Ignition (`#I01`–`#I16`) — prevista, bloqueada na v1 |
-| `specs/features/tuning/lambda.md` | Aba Lambda (`#A01`–`#A16`) — prevista, bloqueada na v1 |
-| `specs/features/tuning/config.md` | Modal de configurações do engine (campos, seções) |
 | `specs/features/tuning/research-insights.md` | Análise comparativa do algoritmo vs. indústria |
-
-### Datalog (`/datalog`, `frontend/src/features/datalog/`)
-
-| Spec | Cobre |
-|------|-------|
-| `specs/features/datalog/overview.md` | Layout da tela Datalog, TimeRail, abas, guards |
-| `specs/features/datalog/logs.md` | Aba Logs: upload, lista, ativação |
-| `specs/features/datalog/dashboard.md` | Aba Dashboard: cards de sinais no instante do cursor |
-| `specs/features/datalog/charts.md` | Aba Gráficos: painéis configuráveis de `SyncedChart` |
-| `specs/features/datalog/data.md` | Aba Dados: tabela de linhas do datalog |
 
 ### Formatos MasterInjection (`*/parsers/`)
 
 | Spec | Cobre |
 |------|-------|
-| `specs/master/map.md` | Formato CSV do mapa (`#Xnn`, `#I20`/`#I21`/`#Fnn`), parsing/export |
-| `specs/master/datalog.md` | Formato CSV do datalog, colunas, conversões raw→real |
+| `specs/master/datalog.md` | Formato CSV do datalog, colunas, conversões raw→real (usado pelo parser client-side e pelo parser do backend) |
 
 ### Arquitetura — geral
 
@@ -60,39 +66,6 @@ Mapa "assunto / área de código → arquivo(s) de spec". Use-o para achar a spe
 | Spec | Cobre |
 |------|-------|
 | `specs/architecture/backend/backend.md` | SOLID, engines plugáveis, API REST, session store |
-
-### Arquitetura — frontend (`frontend/`)
-
-| Spec | Cobre |
-|------|-------|
-| `specs/architecture/frontend/frontend.md` | Índice da arquitetura frontend (rotas, stores, componentes) |
-| `specs/architecture/frontend/api-client.md` | Camada `src/api/` — HTTP, serialização, erros |
-| `specs/architecture/frontend/persistence.md` | IndexedDB + localStorage, restauração de sessão |
-| `specs/architecture/frontend/routes.md` | React Router v6, guards, navegação, comportamento no F5 |
-| `specs/architecture/frontend/types.md` | Tipos TypeScript compartilhados (`src/types/`) |
-
-### Arquitetura — stores Zustand (`frontend/src/store/`)
-
-| Spec | Cobre |
-|------|-------|
-| `specs/architecture/frontend/stores/map-store.md` | `useMapStore` — ciclo de vida do mapa, edição, undo |
-| `specs/architecture/frontend/stores/log-store.md` | `useLogStore` — upload, remoção, reordenação de logs |
-| `specs/architecture/frontend/stores/tuning-store.md` | `useTuningStore` — config, engine, execução, output |
-| `specs/architecture/frontend/stores/time-store.md` | `useTimeStore` — cursor, seleção, sparkline, zoom |
-| `specs/architecture/frontend/stores/ui-store.md` | `useUIStore` — layout de gráficos, colunas, aba ativa |
-
-### Arquitetura — componentes (`frontend/src/components/`)
-
-| Spec | Cobre |
-|------|-------|
-| `specs/architecture/frontend/components/heatmap-table.md` | `HeatmapTable` — tabela N×M, edição, seleção, teclado |
-| `specs/architecture/frontend/components/map-chart.md` | `MapChart` e `MapWithChart` — gráficos 2D/3D do mapa |
-| `specs/architecture/frontend/components/synced-chart.md` | `SyncedChart` — gráficos de linha sincronizados |
-| `specs/architecture/frontend/components/time-rail.md` | `TimeRail` — barra de tempo, cursor, sparkline |
-| `specs/architecture/frontend/components/top-bar.md` | `TopBar` — barra de navegação global |
-| `specs/architecture/frontend/components/guards.md` | Guards de rota (mapa carregado, logs ativos) |
-| `specs/architecture/frontend/components/tuning-config-modal.md` | `TuningConfigModal` — formulário dinâmico do schema |
-| `specs/architecture/frontend/components/tuning-tab-link.md` | `TuningTabLink` — aba de navegação do tuning |
 
 ## Subprojetos
 
