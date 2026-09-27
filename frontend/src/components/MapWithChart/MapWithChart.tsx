@@ -13,6 +13,10 @@ interface MapWithChartProps {
   modifiedCells?: Set<string>
   formatValue?:   (v: number | boolean | null) => string
   chartHeight?:   number
+  onUndo?:        () => void
+  onRedo?:        () => void
+  canUndo?:       boolean
+  canRedo?:       boolean
 }
 
 type Pos = { r: number; c: number }
@@ -41,6 +45,10 @@ export default function MapWithChart({
   modifiedCells,
   formatValue,
   chartHeight,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }: MapWithChartProps) {
   const [selectedCells,    setSelectedCells]    = useState<Set<string>>(new Set())
   const [externalSelection, setExternalSelection] = useState<{ anchor: Pos; selEnd: Pos } | null>(null)
@@ -134,6 +142,10 @@ export default function MapWithChart({
           onSelectionChange={handleSelectionChange}
           cellWidth={derivedCellWidth}
           externalSelection={externalSelection}
+          onUndo={onUndo}
+          onRedo={onRedo}
+          canUndo={canUndo}
+          canRedo={canRedo}
         />
       </div>
 

@@ -13,11 +13,16 @@ interface Props {
   onReset:        () => void
   onOpenAutoTuning?: () => void
   formatValue?:   (v: number | boolean | null) => string
+  onUndo?:        () => void
+  onRedo?:        () => void
+  canUndo?:       boolean
+  canRedo?:       boolean
 }
 
 export default function EditableMapSection({
   cells, originalCells, rpmBreakpoints, mapBreakpoints,
   isDirty, onCellChange, onBulkChange, onReset, onOpenAutoTuning, formatValue,
+  onUndo, onRedo, canUndo, canRedo,
 }: Props) {
   const [confirmResetOpen, setConfirmResetOpen] = useState(false)
 
@@ -69,6 +74,10 @@ export default function EditableMapSection({
         onBulkChange={onBulkChange}
         modifiedCells={modifiedCells}
         formatValue={fmt}
+        onUndo={onUndo}
+        onRedo={onRedo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
 
       <ConfirmDialog

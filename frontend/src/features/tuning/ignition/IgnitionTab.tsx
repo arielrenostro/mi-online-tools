@@ -9,6 +9,10 @@ export function IgnitionTab() {
   const bulkUpdateIgnition  = useMapStore(s => s.bulkUpdateIgnitionCells)
   const resetIgnition       = useMapStore(s => s.resetIgnition)
   const isDirtyIgnition     = useMapStore(s => s.isDirtyIgnition)
+  const undoIgnition        = useMapStore(s => s.undoIgnition)
+  const redoIgnition        = useMapStore(s => s.redoIgnition)
+  const canUndo             = useMapStore(s => s.historyIgnition.length > 0)
+  const canRedo             = useMapStore(s => s.futureIgnition.length > 0)
 
   if (!originalMap || !editableIgnitionMap) return null
 
@@ -28,6 +32,10 @@ export function IgnitionTab() {
         onCellChange={updateIgnitionCell}
         onBulkChange={bulkUpdateIgnition}
         onReset={resetIgnition}
+        onUndo={undoIgnition}
+        onRedo={redoIgnition}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
     </div>
   )

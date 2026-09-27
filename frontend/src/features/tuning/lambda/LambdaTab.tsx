@@ -17,6 +17,10 @@ export function LambdaTab() {
   const bulkUpdateLambda  = useMapStore(s => s.bulkUpdateLambdaCells)
   const resetLambda       = useMapStore(s => s.resetLambda)
   const isDirtyLambda     = useMapStore(s => s.isDirtyLambda)
+  const undoLambda        = useMapStore(s => s.undoLambda)
+  const redoLambda        = useMapStore(s => s.redoLambda)
+  const canUndo           = useMapStore(s => s.historyLambda.length > 0)
+  const canRedo           = useMapStore(s => s.futureLambda.length > 0)
 
   const displayOriginalLambda = useMemo(
     () => originalMap?.lambdaCells.map(row => row.map(v => v / SCALE)) ?? [],
@@ -56,6 +60,10 @@ export function LambdaTab() {
         onBulkChange={handleBulkChange}
         onReset={resetLambda}
         formatValue={fmtLambda}
+        onUndo={undoLambda}
+        onRedo={redoLambda}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
     </div>
   )

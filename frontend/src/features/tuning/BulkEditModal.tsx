@@ -1,12 +1,18 @@
 import { useState, useRef, useEffect } from 'react'
+import { IconInterpolateH, IconInterpolateV } from '@/components/MapEditIcons'
 
 interface Props {
-  cellCount: number
-  onApply:   (type: 'pct' | 'add' | 'fixed', value: number) => void
-  onClose:   () => void
+  cellCount:         number
+  onApply:           (type: 'pct' | 'add' | 'fixed', value: number) => void
+  onClose:           () => void
+  canInterpolateH?:  boolean
+  canInterpolateV?:  boolean
+  onInterpolate?:    (direction: 'h' | 'v') => void
 }
 
-export default function BulkEditModal({ cellCount, onApply, onClose }: Props) {
+export default function BulkEditModal({
+  cellCount, onApply, onClose, canInterpolateH, canInterpolateV, onInterpolate,
+}: Props) {
   const [pct,   setPct]   = useState('')
   const [add,   setAdd]   = useState('')
   const [fixed, setFixed] = useState('')
@@ -90,6 +96,35 @@ export default function BulkEditModal({ cellCount, onApply, onClose }: Props) {
             />
             <p className="text-xs text-gray-600 mt-0.5">Define todas as células para este valor</p>
           </div>
+
+          {onInterpolate && (
+            <>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px bg-gray-700" />
+                <span className="text-xs text-gray-600">ou</span>
+                <div className="flex-1 h-px bg-gray-700" />
+              </div>
+
+              <div className="flex justify-center gap-2">
+                <button
+                  onClick={() => onInterpolate('h')}
+                  disabled={!canInterpolateH}
+                  title="Interpolar horizontal (H)"
+                  className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gray-800 disabled:hover:text-gray-400"
+                >
+                  <IconInterpolateH />
+                </button>
+                <button
+                  onClick={() => onInterpolate('v')}
+                  disabled={!canInterpolateV}
+                  title="Interpolar vertical (V)"
+                  className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gray-800 disabled:hover:text-gray-400"
+                >
+                  <IconInterpolateV />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 mt-5">

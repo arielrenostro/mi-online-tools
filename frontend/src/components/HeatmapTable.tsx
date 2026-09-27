@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import BulkEditModal from '@/features/tuning/BulkEditModal'
+import { IconAdjust, IconInterpolateH, IconInterpolateV, IconUndo, IconRedo } from '@/components/MapEditIcons'
 
 export type ColorScale = 'warm' | 'diverging' | 'confidence' | 'coverage' | 'convergence'
 
@@ -18,6 +19,10 @@ interface HeatmapTableProps {
   onSelectionChange?:  (anchor: { r: number; c: number } | null, selEnd: { r: number; c: number } | null) => void
   cellWidth?:          number
   externalSelection?:  { anchor: { r: number; c: number }; selEnd?: { r: number; c: number } | null } | null
+  onUndo?:             () => void
+  onRedo?:             () => void
+  canUndo?:            boolean
+  canRedo?:            boolean
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -48,6 +53,44 @@ const COVERAGE_STOPS: RGB[]   = [[31,41,55],[59,130,246]]
 
 function rgb(c: RGB): string { return `rgb(${c[0]},${c[1]},${c[2]})` }
 function brightness(c: RGB): number { return (c[0] * 299 + c[1] * 587 + c[2] * 114) / 1000 }
+
+// ── Interpolation (ported from mi-dashboard-android's MapEditOps.interpolateHorizontal/Vertical:
+// index-based positioning within the selection, independent per row/column, edges unchanged) ───
+
+type SelRect = { r0: number; r1: number; c0: number; c1: number }
+type CellChange = { row: number; col: number; value: number }
+
+function interpolateHorizontal(cells: (number | boolean | null)[][], sr: SelRect): CellChange[] {
+  const steps = sr.c1 - sr.c0
+  if (steps < 2) return []
+  const changes: CellChange[] = []
+  for (let r = sr.r0; r <= sr.r1; r++) {
+    const left  = cells[r][sr.c0]
+    const right = cells[r][sr.c1]
+    if (typeof left !== 'number' || typeof right !== 'number') continue
+    for (let c = sr.c0 + 1; c < sr.c1; c++) {
+      const t = (c - sr.c0) / steps
+      changes.push({ row: r, col: c, value: left + (right - left) * t })
+    }
+  }
+  return changes
+}
+
+function interpolateVertical(cells: (number | boolean | null)[][], sr: SelRect): CellChange[] {
+  const steps = sr.r1 - sr.r0
+  if (steps < 2) return []
+  const changes: CellChange[] = []
+  for (let c = sr.c0; c <= sr.c1; c++) {
+    const top    = cells[sr.r0][c]
+    const bottom = cells[sr.r1][c]
+    if (typeof top !== 'number' || typeof bottom !== 'number') continue
+    for (let r = sr.r0 + 1; r < sr.r1; r++) {
+      const t = (r - sr.r0) / steps
+      changes.push({ row: r, col: c, value: top + (bottom - top) * t })
+    }
+  }
+  return changes
+}
 
 function cellBg(
   value: number | boolean | null,
@@ -103,6 +146,10 @@ export default function HeatmapTable({
   onSelectionChange,
   cellWidth,
   externalSelection,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
 }: HeatmapTableProps) {
   const cw      = cellWidth ?? 52
   const cellFs  = cw >= 48 ? 12 : cw >= 38 ? 11 : cw >= 30 ? 10 : 9
@@ -117,8 +164,9 @@ export default function HeatmapTable({
   const [dragging,     setDragging]     = useState(false)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
 
-  const wrapRef  = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const wrapRef       = useRef<HTMLDivElement>(null)
+  const inputRef      = useRef<HTMLInputElement>(null)
 
   const allNums = cells.flat().filter((v): v is number => typeof v === 'number')
   const cMin    = min ?? (allNums.length ? Math.min(...allNums) : 0)
@@ -194,6 +242,21 @@ export default function HeatmapTable({
     onBulkChange(changes)
   }
 
+  const canInterpolateH = !!sr && (sr.c1 - sr.c0) >= 2
+  const canInterpolateV = !!sr && (sr.r1 - sr.r0) >= 2
+
+  function runInterpolateH() {
+    if (!sr || !onBulkChange) return
+    const changes = interpolateHorizontal(cells, sr)
+    if (changes.length) onBulkChange(changes)
+  }
+
+  function runInterpolateV() {
+    if (!sr || !onBulkChange) return
+    const changes = interpolateVertical(cells, sr)
+    if (changes.length) onBulkChange(changes)
+  }
+
   // ── Container keydown (no input focused) ─────────────────────────────────────
 
   function handleContainerKey(e: React.KeyboardEvent) {
@@ -233,6 +296,18 @@ export default function HeatmapTable({
     if (key === 'F2') {
       e.preventDefault()
       if (anchor) setBulkEditOpen(true)
+      return
+    }
+
+    // H / V: interpolate horizontal / vertical
+    if (!mod && key.toLowerCase() === 'h') {
+      e.preventDefault()
+      runInterpolateH()
+      return
+    }
+    if (!mod && key.toLowerCase() === 'v') {
+      e.preventDefault()
+      runInterpolateV()
       return
     }
 
@@ -421,14 +496,76 @@ export default function HeatmapTable({
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
+  const toolbarButtonClass = 'p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gray-800 disabled:hover:text-gray-400'
+
+  // A toolbar button click must never blur the table: mousedown's default focus
+  // transfer is prevented, and (belt-and-suspenders for the F2 dialog opening,
+  // which does intentionally move focus) the blur handler below only clears the
+  // selection when focus leaves this whole container, not the table div itself.
+  const preventFocusSteal = (e: React.MouseEvent) => e.preventDefault()
+
   return (
-    <>
+    <div ref={containerRef}>
+      {!readOnly && (
+        <div className="flex items-center gap-1.5 mb-1.5">
+          <button
+            type="button"
+            onClick={() => anchor && setBulkEditOpen(true)}
+            onMouseDown={preventFocusSteal}
+            disabled={!anchor}
+            title="Ajuste (F2)"
+            className={toolbarButtonClass}
+          >
+            <IconAdjust />
+          </button>
+          <button
+            type="button"
+            onClick={runInterpolateH}
+            onMouseDown={preventFocusSteal}
+            disabled={!canInterpolateH}
+            title="Interpolar horizontal (H)"
+            className={toolbarButtonClass}
+          >
+            <IconInterpolateH />
+          </button>
+          <button
+            type="button"
+            onClick={runInterpolateV}
+            onMouseDown={preventFocusSteal}
+            disabled={!canInterpolateV}
+            title="Interpolar vertical (V)"
+            className={toolbarButtonClass}
+          >
+            <IconInterpolateV />
+          </button>
+          <button
+            type="button"
+            onClick={onUndo}
+            onMouseDown={preventFocusSteal}
+            disabled={!onUndo || !canUndo}
+            title="Desfazer (Ctrl+Z)"
+            className={toolbarButtonClass}
+          >
+            <IconUndo />
+          </button>
+          <button
+            type="button"
+            onClick={onRedo}
+            onMouseDown={preventFocusSteal}
+            disabled={!onRedo || !canRedo}
+            title="Refazer (Ctrl+Y)"
+            className={toolbarButtonClass}
+          >
+            <IconRedo />
+          </button>
+        </div>
+      )}
       <div
         ref={wrapRef}
         tabIndex={0}
         className={`${cellWidth != null ? 'overflow-hidden' : 'overflow-auto'} rounded border border-gray-700 outline-none focus-visible:ring-1 focus-visible:ring-blue-500`}
         onKeyDown={handleContainerKey}
-        onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { setAnchor(null); setSelEnd(null) } }}
+        onBlur={e => { if (!containerRef.current?.contains(e.relatedTarget as Node)) { setAnchor(null); setSelEnd(null) } }}
       >
         <table
           className="border-collapse font-mono"
@@ -508,9 +645,15 @@ export default function HeatmapTable({
               setBulkEditOpen(false)
             }}
             onClose={() => setBulkEditOpen(false)}
+            canInterpolateH={canInterpolateH}
+            canInterpolateV={canInterpolateV}
+            onInterpolate={direction => {
+              direction === 'h' ? runInterpolateH() : runInterpolateV()
+              setBulkEditOpen(false)
+            }}
           />
         )}
       </div>
-    </>
+    </div>
   )
 }
