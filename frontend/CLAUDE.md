@@ -35,7 +35,15 @@ nunca o parseia.
 ```bash
 npm run dev    # http://localhost:5173
 npm run build
+npm run test   # vitest run — unit tests
 ```
+
+## Testar
+
+Vitest, ambiente `node` (stores/utils são lógica pura — nada de DOM). Testes ficam colocados junto
+ao arquivo testado (`mapStore.test.ts` ao lado de `mapStore.ts`), não em uma pasta `tests/`
+separada. Módulos com efeito colateral (ex: `persistence/*`, que fala com IndexedDB) são mockados
+com `vi.mock` nos testes de store, para o teste continuar puro e determinístico.
 
 `VITE_API_URL` é **build-time** (não runtime). Default: `http://localhost:8000`.
 
