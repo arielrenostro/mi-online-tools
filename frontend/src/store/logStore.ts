@@ -2,7 +2,6 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { LogEntry, DatalogModel, DatalogRow } from '@/types/datalog'
 import { parseDatalogClient }    from '@/parsers/datalogParser'
-import { uploadDatalog }         from '@/api/datalog'
 import { computeHash }           from '@/api/client'
 import * as logPersistence       from '@/persistence/logPersistence'
 import { lsSet }                 from '@/persistence/localStorage'
@@ -18,14 +17,14 @@ interface LogActions {
   removeLog(hash: string): Promise<void>
   toggleLog(hash: string): void
   reorder(orderedHashes: string[]): void
-  ensureLogsOnBackend(hashes: string[]): Promise<void>
   hydrate(entries: LogEntry[]): void
 }
 
 export const selectActiveLogs    = (s: LogState) => s.logs.filter(l => l.enabled)
 
-export const selectAllRows = (s: LogState): DatalogRow[] => {
-  const active = s.logs.filter(l => l.enabled)
+/** Concatenates active logs' rows in order, offsetting timestamps so the whole session is one continuous timeline. */
+export function flattenActiveRows(logs: LogEntry[]): DatalogRow[] {
+  const active = logs.filter(l => l.enabled)
   let offset = 0
   const result: DatalogRow[] = []
   for (const log of active) {
@@ -36,6 +35,8 @@ export const selectAllRows = (s: LogState): DatalogRow[] => {
   }
   return result
 }
+
+export const selectAllRows = (s: LogState): DatalogRow[] => flattenActiveRows(s.logs)
 export const selectTotalDuration = (s: LogState) => s.logs.filter(l => l.enabled).reduce((a, l) => a + l.duration_ms, 0)
 export const selectAllSignals    = (s: LogState): string[] => {
   const active = s.logs.filter(l => l.enabled)
@@ -84,8 +85,8 @@ export const useLogStore = create<LogState & LogActions>()(
       try { await logPersistence.deleteLog(hash) } catch { /* non-fatal */ }
       persistOrder(newLogs)
       if (entry.enabled) {
-        const { useTuningStore } = await import('./tuningStore')
-        useTuningStore.getState().clearOutput()
+        const { useCorrectionStore } = await import('./correctionStore')
+        useCorrectionStore.getState().markStale()
         const newTotal = newLogs.filter(l => l.enabled).reduce((a, l) => a + l.duration_ms, 0)
         useTimeStore.getState().onTotalDurationChanged(newTotal)
       }
@@ -100,7 +101,7 @@ export const useLogStore = create<LogState & LogActions>()(
       persistOrder(newLogs)
       const nowActive = newLogs.filter(l => l.enabled)
       if (entry.enabled && nowActive.length === 0) useTimeStore.getState().clearSelection()
-      import('./tuningStore').then(m => m.useTuningStore.getState().clearOutput())
+      import('./correctionStore').then(m => m.useCorrectionStore.getState().markStale())
       const newTotal = nowActive.reduce((a, l) => a + l.duration_ms, 0)
       useTimeStore.getState().onTotalDurationChanged(newTotal)
     },
@@ -116,14 +117,6 @@ export const useLogStore = create<LogState & LogActions>()(
       const newLogs = [...reordered, ...remaining]
       set({ logs: newLogs })
       persistOrder(newLogs)
-    },
-
-    async ensureLogsOnBackend(hashes) {
-      for (const hash of hashes) {
-        const saved = await logPersistence.getLog(hash)
-        if (!saved?.csvBlob) throw new Error(`Blob do log ${hash} não encontrado. Reimporte o arquivo.`)
-        await uploadDatalog(saved.csvBlob as File, hash)
-      }
     },
 
     hydrate(entries) {

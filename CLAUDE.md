@@ -28,10 +28,10 @@ dependências e tipos TypeScript não são duplicados como spec — são derivá
 | `datalog-charts` | Aba Gráficos: painéis sincronizados, sidebar de sinais |
 | `datalog-table` | Aba Dados: tabela, colunas, exportação CSV |
 | `heatmap-editing` | Contrato compartilhado de edição de tabela N×M (seleção, atalhos, undo/redo) |
-| `tuning-ve` | Aba VE: edição manual, trigger de auto-tuning, exibição do resultado |
+| `tuning-ve` | Aba VE: edição manual, mapa original, seção de correção |
+| `tuning-ve-correction` | Filtros de correção (aba Logs), geração do snapshot, heatmap de correção e aplicação no mapa VE |
 | `tuning-ignition` | Aba Ignition (bloqueada na v1) |
 | `tuning-lambda` | Aba Lambda (bloqueada na v1) |
-| `tuning-config` | Modal de configuração do engine de tuning |
 | `navigation-guards` | Rotas, guards (`RequireMap`/`RequireLog`), padrão de aba bloqueada |
 | `session-persistence` | O que sobrevive a um reload, ordem de restauração, invalidação |
 
@@ -41,55 +41,37 @@ dependências e tipos TypeScript não são duplicados como spec — são derivá
 |------|-------|
 | `specs/overview.md` | Visão geral do projeto, escopo da v1, roadmap, usuários-alvo |
 
-### Motor de tuning (backend — regra não exposta ao frontend)
-
-| Spec | Cobre |
-|------|-------|
-| `specs/features/tuning-engine.md` | Algoritmo de auto-tuning VE — pipeline de 12 etapas |
-| `specs/features/tuning/research-insights.md` | Análise comparativa do algoritmo vs. indústria |
-
 ### Formatos MasterInjection (`*/parsers/`)
 
 | Spec | Cobre |
 |------|-------|
-| `specs/master/datalog.md` | Formato CSV do datalog, colunas, conversões raw→real (usado pelo parser client-side e pelo parser do backend) |
+| `specs/master/datalog.md` | Formato CSV do datalog, colunas, conversões raw→real (usado pelo parser client-side) |
 
 ### Arquitetura — geral
 
 | Spec | Cobre |
 |------|-------|
-| `specs/architecture/architecture.md` | Ponteiro para os specs detalhados de arquitetura |
-| `specs/architecture/overview.md` | Stack, modelo de sessão, fluxo de dados, fronteiras |
-
-### Arquitetura — backend (`backend/`)
-
-| Spec | Cobre |
-|------|-------|
-| `specs/architecture/backend/backend.md` | SOLID, engines plugáveis, API REST, session store |
+| `specs/architecture/architecture.md` | Ponteiro para o spec detalhado de arquitetura |
+| `specs/architecture/overview.md` | Stack, fluxo de dados, persistência, fronteiras |
 
 ## Subprojetos
 
+App 100% frontend — sem backend, sem serviço, sem variáveis de ambiente de runtime.
+
 | Pasta | Stack | Docs |
 |-------|-------|------|
-| `backend/` | Python 3.12 + FastAPI + NumPy/SciPy | [backend/CLAUDE.md](backend/CLAUDE.md) |
 | `frontend/` | React 18 + TypeScript + Vite + Tailwind + Zustand | [frontend/CLAUDE.md](frontend/CLAUDE.md) |
 
 ```bash
-# Backend (8000)
-cd backend && pip install -r requirements.txt && uvicorn app.main:app --reload
 # Frontend (5173)
 cd frontend && npm install && npm run dev
 ```
 
-## Variáveis de ambiente
-
-| Variável | Padrão | Onde |
-|----------|--------|------|
-| `MIOT_CACHE_DIR` | `/tmp/miot_datalogs` | Backend — cache de datalogs |
-| `VITE_API_URL` | `http://localhost:8000` | Frontend — **build-time** |
-
 ## Decisões arquiteturais
 
-- **Backend nunca armazena o mapa.** Enviado inline em `POST /api/tuning/run`. Frontend é o dono.
-- **Datalogs cacheados por SHA-1** (TTL 1h). Upload ocorre em `ensureLogsOnBackend()`, não no carregamento.
-- **Parsing é sempre client-side.** `parseMapClient` e `parseDatalogClient` rodam no browser. Backend reparseia o datalog ao receber o upload para construir o `DatalogModel`.
+- **Sem backend.** Um motor de auto-tuning no servidor existiu, nunca funcionou bem na prática e foi
+  removido — a correção do mapa VE é calculada inteiramente no cliente (ver `tuning-ve-correction`).
+- **Parsing é sempre client-side.** `parseMapClient` e `parseDatalogClient` rodam no browser; nada é
+  enviado a nenhum servidor.
+- **Frontend é a única fonte de verdade.** Mapa, logs, edições, filtros de correção e o último
+  snapshot gerado vivem em IndexedDB/localStorage no navegador do usuário.

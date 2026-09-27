@@ -1,8 +1,8 @@
 # tuning-ve Specification
 
 ## Purpose
-Lets the user view, manually edit, and auto-correct the ECU's VE (fuel) map using datalog data,
-by delegating the correction calculation to the backend and rendering whatever result it returns.
+Lets the user view and manually edit the ECU's VE (fuel) map, informed by a read-only correction
+heatmap (see `tuning-ve-correction`) computed entirely client-side from the active datalogs.
 
 ## Requirements
 

@@ -11,7 +11,6 @@ interface Props {
   onCellChange:   (row: number, col: number, value: number) => void
   onBulkChange:   (changes: { row: number; col: number; value: number }[]) => void
   onReset:        () => void
-  onOpenAutoTuning?: () => void
   formatValue?:   (v: number | boolean | null) => string
   onUndo?:        () => void
   onRedo?:        () => void
@@ -21,7 +20,7 @@ interface Props {
 
 export default function EditableMapSection({
   cells, originalCells, rpmBreakpoints, mapBreakpoints,
-  isDirty, onCellChange, onBulkChange, onReset, onOpenAutoTuning, formatValue,
+  isDirty, onCellChange, onBulkChange, onReset, formatValue,
   onUndo, onRedo, canUndo, canRedo,
 }: Props) {
   const [confirmResetOpen, setConfirmResetOpen] = useState(false)
@@ -40,29 +39,9 @@ export default function EditableMapSection({
 
   return (
     <section className="px-5 pb-4">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-          Mapa Editável
-        </h2>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setConfirmResetOpen(true)}
-            disabled={!isDirty}
-            className="px-2.5 py-1 rounded bg-gray-700 hover:bg-gray-600 text-xs text-gray-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Resetar
-          </button>
-          {onOpenAutoTuning && (
-            <button
-              onClick={onOpenAutoTuning}
-              className="px-2.5 py-1 rounded bg-blue-700 hover:bg-blue-600 text-xs text-white transition-colors"
-            >
-              Auto Tuning
-            </button>
-          )}
-        </div>
-      </div>
+      <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+        Mapa Editável
+      </h2>
 
       <MapWithChart
         cells={cells}
@@ -78,6 +57,8 @@ export default function EditableMapSection({
         onRedo={onRedo}
         canUndo={canUndo}
         canRedo={canRedo}
+        onReset={() => setConfirmResetOpen(true)}
+        resetDisabled={!isDirty}
       />
 
       <ConfirmDialog

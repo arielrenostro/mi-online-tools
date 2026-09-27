@@ -1,8 +1,11 @@
+import type { DatalogRow } from '@/types/datalog'
+import { computeVeLambda } from './veLambdaFormula'
+
 export interface SignalDef {
   /** Identificador no app e chave em DatalogRow */
   name:           string
-  /** Nome da coluna no CSV */
-  column:         string
+  /** Nome da coluna no CSV — ausente para sinais derivados (ver `compute`) */
+  column?:        string
   /** Unidade para exibição */
   unit:           string
   /** Mínimo do eixo Y nos gráficos */
@@ -13,10 +16,12 @@ export interface SignalDef {
   defaultVisible: boolean
   /** Largura da coluna na tabela (px) */
   tableWidth:     number
-  /** Converte string raw do CSV para número convertido */
-  convert:        (raw: string) => number
+  /** Converte string raw do CSV para número convertido — ausente para sinais derivados */
+  convert?:       (raw: string) => number
   /** Formata número convertido para exibição */
   format:         (value: number) => string
+  /** Calcula o valor a partir de outros sinais já convertidos da mesma linha — sinais derivados só (sem coluna própria no CSV) */
+  compute?:       (row: DatalogRow) => number
 }
 
 export const SIGNAL_DEFS: SignalDef[] = [
@@ -34,7 +39,7 @@ export const SIGNAL_DEFS: SignalDef[] = [
   },
   {
     name: 'Boost', column: 'Boost', unit: 'kPa', min: 20, max: 250,
-    defaultVisible: false, tableWidth: 72,
+    defaultVisible: true, tableWidth: 72,
     convert: raw => parseInt(raw, 10),
     format:  v   => `${Math.round(v)} kPa`,
   },
@@ -57,14 +62,14 @@ export const SIGNAL_DEFS: SignalDef[] = [
     format:  v   => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
   },
   {
-    name: 'Lambda Loop', column: 'Lambda Loop', unit: '', min: 0, max: 1,
-    defaultVisible: false, tableWidth: 90,
+    name: 'Lambda Loop', column: 'Lambda Loop', unit: '', min: 0, max: 2,
+    defaultVisible: true, tableWidth: 90,
     convert: raw => parseInt(raw, 10),
-    format:  v   => v === 1 ? 'CL' : 'OL',
+    format:  v   => v === 0 ? 'OL' : v === 1 ? 'CL' : 'CL+AC',
   },
   {
     name: 'VE', column: 'VE Value', unit: '%', min: 0, max: 150,
-    defaultVisible: false, tableWidth: 72,
+    defaultVisible: true, tableWidth: 72,
     convert: raw => parseFloat(raw) / 10,
     format:  v   => `${v.toFixed(1)}%`,
   },
@@ -76,39 +81,45 @@ export const SIGNAL_DEFS: SignalDef[] = [
   },
   {
     name: 'IAT', column: 'IAT', unit: 'ºC', min: -20, max: 80,
-    defaultVisible: false, tableWidth: 72,
+    defaultVisible: true, tableWidth: 72,
     convert: raw => parseInt(raw, 10) - 273,
     format:  v   => `${Math.round(v)} ºC`,
   },
   {
     name: 'Inj. Utiliz.', column: 'Inj. Utiliz.', unit: '%', min: 0, max: 100,
-    defaultVisible: false, tableWidth: 90,
+    defaultVisible: true, tableWidth: 90,
     convert: raw => parseInt(raw, 10),
     format:  v   => `${Math.round(v)}%`,
   },
   {
     name: 'Ign. Adv.', column: 'Ign. Adv.', unit: 'º', min: -45, max: 45,
-    defaultVisible: false, tableWidth: 72,
+    defaultVisible: true, tableWidth: 72,
     convert: raw => parseInt(raw, 10),
     format:  v   => `${v.toFixed(1)} º`,
   },
   {
     name: 'KM/H', column: 'KM/H', unit: 'km/h', min: 0, max: 250,
-    defaultVisible: false, tableWidth: 72,
+    defaultVisible: true, tableWidth: 72,
     convert: raw => parseInt(raw, 10),
     format:  v   => `${Math.round(v)} km/h`,
   },
   {
     name: 'Turbo Target', column: 'Turbo Target', unit: 'kPa', min: 20, max: 250,
-    defaultVisible: false, tableWidth: 100,
+    defaultVisible: true, tableWidth: 100,
     convert: raw => parseInt(raw, 10),
     format:  v   => `${Math.round(v)} kPa`,
   },
   {
     name: 'Pedal', column: 'ACC %', unit: '%', min: 0, max: 100,
-    defaultVisible: false, tableWidth: 72,
+    defaultVisible: true, tableWidth: 72,
     convert: raw => Math.min(100, (parseFloat(raw) / 990) * 100),
     format:  v   => `${v.toFixed(1)}%`,
+  },
+  {
+    name: 'VE Lambda', unit: '%', min: 0, max: 150,
+    defaultVisible: true, tableWidth: 90,
+    compute: computeVeLambda,
+    format:  v => `${v.toFixed(1)}%`,
   },
 ]
 

@@ -14,7 +14,7 @@ App web para tuning assistido de mapas da ECU MasterInjection. O usuário sobe o
 | F06 | Análise de tuning | Agrupamento por célula RPM×MAP, cálculo de desvios |
 | F07 | Sugestão automática | Correções sugeridas com overlay visual |
 | F08 | Tuning manual | Edição direta de células VE |
-| F09 | Configuração de premissas | Parâmetros do motor de tuning |
+| F09 | Filtros de correção | Parâmetros que definem quais pontos do datalog entram no cálculo |
 | F10 | Exportação | Download do CSV original atualizado (VE + Ignição + Lambda) |
 | F11 | Edição de ignição | Edição manual da tabela de avanço (`#I01`–`#I16`) |
 | F12 | Edição de lambda alvo | Edição manual da tabela de alvo (`#A01`–`#A16`) |

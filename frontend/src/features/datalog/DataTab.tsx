@@ -2,6 +2,8 @@ import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { useTimeStore } from '@/store/timeStore'
 import { useUIStore } from '@/store/uiStore'
 import { useLogStore, selectAllRows } from '@/store/logStore'
+import { useCorrectionStore } from '@/store/correctionStore'
+import { useCorrectionMask } from '@/hooks/useCorrectionMask'
 import { SIGNAL_DEFS } from '@/signals/signalRegistry'
 import type { DatalogRow, TimeSelection } from '@/types/datalog'
 
@@ -45,9 +47,23 @@ const ALL_COLS: ColDef[] = [TEMPO_COL, ...SIGNAL_COLS]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function filterRows(rows: DatalogRow[], selection: TimeSelection | null): DatalogRow[] {
-  if (!selection) return rows
-  return rows.filter(r => r.timestamp_ms >= selection.start_ms && r.timestamp_ms <= selection.end_ms)
+function buildDisplayRows(
+  allRows: DatalogRow[],
+  mask: boolean[],
+  selection: TimeSelection | null,
+  showFilteredPoints: boolean,
+): { rows: DatalogRow[]; dimmed: boolean[] } {
+  const rows: DatalogRow[] = []
+  const dimmed: boolean[] = []
+  for (let i = 0; i < allRows.length; i++) {
+    const r = allRows[i]
+    if (selection && (r.timestamp_ms < selection.start_ms || r.timestamp_ms > selection.end_ms)) continue
+    const passes = mask[i] ?? true
+    if (!passes && !showFilteredPoints) continue
+    rows.push(r)
+    dimmed.push(!passes)
+  }
+  return { rows, dimmed }
 }
 
 function findCursorIndex(rows: DatalogRow[], cursor_ms: number | null): number {
@@ -135,8 +151,9 @@ function ColsDropdown({ visibility, onChange }: {
 const ROW_H  = 28
 const BUFFER = 8
 
-function VirtualTable({ rows, cols, cursorIndex, onRowClick }: {
+function VirtualTable({ rows, dimmed, cols, cursorIndex, onRowClick }: {
   rows:        DatalogRow[]
+  dimmed:      boolean[]
   cols:        ColDef[]
   cursorIndex: number
   onRowClick:  (row: DatalogRow) => void
@@ -198,7 +215,8 @@ function VirtualTable({ rows, cols, cursorIndex, onRowClick }: {
               key={row.timestamp_ms}
               style={{ position: 'absolute', top: absIdx * ROW_H, height: ROW_H, width: '100%' }}
               className={`flex items-center cursor-pointer select-none text-xs font-mono
-                ${isCursor ? 'bg-blue-900/30 text-gray-100' : 'text-gray-400 hover:bg-gray-800'}`}
+                ${isCursor ? 'bg-blue-900/30 text-gray-100' : 'text-gray-400 hover:bg-gray-800'}
+                ${dimmed[absIdx] ? 'opacity-40' : ''}`}
               onClick={() => onRowClick(row)}
             >
               <div className="w-6 flex-shrink-0 text-center text-blue-400">
@@ -226,8 +244,13 @@ export function DataTab() {
   const columnVisibility = useUIStore(s => s.columnVisibility)
   const setColVisibility = useUIStore(s => s.setColumnVisibility)
   const allRows          = useLogStore(selectAllRows)
+  const mask              = useCorrectionMask()
+  const showFilteredPoints = useCorrectionStore(s => s.showFilteredPoints)
 
-  const displayRows = useMemo(() => filterRows(allRows, selection), [allRows, selection])
+  const { rows: displayRows, dimmed } = useMemo(
+    () => buildDisplayRows(allRows, mask, selection, showFilteredPoints),
+    [allRows, mask, selection, showFilteredPoints],
+  )
   const cursorIndex = useMemo(() => findCursorIndex(displayRows, cursor_ms), [displayRows, cursor_ms])
 
   const visibleCols = useMemo(
@@ -268,6 +291,7 @@ export function DataTab() {
       ) : (
         <VirtualTable
           rows={displayRows}
+          dimmed={dimmed}
           cols={visibleCols}
           cursorIndex={cursorIndex}
           onRowClick={onRowClick}

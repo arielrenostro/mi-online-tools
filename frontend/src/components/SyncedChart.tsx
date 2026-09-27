@@ -4,6 +4,8 @@ import * as echarts from 'echarts'
 import { useUIStore, flattenPanels } from '@/store/uiStore'
 import { useTimeStore } from '@/store/timeStore'
 import { useLogStore, selectAllRows, selectAllSignals } from '@/store/logStore'
+import { useCorrectionStore } from '@/store/correctionStore'
+import { useCorrectionMask } from '@/hooks/useCorrectionMask'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
 import type { ChartLayout, ChartPanel } from '@/types/ui'
 import type { DatalogRow } from '@/types/datalog'
@@ -38,8 +40,36 @@ function fmtMs(ms: number): string {
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-function buildOption(signals: string[], rows: DatalogRow[]): object {
+interface Run { start: number; end: number; pass: boolean }
+
+/** Splits a boolean mask into runs of consecutive equal values. */
+export function computeRuns(mask: boolean[]): Run[] {
+  if (mask.length === 0) return []
+  const runs: Run[] = []
+  let runStart = 0
+  for (let i = 1; i <= mask.length; i++) {
+    if (i === mask.length || mask[i] !== mask[runStart]) {
+      runs.push({ start: runStart, end: i - 1, pass: mask[runStart] })
+      runStart = i
+    }
+  }
+  return runs
+}
+
+function dim(color: string): string {
+  // color is one of the hex entries in PALETTE — reduce opacity by converting to rgba
+  const r = parseInt(color.slice(1, 3), 16)
+  const g = parseInt(color.slice(3, 5), 16)
+  const b = parseInt(color.slice(5, 7), 16)
+  return `rgba(${r},${g},${b},0.25)`
+}
+
+function buildOption(signals: string[], rows: DatalogRow[], mask: boolean[], showFilteredPoints: boolean): object {
   if (signals.length === 0) return {}
+
+  const rows_ = showFilteredPoints ? rows : rows.filter((_, i) => mask[i])
+  const mask_ = showFilteredPoints ? mask : rows_.map(() => true)
+  const runs  = computeRuns(mask_)
 
   const rightCount = Math.max(0, signals.length - 1)
   const yAxes = signals.map((sig, i) => {
@@ -56,15 +86,26 @@ function buildOption(signals: string[], rows: DatalogRow[]): object {
     }
   })
 
-  const series = signals.map((sig, i) => ({
-    name:           sig,
-    type:           'line',
-    yAxisIndex:     i,
-    data:           rows.map(r => [r.timestamp_ms, r[sig] ?? NaN]),
-    symbol:         'none',
-    lineStyle:      { color: sigColor(sig, i), width: 1.5 },
-    itemStyle:      { color: sigColor(sig, i) },
-  }))
+  // One series per (signal × contiguous pass/fail run), so excluded stretches render dimmed
+  // without any gap — each run's slice includes one trailing point from the next run so the
+  // connecting segment between a passing and a failing point is always drawn.
+  const series = signals.flatMap((sig, i) => {
+    const color     = sigColor(sig, i)
+    const dimmed    = dim(color)
+    return runs.map(run => {
+      const sliceEnd = Math.min(rows_.length - 1, run.end + 1)
+      const segRows  = rows_.slice(run.start, sliceEnd + 1)
+      return {
+        name:       sig,
+        type:       'line',
+        yAxisIndex: i,
+        data:       segRows.map(r => [r.timestamp_ms, r[sig] ?? NaN]),
+        symbol:     'none',
+        lineStyle:  { color: run.pass ? color : dimmed, width: 1.5 },
+        itemStyle:  { color: run.pass ? color : dimmed },
+      }
+    })
+  })
 
   return {
     backgroundColor: 'transparent',
@@ -100,7 +141,7 @@ function buildOption(signals: string[], rows: DatalogRow[]): object {
       formatter(params: any[]) {
         if (!params?.length) return ''
         const t = params[0].value[0] as number
-        const row = findLastRow(rows, t)
+        const row = findLastRow(rows_, t)
         const lines: string[] = [`<span style="color:#6b7280;font-size:10px">t = ${fmtMs(t)}</span>`]
         signals.forEach((sig, i) => {
           const def = SIGNAL_MAP.get(sig)
@@ -185,12 +226,16 @@ const PanelView = memo(function PanelView({
   cursor_ms,
   allSignals,
   panelCount,
+  mask,
+  showFilteredPoints,
 }: {
   panel:      ChartPanel
   rows:       DatalogRow[]
   cursor_ms:  number | null
   allSignals: string[]
   panelCount: number
+  mask:       boolean[]
+  showFilteredPoints: boolean
 }) {
   const chartRef    = useRef<ReactECharts>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -206,8 +251,8 @@ const PanelView = memo(function PanelView({
   const available = allSignals.filter(s => !panel.signals.includes(s))
 
   const option = useMemo(
-    () => buildOption(panel.signals, rows),
-    [panel.signals, rows],
+    () => buildOption(panel.signals, rows, mask, showFilteredPoints),
+    [panel.signals, rows, mask, showFilteredPoints],
   )
 
   const applyMarkLine = useCallback((inst: echarts.ECharts, ms: number | null) => {
@@ -354,12 +399,16 @@ function LayoutRenderer({
   cursor_ms,
   allSignals,
   panelCount,
+  mask,
+  showFilteredPoints,
 }: {
   layout:     ChartLayout
   rows:       DatalogRow[]
   cursor_ms:  number | null
   allSignals: string[]
   panelCount: number
+  mask:       boolean[]
+  showFilteredPoints: boolean
 }) {
   if (layout.type === 'panel') {
     return (
@@ -369,20 +418,24 @@ function LayoutRenderer({
         cursor_ms={cursor_ms}
         allSignals={allSignals}
         panelCount={panelCount}
+        mask={mask}
+        showFilteredPoints={showFilteredPoints}
       />
     )
   }
+
+  const commonProps = { rows, cursor_ms, allSignals, panelCount, mask, showFilteredPoints }
 
   if (layout.direction === 'vertical') {
     const ratio = layout.ratio ?? 0.5
     return (
       <div className="flex flex-col h-full">
         <div style={{ flex: ratio, minHeight: 0, minWidth: 0 }}>
-          <LayoutRenderer layout={layout.children[0]} rows={rows} cursor_ms={cursor_ms} allSignals={allSignals} panelCount={panelCount} />
+          <LayoutRenderer layout={layout.children[0]} {...commonProps} />
         </div>
         <VerticalDivider splitId={layout.splitId} ratio={ratio} />
         <div style={{ flex: 1 - ratio, minHeight: 0, minWidth: 0 }}>
-          <LayoutRenderer layout={layout.children[1]} rows={rows} cursor_ms={cursor_ms} allSignals={allSignals} panelCount={panelCount} />
+          <LayoutRenderer layout={layout.children[1]} {...commonProps} />
         </div>
       </div>
     )
@@ -391,10 +444,10 @@ function LayoutRenderer({
   return (
     <div className="flex flex-row gap-1 h-full">
       <div className="flex-1 min-h-0 min-w-0">
-        <LayoutRenderer layout={layout.children[0]} rows={rows} cursor_ms={cursor_ms} allSignals={allSignals} panelCount={panelCount} />
+        <LayoutRenderer layout={layout.children[0]} {...commonProps} />
       </div>
       <div className="flex-1 min-h-0 min-w-0">
-        <LayoutRenderer layout={layout.children[1]} rows={rows} cursor_ms={cursor_ms} allSignals={allSignals} panelCount={panelCount} />
+        <LayoutRenderer layout={layout.children[1]} {...commonProps} />
       </div>
     </div>
   )
@@ -426,6 +479,8 @@ export function SyncedChart() {
   const allRows        = useLogStore(selectAllRows)
   const allSignals     = useLogStore(selectAllSignals)
   const panelCount     = flattenPanels(chartLayout).length
+  const mask                = useCorrectionMask()
+  const showFilteredPoints  = useCorrectionStore(s => s.showFilteredPoints)
 
   const allRowsRef         = useRef(allRows)
   useEffect(() => { allRowsRef.current = allRows }, [allRows])
@@ -631,6 +686,8 @@ export function SyncedChart() {
           cursor_ms={cursor_ms}
           allSignals={allSignals}
           panelCount={panelCount}
+          mask={mask}
+          showFilteredPoints={showFilteredPoints}
         />
 
         {/* CTRL+drag overlay — captura eventos só quando CTRL pressionado */}

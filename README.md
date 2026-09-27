@@ -5,79 +5,64 @@
 
 ## O que faz
 
-- **Importação client-side** — lê CSV MasterInjection (`#I20`/`#I21`/`#F01`–`#F16`) direto no browser, sem upload
-- **Auto-tuning VE Lambda** — pipeline de 12 etapas: filtra pontos, snap a breakpoints, calcula desvio/célula, agrega com rejeição de outliers (±2σ), pondera confiança, interpola 2D vazios
+- **Importação client-side** — lê CSV MasterInjection (`#I20`/`#I21`/`#F01`–`#F16`) e datalogs direto no browser, sem upload a nenhum servidor
+- **Correção de VE guiada por datalog** — filtros configuráveis (aba Logs) recortam os pontos válidos ao vivo; "Gerar fator de correção" roda a atribuição bilinear (4 células, como a própria ECU lê a tabela) + agregação por célula inteiramente no navegador
 - **Edição manual** — tabela interativa com atalhos Excel (range, F2 inline, Ctrl+C/V/Z/Y)
-- **Diagnósticos** — heatmaps (VE Lambda, amostras, confiança, CV, correção, convergência), estatísticas de filtro, avisos de monotonicidade/gradiente
+- **Heatmap de correção** — fator direto/ponderado, cor por amostras ou por valor, proveniência (quais logs/filtros geraram o resultado), aviso de desatualizado
 - **Multi-log** — carregamento e combinação de vários datalogs com toggle individual
 - **Exportação** — download do mapa corrigido em CSV original da ECU
-- **Persistência** — mapa, logs e resultado do tuning restaurados automaticamente
+- **Persistência** — mapa, logs, filtros e último snapshot de correção restaurados automaticamente, sem servidor
 
 ## Stack
 
 ```
-Backend   → Python 3.12 · FastAPI · NumPy/SciPy · Pydantic
 Frontend  → React 18 · TypeScript · Vite · Tailwind · Zustand · IndexedDB
-Deploy    → Docker Compose · nginx
+Deploy    → Docker (nginx servindo o build estático) — opcional, é só um SPA
 ```
+
+Sem backend — o app roda inteiramente no navegador.
 
 ## Início rápido
 
-### Com Docker (recomendado)
+### Com Docker
 
 ```bash
 docker compose up --build
 ```
 
 - Frontend: http://localhost
-- Backend: http://localhost:8000
 
 ### Localmente
 
-**Backend:**
-```bash
-cd backend && pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-**Frontend** (outro terminal):
 ```bash
 cd frontend && npm install && npm run dev
 ```
 
 - Frontend: http://localhost:5173
-- Backend: http://localhost:8000 (padrão)
 
 ## Usar
 
 1. **Importar mapa** → selecione CSV da MasterInjection
 2. **Datalogs** → arraste ou selecione CSVs de log
-3. **Auto-tuning** → clique em "Executar"
-4. **Análise** → revise heatmaps de confiança/amostras/correção
+3. **Filtros** (aba Logs) → ajuste CLT/Lambda/Loop/delta TPS conforme necessário; Dashboard/Gráficos/Dados já refletem o recorte ao vivo
+4. **Gerar fator de correção** → roda a atribuição bilinear + agregação e mostra o heatmap na aba VE
 5. **Ajustar** → edite células manualmente se necessário
-6. **Exportar** → baixe CSV pronto para a ECU
-
-## Variáveis de ambiente
-
-| Variável | Padrão | Descrição |
-|----------|--------|-----------|
-| `MIOT_CACHE_DIR` | `/tmp/miot_datalogs` | Cache de datalogs (TTL 1h) |
-| `VITE_API_URL` | `http://localhost:8000` | URL da API (build-time no frontend) |
+6. **Aplicar correções** → multiplica o mapa editável pelos fatores gerados
+7. **Exportar** → baixe CSV pronto para a ECU
 
 ## Documentação
 
 | Tipo | Localização |
 |------|-----------|
-| **Backend** | [`backend/README.md`](backend/README.md) · [`backend/CLAUDE.md`](backend/CLAUDE.md) |
 | **Frontend** | [`frontend/README.md`](frontend/README.md) · [`frontend/CLAUDE.md`](frontend/CLAUDE.md) |
-| **Specs** | [`specs/`](specs/) (39 arquivos) · [`CLAUDE.md`](CLAUDE.md) |
+| **Specs** | [`specs/`](specs/) · [`openspec/specs/`](openspec/specs/) · [`CLAUDE.md`](CLAUDE.md) |
 
 ## Estrutura
 
 ```
-├── backend/          API FastAPI + pipeline VE Lambda
-├── frontend/         App React + UI
-├── specs/            39 arquivos de requisito/arquitetura
+├── frontend/         App React — mapa, datalogs, correção, UI (tudo client-side)
+├── specs/            Specs de formato/arquitetura fora do OpenSpec
+├── openspec/         Specs de comportamento do frontend (capabilities)
 ├── docker-compose.yml
 └── README.md
 ```

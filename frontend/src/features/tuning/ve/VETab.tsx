@@ -1,12 +1,9 @@
-import { useState } from 'react'
 import { useMapStore } from '@/store/mapStore'
 import OriginalMapSection from '@/features/tuning/OriginalMapSection'
 import EditableMapSection from '@/features/tuning/EditableMapSection'
-import AutoTuningModal from '@/features/tuning/AutoTuningModal'
+import CorrectionSection from '@/features/tuning/CorrectionSection'
 
 export function VETab() {
-  const [autoTuningOpen, setAutoTuningOpen] = useState(false)
-
   const originalMap     = useMapStore(s => s.originalMap)
   const editableMap     = useMapStore(s => s.editableMap)
   const updateCell      = useMapStore(s => s.updateCell)
@@ -36,13 +33,12 @@ export function VETab() {
         onCellChange={updateCell}
         onBulkChange={bulkUpdateCells}
         onReset={resetEditable}
-        onOpenAutoTuning={() => setAutoTuningOpen(true)}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
       />
-      <AutoTuningModal open={autoTuningOpen} onClose={() => setAutoTuningOpen(false)} />
+      <CorrectionSection />
     </div>
   )
 }

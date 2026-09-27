@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import HeatmapTable, { type ColorScale } from '@/components/HeatmapTable'
 import MapChart from '@/components/MapChart'
+import { readMapChartRatio, computeTableCellWidth, MAP_CHART_RATIO_KEY, RATIO_MIN, RATIO_MAX } from '@/utils/mapTableWidth'
 
 interface MapWithChartProps {
   cells:          (number | boolean | null)[][]
@@ -17,22 +18,11 @@ interface MapWithChartProps {
   onRedo?:        () => void
   canUndo?:       boolean
   canRedo?:       boolean
+  onReset?:       () => void
+  resetDisabled?: boolean
 }
 
 type Pos = { r: number; c: number }
-
-const RATIO_KEY     = 'miot:map-chart-ratio'
-const RATIO_MIN     = 0.15
-const RATIO_MAX     = 0.75
-const RATIO_DEFAULT = 0.5
-const STICKY_PX     = 80  // estimated width of the sticky "MAP↓/RPM→" column
-
-function readRatio(): number {
-  const s = localStorage.getItem(RATIO_KEY)
-  if (!s) return RATIO_DEFAULT
-  const n = parseFloat(s)
-  return isNaN(n) ? RATIO_DEFAULT : Math.max(RATIO_MIN, Math.min(RATIO_MAX, n))
-}
 
 export default function MapWithChart({
   cells,
@@ -49,10 +39,12 @@ export default function MapWithChart({
   onRedo,
   canUndo,
   canRedo,
+  onReset,
+  resetDisabled,
 }: MapWithChartProps) {
   const [selectedCells,    setSelectedCells]    = useState<Set<string>>(new Set())
   const [externalSelection, setExternalSelection] = useState<{ anchor: Pos; selEnd: Pos } | null>(null)
-  const [chartRatio,       setChartRatio]       = useState<number>(readRatio)
+  const [chartRatio,       setChartRatio]       = useState<number>(readMapChartRatio)
   const [containerWidth, setContainerWidth] = useState(0)
 
   const containerRef = useRef<HTMLDivElement>(null)
@@ -106,7 +98,7 @@ export default function MapWithChart({
     }
 
     function onUp() {
-      localStorage.setItem(RATIO_KEY, String(ratioRef.current))
+      localStorage.setItem(MAP_CHART_RATIO_KEY, String(ratioRef.current))
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup',   onUp)
     }
@@ -118,9 +110,8 @@ export default function MapWithChart({
   const tablePercent = (1 - chartRatio) * 100
   const chartPercent = chartRatio * 100
 
-  const tablePx          = containerWidth > 0 ? containerWidth * (1 - chartRatio) - 12 : 0
-  const derivedCellWidth = tablePx > STICKY_PX
-    ? Math.max(24, (tablePx - STICKY_PX) / colHeaders.length)
+  const derivedCellWidth = containerWidth > 0
+    ? computeTableCellWidth(containerWidth, colHeaders.length, chartRatio)
     : undefined
 
   return (
@@ -146,6 +137,8 @@ export default function MapWithChart({
           onRedo={onRedo}
           canUndo={canUndo}
           canRedo={canRedo}
+          onReset={onReset}
+          resetDisabled={resetDisabled}
         />
       </div>
 

@@ -3,7 +3,8 @@
 ## Purpose
 Parses MasterInjection datalog CSVs into signal rows the rest of the app consumes, and lets the
 user manage the set of logs active in the current session (add, remove, reorder, enable/disable)
-from both the Logs tab and the global TopBar.
+from both the Logs tab and the global TopBar. The Logs tab also hosts the VE correction filter
+panel (see `tuning-ve-correction`).
 
 ## Requirements
 

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import BulkEditModal from '@/features/tuning/BulkEditModal'
 import { IconAdjust, IconInterpolateH, IconInterpolateV, IconUndo, IconRedo } from '@/components/MapEditIcons'
 
-export type ColorScale = 'warm' | 'diverging' | 'confidence' | 'coverage' | 'convergence'
+export type ColorScale = 'warm' | 'diverging' | 'confidence' | 'coverage' | 'convergence' | 'symmetric'
 
 interface HeatmapTableProps {
   cells:               (number | boolean | null)[][]
@@ -23,6 +23,11 @@ interface HeatmapTableProps {
   onRedo?:             () => void
   canUndo?:            boolean
   canRedo?:            boolean
+  /** Native tooltip text for a cell, shown regardless of the active color scale. */
+  cellTitle?:          (row: number, col: number) => string | undefined
+  /** Renders a "Resetar" button in the same toolbar row as Undo/Redo/Ajuste/Interpolar. */
+  onReset?:            () => void
+  resetDisabled?:      boolean
 }
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
@@ -113,6 +118,11 @@ function cellBg(
   let col: RGB
   if (scale === 'warm') {
     col = multiStop(WARM_STOPS, (value - min) / range)
+  } else if (scale === 'symmetric') {
+    // Both extremes render hot; only the midpoint (e.g. a neutral 1.00 factor) is cool.
+    const mid       = (max + min) / 2
+    const halfRange = Math.max(mid - min, max - mid) || 1
+    col = multiStop(WARM_STOPS, Math.abs(value - mid) / halfRange)
   } else if (scale === 'diverging') {
     const mid = (max + min) / 2
     col = value <= mid
@@ -150,6 +160,9 @@ export default function HeatmapTable({
   onRedo,
   canUndo,
   canRedo,
+  cellTitle,
+  onReset,
+  resetDisabled,
 }: HeatmapTableProps) {
   const cw      = cellWidth ?? 52
   const cellFs  = cw >= 48 ? 12 : cw >= 38 ? 11 : cw >= 30 ? 10 : 9
@@ -558,12 +571,23 @@ export default function HeatmapTable({
           >
             <IconRedo />
           </button>
+          {onReset && (
+            <button
+              type="button"
+              onClick={onReset}
+              onMouseDown={preventFocusSteal}
+              disabled={resetDisabled}
+              className="ml-auto px-2.5 py-1 rounded bg-gray-700 hover:bg-gray-600 text-xs text-gray-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Resetar
+            </button>
+          )}
         </div>
       )}
       <div
         ref={wrapRef}
         tabIndex={0}
-        className={`${cellWidth != null ? 'overflow-hidden' : 'overflow-auto'} rounded border border-gray-700 outline-none focus-visible:ring-1 focus-visible:ring-blue-500`}
+        className={`${cellWidth != null ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} rounded border border-gray-700 outline-none focus-visible:ring-1 focus-visible:ring-blue-500`}
         onKeyDown={handleContainerKey}
         onBlur={e => { if (!containerRef.current?.contains(e.relatedTarget as Node)) { setAnchor(null); setSelEnd(null) } }}
       >
@@ -615,6 +639,7 @@ export default function HeatmapTable({
                       onMouseDown={e => handleCellDown(ri, ci, e)}
                       onMouseEnter={() => handleCellEnter(ri, ci)}
                       onDoubleClick={() => startEdit(ri, ci)}
+                      title={cellTitle?.(ri, ci)}
                     >
                       {isEdit ? (
                         <input

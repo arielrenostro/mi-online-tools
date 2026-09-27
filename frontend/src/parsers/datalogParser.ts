@@ -2,7 +2,9 @@ import type { DatalogModel, DatalogRow } from '@/types/datalog'
 import { computeHash } from '@/api/client'
 import { SIGNAL_DEFS } from '@/signals/signalRegistry'
 
-const REQUIRED_COLUMNS = SIGNAL_DEFS.map(s => s.column)
+const RAW_SIGNALS      = SIGNAL_DEFS.filter(s => s.column !== undefined)
+const DERIVED_SIGNALS  = SIGNAL_DEFS.filter(s => s.compute !== undefined)
+const REQUIRED_COLUMNS = RAW_SIGNALS.map(s => s.column!)
 const ALL_SIGNALS      = SIGNAL_DEFS.map(s => s.name)
 
 export async function parseDatalogClient(file: File): Promise<DatalogModel> {
@@ -49,13 +51,17 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
     const row: DatalogRow = { timestamp_ms: 0 }
     let valid = true
 
-    for (const sig of SIGNAL_DEFS) {
-      const converted = sig.convert(g(sig.column))
+    for (const sig of RAW_SIGNALS) {
+      const converted = sig.convert!(g(sig.column!))
       if (isNaN(converted)) { valid = false; break }
       row[sig.name] = converted
     }
 
     if (!valid) continue
+
+    for (const sig of DERIVED_SIGNALS) {
+      row[sig.name] = sig.compute!(row)
+    }
 
     if (firstTs === null) firstTs = hasTimestampCol ? rawTs : 0
     row.timestamp_ms = rawTs - firstTs

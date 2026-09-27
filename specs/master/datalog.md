@@ -30,7 +30,7 @@ Colunas identificadas sempre pelo **nome** (header), nunca por índice.
 | `CLT` | Temp. líquido arrefecimento | ºC | `int(raw)-273` |
 | `IAT` | Temp. ar admitido | ºC | `int(raw)-273` |
 | `KM/H` | Velocidade | km/h | `int(raw)` |
-| `Lambda Loop` | Modo de controle de lambda | — | `int(raw)` → `0`=open, `1`=closed |
+| `Lambda Loop` | Modo de controle de lambda | — | `int(raw)` → `0`=open, `1`=closed, `2`=closed + auto-correção |
 | `Lambda Target` | Lambda alvo da ECU | λ | `float(raw)/1000` |
 | `Lambda Corr` | Correção de combustível (fuel trim) | % | `(float(raw)-1000)/10` |
 | `Turbo Target` | Pressão de boost alvo | kPa | `int(raw)` |
@@ -42,7 +42,7 @@ Colunas identificadas sempre pelo **nome** (header), nunca por índice.
 - **Lambda 1 / Lambda Target**: raw = lambda × 1000; dividir por 1000
 - **Lambda Corr**: offset 1000, escala ×10; `(raw-1000)/10`. raw=1020 → +2.0%; raw=980 → -2.0%
 - **ACC %**: raw 0–990; normalizar para 0–100%, clampar em 100%
-- **Lambda Loop**: `0`=open loop (ECU não corrige), `1`=closed loop (ECU corrige)
+- **Lambda Loop**: `0`=open loop (ECU não corrige), `1`=closed loop (ECU corrige), `2`=closed loop com auto-correção de combustível ativa
 
 ### Colunas presentes mas não usadas na v1
 

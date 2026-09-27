@@ -10,7 +10,9 @@ App React de UI para auto-tuning de mapas de ECU — importa mapa, datalogs, exe
 - **IndexedDB + localStorage** — persistência de sessão
 - **ECharts** — gráficos (linhas, heatmap, scatter)
 - **idb** — wrapper IndexedDB
-- **pytest + Vitest** — testes
+- **Vitest** — testes
+
+App 100% client-side — sem backend, sem servidor pra apontar.
 
 ## Rodar
 
@@ -19,13 +21,7 @@ npm install
 npm run dev
 ```
 
-Abre em `http://localhost:5173` e aponta para backend em `http://localhost:8000` (padrão).
-
-Mudar URL do backend:
-
-```bash
-VITE_API_URL=https://api.exemplo.com npm run dev
-```
+Abre em `http://localhost:5173`.
 
 Build:
 
@@ -44,21 +40,19 @@ frontend/
 │   ├── types/
 │   │   ├── map.ts             MapModel, MapType
 │   │   ├── datalog.ts         DatalogRow, DatalogModel, TimeSelection
-│   │   ├── tuning.ts          TuningConfig, TuningRunRequest, TuningOutput
-│   │   ├── engine.ts          EngineInfo, JSONSchema
+│   │   ├── correction.ts      CorrectionFilterConfig, CorrectionSnapshot
 │   │   └── ui.ts              UIState, ChartLayout, ColorScale
 │   ├── store/
 │   │   ├── mapStore.ts        useMapStore (mapa, undo, edição)
-│   │   ├── logStore.ts        useLogStore (datalogs, upload)
-│   │   ├── tuningStore.ts     useTuningStore (config, engine, output)
+│   │   ├── logStore.ts        useLogStore (datalogs)
+│   │   ├── correctionStore.ts useCorrectionStore (filtros, snapshot gerado)
 │   │   ├── timeStore.ts       useTimeStore (cursor, seleção, zoom)
 │   │   └── uiStore.ts         useUIStore (layout, colunas, aba ativa)
 │   ├── api/
-│   │   ├── client.ts          HTTP fetch wrapper
-│   │   └── endpoints.ts       GET /engines, POST /tuning/run, etc.
-│   ├── hooks/
-│   │   ├── useSessionRestorer.ts    Hydrata stores de IndexedDB na startup
-│   │   └── useAutoSave.ts           Persiste mudanças em IndexedDB
+│   │   └── client.ts          computeHash (dedupe de logs por SHA-1)
+│   ├── persistence/
+│   │   ├── sessionRestorer.ts       Hidrata stores de IndexedDB/localStorage na startup
+│   │   └── *Persistence.ts          Um módulo por domínio (map, log, correction)
 │   ├── features/
 │   │   ├── home/              Tela Home (/)
 │   │   ├── datalog/           Tela Datalog (/datalog)
@@ -110,27 +104,23 @@ frontend/
 ### Tuning (`/tuning`)
 
 - **HeatmapTable** — grid editável N_MAP × N_RPM
-- **Abas:**
-  - **VE** — heatmap VE Lambda + edição manual
-  - **Config** — modal dinâmico de parâmetros
-  - **Análise** — heatmaps de amostras/confiança/CV/correção/convergência
-  - **MapChart** — gráfico 2D ou 3D do mapa
+- **Abas:** VE (mapa original + editável + seção de correção), Ignition, Lambda (ambas bloqueadas na v1)
 
 ## Gerenciamento de estado (Zustand)
 
-4 stores principais:
+5 stores principais:
 
 | Store | Responsável por |
 |-------|-----------------|
 | `useMapStore` | Mapa original + editável, undo/redo, import/export |
-| `useLogStore` | Datalogs (upload, remoção, reordenação, ativação) |
-| `useTuningStore` | Config do engine, execução, output, status |
+| `useLogStore` | Datalogs (import, remoção, reordenação, ativação) |
+| `useCorrectionStore` | Filtros de correção VE, toggle de visibilidade, snapshot gerado |
 | `useTimeStore` | Cursor temporal, seleção/zoom, sparkline |
 | `useUIStore` | Layout de gráficos, colunas visíveis, aba ativa |
 
 Cada store:
-- Persiste automaticamente em IndexedDB (`miot:*`)
-- Restaura na startup via `useSessionRestorer`
+- Persiste automaticamente em IndexedDB/localStorage (`miot:*`)
+- Restaura na startup via `sessionRestorer`
 - Sincroniza entre abas/componentes
 
 ## Persistência
@@ -141,7 +131,7 @@ Cada store:
 - `miot:logs` — array de LogEntry
 - `miot:time` — cursor, seleção, sparkline
 - `miot:ui` — UIState (layout, colunas, aba ativa)
-- `miot:tuning` — TuningConfig, output
+- `miot:correction` — último snapshot de correção VE gerado
 
 **localStorage:**
 - `miot:sessionVersion` — versão de schema
@@ -161,18 +151,15 @@ Cada store:
 | `TopBar` | `src/components/TopBar.tsx` | Barra global (Mapa, Logs, Exportar) |
 | `TimeRail` | `src/features/datalog/TimeRail.tsx` | Timeline com cursor/seleção |
 | `SyncedChart` | `src/features/datalog/SyncedChart.tsx` | Gráficos de linha sincronizados (ECharts) |
-| `HeatmapTable` | `src/features/tuning/HeatmapTable.tsx` | Grid editável N×M (teclado + mouse) |
-| `MapChart` | `src/features/tuning/MapChart.tsx` | Visualização 2D/3D do mapa (ECharts) |
-| `TuningConfigModal` | `src/features/tuning/TuningConfigModal.tsx` | Formulário dinâmico de TuningConfig |
-| `HeatmapLegend` | `src/components/HeatmapLegend.tsx` | Escalas de cor (warm, diverging, confidence) |
+| `HeatmapTable` | `src/components/HeatmapTable.tsx` | Grid N×M (teclado + mouse); editável (VE) ou somente leitura (correção) |
+| `CorrectionSection` | `src/features/tuning/CorrectionSection.tsx` | Heatmap de correção, toggles, proveniência, aplicar |
+| `CorrectionFilterPanel` | `src/features/datalog/CorrectionFilterPanel.tsx` | Filtros de correção + "Gerar fator de correção" (aba Logs) |
 
 ## Parsing
 
-**Client-side (browser):**
+**Client-side (browser), único lugar onde os CSVs são lidos:**
 - `mapParser.ts` — CSV MasterInjection → MapModel (extrai #I20/#I21/#Fnn)
-- `datalogParser.ts` — CSV datalog → DatalogModel (coluna-por-coluna, conversão raw→real)
-
-Ambos rodam antes de enviar ao backend. Backend reparseia o datalog ao receber upload para validação.
+- `datalogParser.ts` — CSV datalog → DatalogModel (coluna-por-coluna, conversão raw→real, depois sinais derivados)
 
 ## Atalhos de teclado
 
@@ -205,15 +192,13 @@ React Router v6:
   ?tab=data
 /tuning        → Tela Tuning (default: aba VE)
   ?tab=ve
-  ?tab=config
-  ?tab=analysis
-  ?tab=map
+  ?tab=ignition
+  ?tab=lambda
 ```
 
 **Guards:**
 - `/datalog` requer mapa carregado
 - `/tuning` requer mapa carregado + logs ativos
-- `/tuning/...?tab=analysis` requer output de tuning válido
 
 Ver [`openspec/specs/navigation-guards/spec.md`](../openspec/specs/navigation-guards/spec.md).
 

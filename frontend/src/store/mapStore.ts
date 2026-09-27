@@ -1,7 +1,6 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { MapModel } from '@/types/map'
-import type { TuningOutput } from '@/types/tuning'
 import { parseMapClient }    from '@/parsers/mapParser'
 import * as mapPersistence   from '@/persistence/mapPersistence'
 import { deepEqual }         from '@/utils/deepEqual'
@@ -34,7 +33,6 @@ interface MapActions {
   resetEditable(): void
   updateCell(row: number, col: number, value: number): void
   bulkUpdateCells(changes: { row: number; col: number; value: number }[]): void
-  applyTuningOutput(suggested: number[][]): void
   clear(): Promise<void>
   hydrate(data: {
     originalModel:         MapModel
@@ -114,8 +112,8 @@ export const useMapStore = create<MapState & MapActions>()(
           historyLambda:   [], futureLambda:   [],
         })
         await mapPersistence.saveMap(model, editableCells, file)
-        const { useTuningStore } = await import('./tuningStore')
-        useTuningStore.getState().clearOutput()
+        const { useCorrectionStore } = await import('./correctionStore')
+        useCorrectionStore.getState().clear()
       } catch (err) {
         set({ isLoading: false, lastError: err instanceof Error ? err.message : 'Erro ao parsear mapa.' })
       }
@@ -150,15 +148,6 @@ export const useMapStore = create<MapState & MapActions>()(
         newMap[row][col] = clampVe(value)
       }
       set({ editableMap: newMap, isDirty: !deepEqual(newMap, originalMap.cells), history: pushHistory(history, editableMap), future: [] })
-      _saveVeDebounced(newMap)
-    },
-
-    applyTuningOutput(suggested) {
-      const { originalMap, editableMap, history } = get()
-      if (!originalMap) return
-      const newMap     = snap(suggested)
-      const newHistory = editableMap ? pushHistory(history, editableMap) : history
-      set({ editableMap: newMap, isDirty: !deepEqual(newMap, originalMap.cells), history: newHistory, future: [] })
       _saveVeDebounced(newMap)
     },
 
@@ -282,8 +271,8 @@ export const useMapStore = create<MapState & MapActions>()(
     async clear() {
       set(initial)
       await mapPersistence.clearMap()
-      const { useTuningStore } = await import('./tuningStore')
-      useTuningStore.getState().clearOutput()
+      const { useCorrectionStore } = await import('./correctionStore')
+      useCorrectionStore.getState().clear()
     },
 
     hydrate({ originalModel, editableCells, editableIgnitionCells, editableLambdaCells }) {

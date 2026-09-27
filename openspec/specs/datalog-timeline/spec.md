@@ -2,8 +2,8 @@
 
 ## Purpose
 Provides the single shared timeline — a point cursor, an interval selection, and a signal
-sparkline — that every Datalog tab and the Tuning auto-tuning input reads from, across all active
-logs concatenated in their configured order.
+sparkline — that every Datalog tab and the VE correction snapshot's generation (see
+`tuning-ve-correction`) read from, across all active logs concatenated in their configured order.
 
 ## Requirements
 

@@ -60,12 +60,12 @@ export function parseMapText(text: string, name: string): MapModel {
   }
 
   // O arquivo (#I21/#Fnn/#Inn/#Ann) vem sempre ascendente por MAP (índice 0 =
-  // menor kPa) — é o formato exigido pelo CSV do MasterInjection e pelo backend.
+  // menor kPa) — é o formato exigido pelo CSV do MasterInjection.
   // A representação interna do frontend é descendente (índice 0 = maior kPa),
   // batendo 1:1 com a exibição da tabela (maior MAP no topo). A inversão
   // acontece uma única vez, aqui — o resto do frontend passa a operar de forma
   // literal sobre esses arrays. `mapExporter.ts` desfaz a inversão ao escrever
-  // de volta no CSV; `tuningStore.ts` desfaz ao falar com o backend.
+  // de volta no CSV.
   const mapBreakpointsDesc  = [...mapBreakpoints].reverse()
   const cells               = [...cellsAsc].reverse()
   const ignitionCells       = [...ignitionCellsAsc].reverse()

@@ -157,16 +157,6 @@ describe('resetEditable', () => {
   })
 })
 
-describe('applyTuningOutput', () => {
-  it('replaces the editable map and records one undo entry', () => {
-    const suggested = [[111, 151, 201], [301, 351, 401]]
-    useMapStore.getState().applyTuningOutput(suggested)
-
-    expect(useMapStore.getState().editableMap).toEqual(suggested)
-    expect(useMapStore.getState().history.length).toBe(1)
-  })
-})
-
 describe('hydrate', () => {
   it('computes isDirty by comparing each editable map against the original', () => {
     const model = makeMap()

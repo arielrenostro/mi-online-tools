@@ -1,15 +1,14 @@
 import { lsGet } from './localStorage'
-import * as mapPersistence    from './mapPersistence'
-import * as logPersistence    from './logPersistence'
-import * as tuningPersistence from './tuningPersistence'
+import * as mapPersistence       from './mapPersistence'
+import * as logPersistence       from './logPersistence'
+import * as correctionPersistence from './correctionPersistence'
 import type { LogEntry } from '@/types/datalog'
-import type { TuningConfig } from '@/types/tuning'
 
 export async function restoreSession(): Promise<void> {
   await Promise.allSettled([
     restoreMap(),
     restoreLogs(),
-    restoreTuning(),
+    restoreCorrection(),
     restoreUI(),
     restoreTime(),
   ])
@@ -52,18 +51,19 @@ async function restoreLogs(): Promise<void> {
   useLogStore.getState().hydrate(logEntries)
 }
 
-async function restoreTuning(): Promise<void> {
-  const { useTuningStore } = await import('@/store/tuningStore')
+async function restoreCorrection(): Promise<void> {
+  const { useCorrectionStore } = await import('@/store/correctionStore')
+  const { DEFAULT_CORRECTION_FILTERS } = await import('@/types/correction')
 
-  const config    = lsGet<TuningConfig>('miot:config')
-  const engineId  = lsGet<string>('miot:engine-id')
+  const filters           = lsGet<typeof DEFAULT_CORRECTION_FILTERS>('miot:correction-filters')
+  const showFilteredPoints = lsGet<boolean>('miot:correction-show-filtered')
 
-  if (config)   useTuningStore.getState().hydrateConfig(config)
-  if (engineId) useTuningStore.getState().hydrateEngineId(engineId)
+  if (filters)                    useCorrectionStore.getState().hydrateFilters(filters)
+  if (showFilteredPoints !== null) useCorrectionStore.getState().hydrateShowFilteredPoints(showFilteredPoints)
 
-  let output
-  try { output = await tuningPersistence.loadTuningOutput() } catch { return }
-  if (output) useTuningStore.getState().hydrateOutput(output)
+  let entry
+  try { entry = await correctionPersistence.loadSnapshot() } catch { return }
+  if (entry) useCorrectionStore.getState().hydrateSnapshot(entry)
 }
 
 async function restoreUI(): Promise<void> {

@@ -2,7 +2,8 @@
 
 ## Purpose
 Lets the user build a custom, multi-panel layout of synchronized time-series charts over the
-active logs, to visually inspect signal behavior and pick the interval to feed into auto-tuning.
+active logs, to visually inspect signal behavior and pick the interval that scopes the VE
+correction heatmap (see `tuning-ve-correction`).
 
 ## Requirements
 

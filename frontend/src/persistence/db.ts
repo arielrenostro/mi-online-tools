@@ -1,8 +1,7 @@
 import { openDB, type IDBPDatabase } from 'idb'
 import type { MapModel } from '@/types/map'
 import type { DatalogModel } from '@/types/datalog'
-import type { TuningOutput } from '@/types/tuning'
-import type { TuningHistoryEntry } from '@/types/tuningHistory'
+import type { CorrectionSnapshot } from '@/types/correction'
 
 export interface MapDBEntry {
   originalModel:         MapModel
@@ -21,29 +20,34 @@ export interface LogDBEntry {
   savedAt:  number
 }
 
-export interface TuningOutputDBEntry {
-  output:  TuningOutput
-  savedAt: number
+export interface CorrectionSnapshotDBEntry {
+  snapshot: CorrectionSnapshot
+  savedAt:  number
 }
-
-export type { TuningHistoryEntry }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _db: IDBPDatabase<any> | null = null
 
 export async function getDB() {
   if (_db) return _db
-  _db = await openDB('miot-db', 2, {
+  _db = await openDB('miot-db', 3, {
     upgrade(db, oldVersion) {
       if (oldVersion < 1) {
         db.createObjectStore('map')
         const logs = db.createObjectStore('logs', { keyPath: 'hash' })
         logs.createIndex('by-filename', 'filename')
+        // 'tuning-output' store from v1 is orphaned as of v3 (auto-tuning
+        // removed) — left in place rather than migrated away; harmless.
         db.createObjectStore('tuning-output')
       }
       if (oldVersion < 2) {
+        // 'tuning-history' store from v2 is orphaned as of v3 (auto-tuning
+        // removed) — left in place rather than migrated away; harmless.
         const history = db.createObjectStore('tuning-history', { keyPath: 'id' })
         history.createIndex('by-mapName', 'mapName')
+      }
+      if (oldVersion < 3) {
+        db.createObjectStore('correction-snapshot')
       }
     },
   })
