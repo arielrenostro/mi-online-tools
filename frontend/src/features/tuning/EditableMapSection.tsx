@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import MapWithChart from '@/components/MapWithChart'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import type { Selection } from '@/utils/mapEditOps'
 
 interface Props {
   cells:          number[][]
@@ -16,12 +17,16 @@ interface Props {
   onRedo?:        () => void
   canUndo?:       boolean
   canRedo?:       boolean
+  selection?:         Selection
+  onSelectionChange?: (selection: Selection) => void
+  keyHandlerRef?:    { current: ((e: React.KeyboardEvent) => void) | null }
 }
 
 export default function EditableMapSection({
   cells, originalCells, rpmBreakpoints, mapBreakpoints,
   isDirty, onCellChange, onBulkChange, onReset, formatValue,
   onUndo, onRedo, canUndo, canRedo,
+  selection, onSelectionChange, keyHandlerRef,
 }: Props) {
   const [confirmResetOpen, setConfirmResetOpen] = useState(false)
 
@@ -59,6 +64,9 @@ export default function EditableMapSection({
         canRedo={canRedo}
         onReset={() => setConfirmResetOpen(true)}
         resetDisabled={!isDirty}
+        selection={selection}
+        onSelectionChange={onSelectionChange}
+        keyHandlerRef={keyHandlerRef}
       />
 
       <ConfirmDialog

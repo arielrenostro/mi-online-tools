@@ -1,6 +1,7 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import HeatmapTable, { type ColorScale } from '@/components/HeatmapTable'
 import MapChart from '@/components/MapChart'
+import type { Selection } from '@/utils/mapEditOps'
 import { readMapChartRatio, computeTableCellWidth, MAP_CHART_RATIO_KEY, RATIO_MIN, RATIO_MAX } from '@/utils/mapTableWidth'
 
 interface MapWithChartProps {
@@ -20,9 +21,13 @@ interface MapWithChartProps {
   canRedo?:       boolean
   onReset?:       () => void
   resetDisabled?: boolean
+  /** Selection shared with the other tables of the grid; the chart mirrors it and feeds it. */
+  /** Optional: without it the table and chart keep a private selection (e.g. Ignition/Lambda). */
+  selection?:         Selection
+  onSelectionChange?: (selection: Selection) => void
+  onKeyDelegate?:     (e: React.KeyboardEvent) => void
+  keyHandlerRef?:     { current: ((e: React.KeyboardEvent) => void) | null }
 }
-
-type Pos = { r: number; c: number }
 
 export default function MapWithChart({
   cells,
@@ -41,9 +46,18 @@ export default function MapWithChart({
   canRedo,
   onReset,
   resetDisabled,
+  selection: sharedSelection,
+  onSelectionChange: onSharedSelectionChange,
+  onKeyDelegate,
+  keyHandlerRef,
 }: MapWithChartProps) {
-  const [selectedCells,    setSelectedCells]    = useState<Set<string>>(new Set())
-  const [externalSelection, setExternalSelection] = useState<{ anchor: Pos; selEnd: Pos } | null>(null)
+  const [localSelection, setLocalSelection] = useState<Selection>(null)
+  const selection = sharedSelection !== undefined ? sharedSelection : localSelection
+  const onSelectionChange = useCallback((next: Selection) => {
+    setLocalSelection(next)
+    onSharedSelectionChange?.(next)
+  }, [onSharedSelectionChange])
+  const [focusToken,       setFocusToken]       = useState(0)
   const [chartRatio,       setChartRatio]       = useState<number>(readMapChartRatio)
   const [containerWidth, setContainerWidth] = useState(0)
 
@@ -60,17 +74,17 @@ export default function MapWithChart({
     return () => obs.disconnect()
   }, [])
 
-  const handleSelectionChange = useCallback((anchor: Pos | null, selEnd: Pos | null) => {
-    if (!anchor) { setSelectedCells(new Set()); return }
-    const end = selEnd ?? anchor
-    const r0  = Math.min(anchor.r, end.r), r1 = Math.max(anchor.r, end.r)
-    const c0  = Math.min(anchor.c, end.c), c1 = Math.max(anchor.c, end.c)
+  const selectedCells = useMemo(() => {
     const next = new Set<string>()
+    if (!selection) return next
+    const end = selection.selEnd ?? selection.anchor
+    const r0  = Math.min(selection.anchor.r, end.r), r1 = Math.max(selection.anchor.r, end.r)
+    const c0  = Math.min(selection.anchor.c, end.c), c1 = Math.max(selection.anchor.c, end.c)
     for (let r = r0; r <= r1; r++)
       for (let c = c0; c <= c1; c++)
         next.add(`${r}:${c}`)
-    setSelectedCells(next)
-  }, [])
+    return next
+  }, [selection])
 
   const handleChartCellClick = useCallback((cells: Set<string>) => {
     if (cells.size === 0) return
@@ -82,8 +96,9 @@ export default function MapWithChart({
     const maxR = Math.max(...positions.map(p => p.r))
     const minC = Math.min(...positions.map(p => p.c))
     const maxC = Math.max(...positions.map(p => p.c))
-    setExternalSelection({ anchor: { r: minR, c: minC }, selEnd: { r: maxR, c: maxC } })
-  }, [])
+    onSelectionChange({ anchor: { r: minR, c: minC }, selEnd: { r: maxR, c: maxC } })
+    setFocusToken(t => t + 1)
+  }, [onSelectionChange])
 
   function handleDragStart(e: React.MouseEvent) {
     e.preventDefault()
@@ -115,7 +130,7 @@ export default function MapWithChart({
     : undefined
 
   return (
-    <div ref={containerRef} className="flex items-start select-none">
+    <div ref={containerRef} data-map-grid-item className="flex items-start select-none">
       <div
         style={{ flexBasis: `${tablePercent}%`, minWidth: 0 }}
         className="overflow-hidden flex-shrink-0"
@@ -130,9 +145,12 @@ export default function MapWithChart({
           onBulkChange={onBulkChange}
           modifiedCells={modifiedCells}
           formatValue={formatValue}
-          onSelectionChange={handleSelectionChange}
+          selection={selection}
+          onSelectionChange={onSelectionChange}
           cellWidth={derivedCellWidth}
-          externalSelection={externalSelection}
+          focusToken={focusToken}
+          onKeyDelegate={onKeyDelegate}
+          keyHandlerRef={keyHandlerRef}
           onUndo={onUndo}
           onRedo={onRedo}
           canUndo={canUndo}

@@ -7,6 +7,7 @@ import ConfirmDialog from '@/components/ConfirmDialog'
 import { computeFactorGrid, computeDirectFactor, computeWeightedFactor } from '@/utils/correctionDisplay'
 import type { StatMode, ValueMode } from '@/utils/correctionDisplay'
 import type { CorrectionFilterConfig } from '@/types/correction'
+import type { Selection } from '@/utils/mapEditOps'
 
 const FACTOR_DISPLAY_RANGE = 0.15 // ±15% around 1.00 for the factor tables' color scale
 
@@ -71,7 +72,13 @@ const FACTOR_TABLES: { mode: ValueMode; title: string }[] = [
   { mode: 'weighted', title: 'Ponderado' },
 ]
 
-export default function CorrectionSection() {
+interface CorrectionSectionProps {
+  selection:         Selection
+  onSelectionChange: (selection: Selection) => void
+  onKeyDelegate?:    (e: React.KeyboardEvent) => void
+}
+
+export default function CorrectionSection({ selection, onSelectionChange, onKeyDelegate }: CorrectionSectionProps) {
   const snapshot        = useCorrectionStore(s => s.snapshot)
   const isStale         = useCorrectionStore(s => s.isStale)
   const originalMap     = useMapStore(s => s.originalMap)
@@ -176,6 +183,9 @@ export default function CorrectionSection() {
                   formatValue={formatFactor}
                   cellTitle={cellTitle}
                   cellWidth={cellWidth}
+                  selection={selection}
+                  onSelectionChange={onSelectionChange}
+                  onKeyDelegate={onKeyDelegate}
                 />
               </div>
             ))}
@@ -195,6 +205,9 @@ export default function CorrectionSection() {
             formatValue={formatSamples}
             cellTitle={cellTitle}
             cellWidth={cellWidth}
+            selection={selection}
+            onSelectionChange={onSelectionChange}
+            onKeyDelegate={onKeyDelegate}
           />
         </div>
       </div>

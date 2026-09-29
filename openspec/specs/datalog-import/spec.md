@@ -53,7 +53,7 @@ log's inclusion in the active session, reorder logs, and remove a log permanentl
 #### Scenario: Toggling a log inactive
 - **WHEN** the user toggles a log to inactive
 - **THEN** the log is visually dimmed and excluded from the active session's timeline, charts, and
-  auto-tuning input, without being deleted
+  correction snapshot generation (see `tuning-ve-correction`), without being deleted
 
 #### Scenario: Removing a log
 - **WHEN** the user removes a log

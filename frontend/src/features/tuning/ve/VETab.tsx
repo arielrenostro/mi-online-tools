@@ -1,7 +1,10 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMapStore } from '@/store/mapStore'
 import OriginalMapSection from '@/features/tuning/OriginalMapSection'
 import EditableMapSection from '@/features/tuning/EditableMapSection'
 import CorrectionSection from '@/features/tuning/CorrectionSection'
+import { isInsideMapGrid } from '@/utils/mapGridSelection'
+import type { Selection } from '@/utils/mapEditOps'
 
 export function VETab() {
   const originalMap     = useMapStore(s => s.originalMap)
@@ -15,6 +18,22 @@ export function VETab() {
   const canUndo         = useMapStore(s => s.history.length > 0)
   const canRedo         = useMapStore(s => s.future.length > 0)
 
+  // One cursor for the original map, the editable map, their charts and the correction tables.
+  // Session-only; cleared by Escape or by a click outside every table (see below).
+  const [selection, setSelection] = useState<Selection>(null)
+
+  // The editable map registers its value-editing shortcuts here; read-only tables forward to it.
+  const editKeyRef = useRef<((e: React.KeyboardEvent) => void) | null>(null)
+  const delegateKey = useCallback((e: React.KeyboardEvent) => { editKeyRef.current?.(e) }, [])
+
+  useEffect(() => {
+    function onMouseDown(e: MouseEvent) {
+      if (!isInsideMapGrid(e.target)) setSelection(null)
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [])
+
   if (!originalMap || !editableMap) return null
 
   return (
@@ -23,6 +42,9 @@ export function VETab() {
         cells={originalMap.cells}
         rpmBreakpoints={originalMap.rpmBreakpoints}
         mapBreakpoints={originalMap.mapBreakpoints}
+        selection={selection}
+        onSelectionChange={setSelection}
+        onKeyDelegate={delegateKey}
       />
       <EditableMapSection
         cells={editableMap}
@@ -37,8 +59,15 @@ export function VETab() {
         onRedo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
+        selection={selection}
+        onSelectionChange={setSelection}
+        keyHandlerRef={editKeyRef}
       />
-      <CorrectionSection />
+      <CorrectionSection
+        selection={selection}
+        onSelectionChange={setSelection}
+        onKeyDelegate={delegateKey}
+      />
     </div>
   )
 }

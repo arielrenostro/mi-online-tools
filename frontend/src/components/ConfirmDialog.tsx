@@ -37,7 +37,7 @@ export default function ConfirmDialog({
     : 'bg-blue-600 hover:bg-blue-500 text-white'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-sm flex flex-col">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-700">

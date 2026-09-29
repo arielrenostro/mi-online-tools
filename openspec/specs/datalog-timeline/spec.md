@@ -26,8 +26,8 @@ timeline, consumed by the Dashboard, the Data table, and every chart.
 
 ### Requirement: Interval selection defines the analysis window
 The timeline SHALL let the user select a time interval by dragging, which filters the Data table
-and becomes the input window for auto-tuning; a drag shorter than ~200 ms SHALL be treated as a
-cursor move instead of a selection.
+and scopes the VE correction snapshot's generation (see `tuning-ve-correction`); a drag shorter
+than ~200 ms SHALL be treated as a cursor move instead of a selection.
 
 #### Scenario: Creating a selection
 - **WHEN** the user drags across the rail for at least ~200 ms
@@ -44,8 +44,8 @@ cursor move instead of a selection.
   the full range
 
 #### Scenario: No selection means all points
-- **WHEN** no selection is active and the user runs auto-tuning
-- **THEN** every point from the active logs is used as input, not a subset
+- **WHEN** no selection is active and the user generates a correction snapshot
+- **THEN** every qualifying point from the active logs is used, not a subset
 
 ### Requirement: Sparkline previews a chosen signal
 The timeline SHALL render a decimated sparkline of one signal, selectable by the user, defaulting

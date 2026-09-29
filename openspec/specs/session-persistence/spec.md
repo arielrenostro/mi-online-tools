@@ -18,8 +18,9 @@ map, imported logs, or any manual edits made to them.
 
 ### Requirement: What persists across a session
 The app SHALL persist, across reloads: the imported map (original and current edits), imported logs
-(content, active/inactive state, and order), the last auto-tuning result, the tuning config and
-selected engine, the timeline's cursor/selection/sparkline choice, and UI layout preferences
+(content, active/inactive state, and order), the last generated VE correction snapshot with its
+provenance (logs, time range, filter values), the correction filter panel's current settings and
+visibility toggle, the timeline's cursor/selection/sparkline choice, and UI layout preferences
 (collapsed panels, active analysis view, chart layout/height, signal sidebar state, table column
 visibility).
 
@@ -29,8 +30,9 @@ visibility).
 - **THEN** those UI preferences are restored exactly as left
 
 #### Scenario: Restoring the last tuning result
-- **WHEN** the user reloads after running auto-tuning
-- **THEN** the last auto-tuning result and its analysis views are available again without re-running
+- **WHEN** the user reloads after generating a VE correction snapshot
+- **THEN** the last snapshot, its provenance, and its staleness state are available again without
+  regenerating
 
 ### Requirement: Restore feedback and non-blocking startup
 The app SHALL render immediately on load and confirm to the user when a prior session was restored,
@@ -46,31 +48,39 @@ without blocking the initial render on the restore process.
 - **THEN** no restore confirmation is shown
 
 ### Requirement: Invalidation rules keep derived data consistent
-Actions that change the map, the active log set, or the selected engine SHALL invalidate the last
-auto-tuning result, while changing only the tuning config SHALL mark it as outdated instead of
-discarding it.
+Changing the active log set, the correction filters, or the time selection after a correction
+snapshot has been generated SHALL mark it as outdated without discarding it; replacing the map
+SHALL clear it, since it no longer corresponds to any map; editing the map's cells SHALL NOT affect
+it.
 
 #### Scenario: Replacing the map
 - **WHEN** the user imports a new map to replace the current one
-- **THEN** the last auto-tuning result is cleared and edits reset to the newly imported map
+- **THEN** the last generated correction snapshot is cleared and edits reset to the newly imported
+  map
 
 #### Scenario: Removing or deactivating an active log
 - **WHEN** the user removes or deactivates a log that was part of the active set
-- **THEN** the last auto-tuning result is cleared, since it was computed from a different set of
-  logs
+- **THEN** the last generated correction snapshot is marked as outdated, since it was computed from
+  a different set of logs
 
 #### Scenario: Reordering logs does not invalidate anything
 - **WHEN** the user reorders active logs without changing which ones are active
-- **THEN** the last auto-tuning result is left untouched
+- **THEN** the last generated correction snapshot is left untouched
 
 #### Scenario: Changing the tuning config
-- **WHEN** the user changes the tuning config
-- **THEN** any existing auto-tuning result is kept but marked as outdated, not discarded
+- **WHEN** the user changes any correction filter (the closest equivalent left to the removed
+  tuning config) after a snapshot exists
+- **THEN** the snapshot is kept and displayed but marked as outdated, not discarded
 
 #### Scenario: Changing the selected engine
-- **WHEN** the user selects a different tuning engine
-- **THEN** the last auto-tuning result is cleared, since it may no longer be a valid result for the
-  newly selected engine
+- **WHEN** — this scenario no longer applies: the client-side correction algorithm has no
+  selectable engines
+- **THEN** there is no engine-selection trigger for snapshot invalidation; see "Changing the tuning
+  config" and "Removing or deactivating an active log" above for the triggers that replace it
+
+#### Scenario: Editing the map does not invalidate the snapshot
+- **WHEN** the user edits the editable map's cells
+- **THEN** the last generated correction snapshot is left untouched and not marked as outdated
 
 ### Requirement: Graceful fallback when persistent storage is unavailable
 When the browser's persistent storage is unavailable (e.g., private browsing mode), the app SHALL

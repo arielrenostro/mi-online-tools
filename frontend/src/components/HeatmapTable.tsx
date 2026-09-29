@@ -1,5 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import BulkEditModal from '@/features/tuning/BulkEditModal'
+import {
+  selectionRect, isSingleCell, interpolateHorizontal, interpolateVertical, bulkAdjustChanges,
+  scaleChanges, clearRangeChanges, toTsv, pasteChanges,
+  type Pos, type Selection, type BulkType,
+} from '@/utils/mapEditOps'
 import { IconAdjust, IconInterpolateH, IconInterpolateV, IconUndo, IconRedo } from '@/components/MapEditIcons'
 
 export type ColorScale = 'warm' | 'diverging' | 'confidence' | 'coverage' | 'convergence' | 'symmetric'
@@ -16,9 +21,24 @@ interface HeatmapTableProps {
   min?:                number
   max?:                number
   formatValue?:        (v: number | boolean | null) => string
-  onSelectionChange?:  (anchor: { r: number; c: number } | null, selEnd: { r: number; c: number } | null) => void
+  /**
+   * Controlled selection. When provided (even as `null`), the table renders it and reports every
+   * change through `onSelectionChange`, so several tables over the same grid can share one cursor.
+   * When omitted, the table keeps its own selection.
+   */
+  selection?:          Selection
+  onSelectionChange?:  (selection: Selection) => void
   cellWidth?:          number
-  externalSelection?:  { anchor: { r: number; c: number }; selEnd?: { r: number; c: number } | null } | null
+  /** Bump to move keyboard focus to this table (e.g. after a selection made in its chart). */
+  focusToken?:         number
+  /** Read-only tables: receives keys the table does not handle itself (F2, H, V, Ctrl+…). */
+  onKeyDelegate?:      (e: React.KeyboardEvent) => void
+  /**
+   * Editable tables: filled with a handler for the value-editing shortcuts, so another table of
+   * the grid can drive this one. Inline-edit-starting keys (Enter, digits, Delete on one cell)
+   * are ignored when delegated, since they would pull focus into this table.
+   */
+  keyHandlerRef?:      { current: ((e: React.KeyboardEvent) => void) | null }
   onUndo?:             () => void
   onRedo?:             () => void
   canUndo?:            boolean
@@ -58,44 +78,6 @@ const COVERAGE_STOPS: RGB[]   = [[31,41,55],[59,130,246]]
 
 function rgb(c: RGB): string { return `rgb(${c[0]},${c[1]},${c[2]})` }
 function brightness(c: RGB): number { return (c[0] * 299 + c[1] * 587 + c[2] * 114) / 1000 }
-
-// ── Interpolation (ported from mi-dashboard-android's MapEditOps.interpolateHorizontal/Vertical:
-// index-based positioning within the selection, independent per row/column, edges unchanged) ───
-
-type SelRect = { r0: number; r1: number; c0: number; c1: number }
-type CellChange = { row: number; col: number; value: number }
-
-function interpolateHorizontal(cells: (number | boolean | null)[][], sr: SelRect): CellChange[] {
-  const steps = sr.c1 - sr.c0
-  if (steps < 2) return []
-  const changes: CellChange[] = []
-  for (let r = sr.r0; r <= sr.r1; r++) {
-    const left  = cells[r][sr.c0]
-    const right = cells[r][sr.c1]
-    if (typeof left !== 'number' || typeof right !== 'number') continue
-    for (let c = sr.c0 + 1; c < sr.c1; c++) {
-      const t = (c - sr.c0) / steps
-      changes.push({ row: r, col: c, value: left + (right - left) * t })
-    }
-  }
-  return changes
-}
-
-function interpolateVertical(cells: (number | boolean | null)[][], sr: SelRect): CellChange[] {
-  const steps = sr.r1 - sr.r0
-  if (steps < 2) return []
-  const changes: CellChange[] = []
-  for (let c = sr.c0; c <= sr.c1; c++) {
-    const top    = cells[sr.r0][c]
-    const bottom = cells[sr.r1][c]
-    if (typeof top !== 'number' || typeof bottom !== 'number') continue
-    for (let r = sr.r0 + 1; r < sr.r1; r++) {
-      const t = (r - sr.r0) / steps
-      changes.push({ row: r, col: c, value: top + (bottom - top) * t })
-    }
-  }
-  return changes
-}
 
 function cellBg(
   value: number | boolean | null,
@@ -139,8 +121,6 @@ function cellBg(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-type Pos = { r: number; c: number }
-
 export default function HeatmapTable({
   cells,
   rowHeaders,
@@ -153,9 +133,12 @@ export default function HeatmapTable({
   min,
   max,
   formatValue,
+  selection: controlledSelection,
   onSelectionChange,
   cellWidth,
-  externalSelection,
+  focusToken,
+  onKeyDelegate,
+  keyHandlerRef,
   onUndo,
   onRedo,
   canUndo,
@@ -170,8 +153,7 @@ export default function HeatmapTable({
   const nRows = cells.length
   const nCols = colHeaders.length
 
-  const [anchor,       setAnchor]       = useState<Pos | null>(null)
-  const [selEnd,       setSelEnd]       = useState<Pos | null>(null)
+  const [localSelection, setLocalSelection] = useState<Selection>(null)
   const [editing,      setEditing]      = useState<Pos | null>(null)
   const [editVal,      setEditVal]      = useState('')
   const [dragging,     setDragging]     = useState(false)
@@ -180,17 +162,22 @@ export default function HeatmapTable({
   const containerRef = useRef<HTMLDivElement>(null)
   const wrapRef       = useRef<HTMLDivElement>(null)
   const inputRef      = useRef<HTMLInputElement>(null)
+  const returnFocusRef = useRef<HTMLElement | null>(null)
 
   const allNums = cells.flat().filter((v): v is number => typeof v === 'number')
   const cMin    = min ?? (allNums.length ? Math.min(...allNums) : 0)
   const cMax    = max ?? (allNums.length ? Math.max(...allNums) : 1)
 
-  // Selection rectangle (data space)
-  const selR = selEnd ?? anchor
-  const sr   = anchor && selR ? {
-    r0: Math.min(anchor.r, selR.r), r1: Math.max(anchor.r, selR.r),
-    c0: Math.min(anchor.c, selR.c), c1: Math.max(anchor.c, selR.c),
-  } : null
+  // Selection: controlled by the parent when `selection` is passed, otherwise local.
+  const selection = controlledSelection !== undefined ? controlledSelection : localSelection
+  const anchor    = selection?.anchor ?? null
+  const selEnd    = selection?.selEnd ?? null
+  const sr        = selectionRect(selection)
+
+  function setSelection(next: Selection) {
+    if (controlledSelection === undefined) setLocalSelection(next)
+    onSelectionChange?.(next)
+  }
 
   const inSel    = (r: number, c: number) => !!sr && r >= sr.r0 && r <= sr.r1 && c >= sr.c0 && c <= sr.c1
   const isAnchor = (r: number, c: number) => anchor?.r === r && anchor?.c === c
@@ -207,7 +194,7 @@ export default function HeatmapTable({
     if (!anchor) return
     const base = extend ? (selEnd ?? anchor) : anchor
     const next = clamp(base.r + dr, base.c + dc)
-    if (extend) { setSelEnd(next) } else { setAnchor(next); setSelEnd(null) }
+    setSelection(extend ? { anchor, selEnd: next } : { anchor: next, selEnd: null })
   }
 
   // ── Inline edit helpers ──────────────────────────────────────────────────────
@@ -239,20 +226,15 @@ export default function HeatmapTable({
 
   // ── Bulk edit (F2 modal) ─────────────────────────────────────────────────────
 
-  function handleBulkApply(type: 'pct' | 'add' | 'fixed', value: number) {
+  function openBulkEdit() {
+    if (!anchor) return
+    returnFocusRef.current = document.activeElement as HTMLElement | null
+    setBulkEditOpen(true)
+  }
+
+  function handleBulkApply(type: BulkType, value: number) {
     if (!sr || !onBulkChange) return
-    const changes: { row: number; col: number; value: number }[] = []
-    for (let r = sr.r0; r <= sr.r1; r++) {
-      for (let c = sr.c0; c <= sr.c1; c++) {
-        const cur = cells[r][c]
-        if (typeof cur !== 'number') continue
-        const newVal = type === 'fixed' ? value
-                     : type === 'add'   ? cur + value
-                     : cur * (1 + value / 100)
-        changes.push({ row: r, col: c, value: newVal })
-      }
-    }
-    onBulkChange(changes)
+    onBulkChange(bulkAdjustChanges(cells, sr, type, value))
   }
 
   const canInterpolateH = !!sr && (sr.c1 - sr.c0) >= 2
@@ -270,14 +252,75 @@ export default function HeatmapTable({
     if (changes.length) onBulkChange(changes)
   }
 
+  // ── Value-editing shortcuts ──────────────────────────────────────────────────
+  // Runs on the editable table, either because it has focus or because a read-only table of the
+  // same grid delegated the key (`delegated`). Returns true when the key was handled.
+
+  function handleEditKey(e: React.KeyboardEvent, delegated: boolean): boolean {
+    if (!anchor || !onBulkChange) return false
+    const { key } = e
+    const mod = e.ctrlKey || e.metaKey
+    const range = sr ?? { r0: anchor.r, r1: anchor.r, c0: anchor.c, c1: anchor.c }
+    const apply = (changes: { row: number; col: number; value: number }[]) => {
+      if (changes.length) onBulkChange(changes)
+    }
+
+    if (key === 'F2') { e.preventDefault(); openBulkEdit(); return true }
+
+    if (!mod && key.toLowerCase() === 'h') { e.preventDefault(); runInterpolateH(); return true }
+    if (!mod && key.toLowerCase() === 'v') { e.preventDefault(); runInterpolateV(); return true }
+
+    if (key === 'Delete' || key === 'Backspace') {
+      if (isSingleCell(sr)) {
+        if (delegated) return false
+        e.preventDefault()
+        startEdit(anchor.r, anchor.c, '')
+      } else {
+        e.preventDefault()
+        apply(clearRangeChanges(cells, range))
+      }
+      return true
+    }
+
+    if (mod && key === 'c') {
+      e.preventDefault()
+      navigator.clipboard.writeText(toTsv(cells, range)).catch(() => {})
+      return true
+    }
+    if (mod && key === 'v') {
+      e.preventDefault()
+      navigator.clipboard.readText()
+        .then(text => apply(pasteChanges(text, anchor, nRows, nCols)))
+        .catch(() => {})
+      return true
+    }
+    if (mod && key === 'i') { e.preventDefault(); apply(scaleChanges(cells, range, 1.01)); return true }
+    if (mod && key === 'u') { e.preventDefault(); apply(scaleChanges(cells, range, 0.99)); return true }
+
+    if (!delegated && key.length === 1 && !mod && /[\d.\-]/.test(key)) {
+      e.preventDefault()
+      startEdit(anchor.r, anchor.c, key)
+      return true
+    }
+    return false
+  }
+
+  useEffect(() => {
+    if (!keyHandlerRef) return
+    if (readOnly || editing || bulkEditOpen) { keyHandlerRef.current = null; return }
+    keyHandlerRef.current = e => { handleEditKey(e, true) }
+    return () => { keyHandlerRef.current = null }
+  })
+
   // ── Container keydown (no input focused) ─────────────────────────────────────
 
   function handleContainerKey(e: React.KeyboardEvent) {
     if (editing || bulkEditOpen) return
-    if (!anchor) return
 
-    const { key, shiftKey, ctrlKey, metaKey } = e
-    const mod = ctrlKey || metaKey
+    const { key, shiftKey } = e
+
+    if (key === 'Escape') { setSelection(null); return }
+    if (!anchor) return
 
     // Arrow navigation
     if (key === 'ArrowDown')  { e.preventDefault(); move( 1,  0, shiftKey); return }
@@ -288,7 +331,7 @@ export default function HeatmapTable({
     // Enter: inline edit (single cell) or navigate (range / shift)
     if (key === 'Enter') {
       e.preventDefault()
-      if (!readOnly && !shiftKey && (!sr || (sr.r0 === sr.r1 && sr.c0 === sr.c1))) {
+      if (!readOnly && !shiftKey && isSingleCell(sr)) {
         startEdit(anchor.r, anchor.c)
       } else {
         shiftKey ? move(-1, 0, false) : move(1, 0, false)
@@ -303,113 +346,9 @@ export default function HeatmapTable({
       return
     }
 
-    if (readOnly) return
+    if (readOnly) { onKeyDelegate?.(e); return }
 
-    // F2: bulk edit modal
-    if (key === 'F2') {
-      e.preventDefault()
-      if (anchor) setBulkEditOpen(true)
-      return
-    }
-
-    // H / V: interpolate horizontal / vertical
-    if (!mod && key.toLowerCase() === 'h') {
-      e.preventDefault()
-      runInterpolateH()
-      return
-    }
-    if (!mod && key.toLowerCase() === 'v') {
-      e.preventDefault()
-      runInterpolateV()
-      return
-    }
-
-    // Delete / Backspace
-    if (key === 'Delete' || key === 'Backspace') {
-      e.preventDefault()
-      if (sr && (sr.r1 > sr.r0 || sr.c1 > sr.c0)) {
-        const changes: { row: number; col: number; value: number }[] = []
-        for (let r = sr.r0; r <= sr.r1; r++)
-          for (let c = sr.c0; c <= sr.c1; c++)
-            if (typeof cells[r][c] === 'number') changes.push({ row: r, col: c, value: 0 })
-        if (changes.length) onBulkChange?.(changes)
-      } else {
-        startEdit(anchor.r, anchor.c, '')
-      }
-      return
-    }
-
-    // Ctrl+C — copy as TSV
-    if (mod && key === 'c') {
-      e.preventDefault()
-      const range = sr ?? { r0: anchor.r, r1: anchor.r, c0: anchor.c, c1: anchor.c }
-      const lines: string[] = []
-      for (let r = range.r0; r <= range.r1; r++) {
-        const cols: string[] = []
-        for (let c = range.c0; c <= range.c1; c++) {
-          const v = cells[r][c]
-          cols.push(v === null ? '' : String(typeof v === 'number' ? v : (v ? 1 : 0)))
-        }
-        lines.push(cols.join('\t'))
-      }
-      navigator.clipboard.writeText(lines.join('\n')).catch(() => {})
-      return
-    }
-
-    // Ctrl+V — paste TSV
-    if (mod && key === 'v') {
-      e.preventDefault()
-      navigator.clipboard.readText().then(text => {
-        const rows = text.trim().split(/\r?\n/).map(row => row.split('\t'))
-        const changes: { row: number; col: number; value: number }[] = []
-        rows.forEach((row, dr) => {
-          row.forEach((val, dc) => {
-            const r = anchor.r + dr
-            const c = anchor.c + dc
-            if (r < nRows && c < nCols) {
-              const num = parseFloat(val)
-              if (!isNaN(num)) changes.push({ row: r, col: c, value: num })
-            }
-          })
-        })
-        if (changes.length) onBulkChange?.(changes)
-      }).catch(() => {})
-      return
-    }
-
-    // Ctrl+I: +1%
-    if (mod && key === 'i') {
-      e.preventDefault()
-      const range = sr ?? { r0: anchor.r, r1: anchor.r, c0: anchor.c, c1: anchor.c }
-      const changes: { row: number; col: number; value: number }[] = []
-      for (let r = range.r0; r <= range.r1; r++)
-        for (let c = range.c0; c <= range.c1; c++) {
-          const v = cells[r][c]
-          if (typeof v === 'number') changes.push({ row: r, col: c, value: v * 1.01 })
-        }
-      if (changes.length) onBulkChange?.(changes)
-      return
-    }
-
-    // Ctrl+U: -1%
-    if (mod && key === 'u') {
-      e.preventDefault()
-      const range = sr ?? { r0: anchor.r, r1: anchor.r, c0: anchor.c, c1: anchor.c }
-      const changes: { row: number; col: number; value: number }[] = []
-      for (let r = range.r0; r <= range.r1; r++)
-        for (let c = range.c0; c <= range.c1; c++) {
-          const v = cells[r][c]
-          if (typeof v === 'number') changes.push({ row: r, col: c, value: v * 0.99 })
-        }
-      if (changes.length) onBulkChange?.(changes)
-      return
-    }
-
-    // Printable digit — start inline edit
-    if (key.length === 1 && !mod && /[\d.\-]/.test(key)) {
-      e.preventDefault()
-      startEdit(anchor.r, anchor.c, key)
-    }
+    handleEditKey(e, false)
   }
 
   // ── Input keydown (during inline edit) ──────────────────────────────────────
@@ -422,13 +361,13 @@ export default function HeatmapTable({
     if (key === 'Enter') {
       e.preventDefault()
       commitEdit(editing.r, editing.c)
-      setAnchor(clamp(editing.r + 1, editing.c)); setSelEnd(null)
+      setSelection({ anchor: clamp(editing.r + 1, editing.c), selEnd: null })
       return
     }
     if (key === 'Tab') {
       e.preventDefault()
       commitEdit(editing.r, editing.c)
-      setAnchor(clamp(editing.r, editing.c + (shiftKey ? -1 : 1))); setSelEnd(null)
+      setSelection({ anchor: clamp(editing.r, editing.c + (shiftKey ? -1 : 1)), selEnd: null })
       return
     }
     if (key === 'Escape') {
@@ -439,13 +378,13 @@ export default function HeatmapTable({
     if (key === 'ArrowDown') {
       e.preventDefault()
       commitEdit(editing.r, editing.c)
-      setAnchor(clamp(editing.r + 1, editing.c)); setSelEnd(null)
+      setSelection({ anchor: clamp(editing.r + 1, editing.c), selEnd: null })
       return
     }
     if (key === 'ArrowUp') {
       e.preventDefault()
       commitEdit(editing.r, editing.c)
-      setAnchor(clamp(editing.r - 1, editing.c)); setSelEnd(null)
+      setSelection({ anchor: clamp(editing.r - 1, editing.c), selEnd: null })
       return
     }
   }
@@ -457,23 +396,28 @@ export default function HeatmapTable({
     e.preventDefault()
     wrapRef.current?.focus()
     if (editing) commitEdit(editing.r, editing.c)
-    if (e.shiftKey && anchor) { setSelEnd({ r, c }) }
-    else { setAnchor({ r, c }); setSelEnd(null) }
+    if (e.shiftKey && anchor) { setSelection({ anchor, selEnd: { r, c } }) }
+    else { setSelection({ anchor: { r, c }, selEnd: null }) }
     setDragging(true)
   }
 
   function handleCellEnter(r: number, c: number) {
-    if (dragging) setSelEnd({ r, c })
+    if (dragging && anchor) setSelection({ anchor, selEnd: { r, c } })
   }
 
   // ── Effects ──────────────────────────────────────────────────────────────────
 
+  // After an inline edit or the bulk dialog closes, give focus back to where it was (the table
+  // that had it when the dialog was opened) without scrolling the page.
   useEffect(() => {
-    if (!editing && !bulkEditOpen) setTimeout(() => wrapRef.current?.focus(), 0)
-  }, [editing, bulkEditOpen])
+    if (readOnly || editing || bulkEditOpen) return
+    const target = returnFocusRef.current ?? wrapRef.current
+    returnFocusRef.current = null
+    setTimeout(() => { if (target?.isConnected) target.focus({ preventScroll: true }) }, 0)
+  }, [editing, bulkEditOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!readOnly && nRows > 0 && nCols > 0) setAnchor({ r: 0, c: 0 })
+    if (!readOnly && nRows > 0 && nCols > 0 && !selection) setSelection({ anchor: { r: 0, c: 0 }, selEnd: null })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -483,15 +427,8 @@ export default function HeatmapTable({
   }, [])
 
   useEffect(() => {
-    onSelectionChange?.(anchor, selEnd)
-  }, [anchor, selEnd]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!externalSelection) return
-    setAnchor(externalSelection.anchor)
-    setSelEnd(externalSelection.selEnd ?? null)
-    wrapRef.current?.focus()
-  }, [externalSelection]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (focusToken) wrapRef.current?.focus({ preventScroll: true })
+  }, [focusToken])
 
   // ── Format ───────────────────────────────────────────────────────────────────
 
@@ -518,12 +455,12 @@ export default function HeatmapTable({
   const preventFocusSteal = (e: React.MouseEvent) => e.preventDefault()
 
   return (
-    <div ref={containerRef}>
+    <div ref={containerRef} data-map-grid-item>
       {!readOnly && (
         <div className="flex items-center gap-1.5 mb-1.5">
           <button
             type="button"
-            onClick={() => anchor && setBulkEditOpen(true)}
+            onClick={openBulkEdit}
             onMouseDown={preventFocusSteal}
             disabled={!anchor}
             title="Ajuste (F2)"
@@ -589,7 +526,6 @@ export default function HeatmapTable({
         tabIndex={0}
         className={`${cellWidth != null ? 'overflow-x-auto overflow-y-hidden' : 'overflow-auto'} rounded border border-gray-700 outline-none focus-visible:ring-1 focus-visible:ring-blue-500`}
         onKeyDown={handleContainerKey}
-        onBlur={e => { if (!containerRef.current?.contains(e.relatedTarget as Node)) { setAnchor(null); setSelEnd(null) } }}
       >
         <table
           className="border-collapse font-mono"

@@ -1,14 +1,18 @@
 import { useState } from 'react'
 import MapWithChart from '@/components/MapWithChart'
+import type { Selection } from '@/utils/mapEditOps'
 
 interface Props {
   cells:          number[][]
   rpmBreakpoints: number[]
   mapBreakpoints: number[]
   formatValue?:   (v: number | boolean | null) => string
+  selection?:         Selection
+  onSelectionChange?: (selection: Selection) => void
+  onKeyDelegate?:    (e: React.KeyboardEvent) => void
 }
 
-export default function OriginalMapSection({ cells, rpmBreakpoints, mapBreakpoints, formatValue }: Props) {
+export default function OriginalMapSection({ cells, rpmBreakpoints, mapBreakpoints, formatValue, selection, onSelectionChange, onKeyDelegate }: Props) {
   const [collapsed, setCollapsed] = useState(true)
 
   const fmt = formatValue ?? (v => v === null ? '—' : String(v as number))
@@ -36,6 +40,9 @@ export default function OriginalMapSection({ cells, rpmBreakpoints, mapBreakpoin
           colorScale="warm"
           readOnly
           formatValue={fmt}
+          selection={selection}
+          onSelectionChange={onSelectionChange}
+          onKeyDelegate={onKeyDelegate}
         />
       )}
     </section>
