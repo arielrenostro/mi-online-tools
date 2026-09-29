@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { computeDirectFactor, computeWeightedFactor, computeFactorGrid, rawVeToReal } from './correctionDisplay'
+import { computeDirectFactor, computeWeightedFactor, computeFactorGrid, rawVeToReal, snapshotHasMode } from './correctionDisplay'
 import type { CorrectionCell, CorrectionSnapshot } from '@/types/correction'
 
 describe('rawVeToReal', () => {
@@ -10,7 +10,7 @@ describe('rawVeToReal', () => {
 
 describe('computeDirectFactor', () => {
   it('returns null for a cell with no data', () => {
-    const cell: CorrectionCell = { n: 0, mean: null, median: null }
+    const cell: CorrectionCell = { n: 0, mean: null, median: null, mode: null }
     expect(computeDirectFactor(cell, 592, 'mean')).toBeNull()
   })
 
@@ -41,7 +41,7 @@ describe('computeWeightedFactor', () => {
   })
 
   it('returns null for a cell with no data', () => {
-    const cell: CorrectionCell = { n: 0, mean: null, median: null }
+    const cell: CorrectionCell = { n: 0, mean: null, median: null, mode: null }
     expect(computeWeightedFactor(cell, 500, 'mean')).toBeNull()
   })
 })
@@ -50,7 +50,7 @@ describe('computeFactorGrid', () => {
   it('produces a grid of the same shape, with null for empty cells', () => {
     const snapshot: CorrectionSnapshot = {
       cells: [
-        [{ n: 10, mean: 59.2, median: 59.2 }, { n: 0, mean: null, median: null }],
+        [{ n: 10, mean: 59.2, median: 59.2 }, { n: 0, mean: null, median: null, mode: null }],
       ],
       generatedAt: 0,
       provenance: { logFilenames: [], timeRange: null, filters: {} as never },
@@ -59,5 +59,26 @@ describe('computeFactorGrid', () => {
     const grid = computeFactorGrid(snapshot, editableMap, 'mean', 'direct')
     expect(grid[0][0]).toBeCloseTo(1, 6) // 59.2 real == 592 raw/10 -> factor exactly 1.0
     expect(grid[0][1]).toBeNull()
+  })
+})
+
+describe('mode statistic', () => {
+  it('uses the mode when statMode is mode', () => {
+    const cell: CorrectionCell = { n: 10, mean: 50, median: 55, mode: 60 }
+    expect(computeDirectFactor(cell, 500, 'mode')).toBeCloseTo(60 / 50, 6)
+  })
+
+  it('treats a missing mode (older snapshot) as unavailable, not as a crash', () => {
+    const cell: CorrectionCell = { n: 10, mean: 50, median: 55 }
+    expect(computeDirectFactor(cell, 500, 'mode')).toBeNull()
+    expect(computeWeightedFactor(cell, 500, 'mode')).toBeNull()
+    expect(computeDirectFactor(cell, 500, 'median')).toBeCloseTo(55 / 50, 6)
+  })
+
+  it('snapshotHasMode is false when any cell with data lacks a mode', () => {
+    const snap = (cells: CorrectionCell[][]) => ({ cells } as CorrectionSnapshot)
+    const empty: CorrectionCell = { n: 0, mean: null, median: null }
+    expect(snapshotHasMode(snap([[{ n: 3, mean: 1, median: 1, mode: 1 }, empty]]))).toBe(true)
+    expect(snapshotHasMode(snap([[{ n: 3, mean: 1, median: 1 }, empty]]))).toBe(false)
   })
 })

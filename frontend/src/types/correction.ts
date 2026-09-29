@@ -35,6 +35,9 @@ export function filtersEqual(a: CorrectionFilterConfig, b: CorrectionFilterConfi
   return JSON.stringify(sortedA) === JSON.stringify(sortedB)
 }
 
+/** Half-width (VE percentage points) of the sliding window that defines the mode's "approximate same value". */
+export const MODE_TOLERANCE = 0.5
+
 /** Fixed weighting constant (K) for `w = n / (n + CONFIDENCE_CONSTANT)`. No UI control. */
 export const CONFIDENCE_CONSTANT = 100
 
@@ -45,6 +48,11 @@ export interface CorrectionCell {
   mean:   number | null
   /** Unweighted median of the same point set; null when n === 0. */
   median: number | null
+  /**
+   * Approximate most frequent value: mean of the densest ±MODE_TOLERANCE cluster of the same point
+   * set. null when n === 0; undefined on snapshots persisted before the mode existed.
+   */
+  mode?:  number | null
 }
 
 export interface CorrectionProvenance {

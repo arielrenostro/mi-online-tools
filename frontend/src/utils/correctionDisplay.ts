@@ -2,7 +2,7 @@ import { CONFIDENCE_CONSTANT } from '@/types/correction'
 import type { CorrectionCell, CorrectionSnapshot } from '@/types/correction'
 
 export type ValueMode = 'direct' | 'weighted'
-export type StatMode  = 'mean' | 'median'
+export type StatMode  = 'mean' | 'median' | 'mode'
 
 /**
  * `editableMap` cells are raw VE (%×10, e.g. 592); the snapshot's mean/median are VE Lambda in
@@ -13,10 +13,16 @@ export function rawVeToReal(rawValue: number): number {
   return rawValue / 10
 }
 
+/** True when every cell with data carries a mode (false for snapshots persisted before it existed). */
+export function snapshotHasMode(snapshot: CorrectionSnapshot): boolean {
+  return snapshot.cells.every(row => row.every(c => c.n === 0 || typeof c.mode === 'number'))
+}
+
 /** Direct (undamped) factor for one cell, or null when the cell has no data. */
 export function computeDirectFactor(cell: CorrectionCell, currentRawMapValue: number, statMode: StatMode): number | null {
   if (cell.n === 0 || cell.mean === null || cell.median === null) return null
-  const stat = statMode === 'mean' ? cell.mean : cell.median
+  const stat = statMode === 'mean' ? cell.mean : statMode === 'median' ? cell.median : cell.mode
+  if (stat == null) return null // e.g. mode on a snapshot persisted before the mode existed
   return stat / rawVeToReal(currentRawMapValue)
 }
 

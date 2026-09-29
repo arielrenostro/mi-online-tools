@@ -4,7 +4,7 @@ import { useCorrectionStore } from '@/store/correctionStore'
 import { useMapTableCellWidth } from '@/hooks/useMapTableCellWidth'
 import HeatmapTable from '@/components/HeatmapTable'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { computeFactorGrid, computeDirectFactor, computeWeightedFactor } from '@/utils/correctionDisplay'
+import { computeFactorGrid, computeDirectFactor, computeWeightedFactor, snapshotHasMode } from '@/utils/correctionDisplay'
 import type { StatMode, ValueMode } from '@/utils/correctionDisplay'
 import type { CorrectionFilterConfig } from '@/types/correction'
 import type { Selection } from '@/utils/mapEditOps'
@@ -37,7 +37,7 @@ function fmtFilters(f: CorrectionFilterConfig): string {
 
 function ToggleGroup<T extends string>({ value, options, onChange }: {
   value: T
-  options: { value: T; label: string }[]
+  options: { value: T; label: string; disabled?: boolean; title?: string }[]
   onChange: (v: T) => void
 }) {
   return (
@@ -46,8 +46,12 @@ function ToggleGroup<T extends string>({ value, options, onChange }: {
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
+          disabled={opt.disabled}
+          title={opt.title}
           className={`px-2 py-1 transition-colors ${
-            value === opt.value ? 'bg-blue-700 text-white' : 'bg-gray-800 text-gray-400 hover:text-gray-200'
+            value === opt.value ? 'bg-blue-700 text-white'
+            : opt.disabled      ? 'bg-gray-800 text-gray-600 cursor-not-allowed'
+            : 'bg-gray-800 text-gray-400 hover:text-gray-200'
           }`}
         >
           {opt.label}
@@ -85,11 +89,15 @@ export default function CorrectionSection({ selection, onSelectionChange, onKeyD
   const editableMap     = useMapStore(s => s.editableMap)
   const bulkUpdateCells = useMapStore(s => s.bulkUpdateCells)
 
-  const [statMode, setStatMode] = useState<StatMode>('mean')
+  const [selectedStat, setStatMode] = useState<StatMode>('mean')
   const [confirmMode, setConfirmMode] = useState<ValueMode | null>(null)
 
   const nCols = originalMap?.rpmBreakpoints.length ?? 0
   const { ref: widthRef, cellWidth } = useMapTableCellWidth(nCols)
+
+  const modeAvailable = useMemo(() => (snapshot ? snapshotHasMode(snapshot) : false), [snapshot])
+  // An older snapshot has no mode: fall back to the median rather than showing empty factors.
+  const statMode: StatMode = selectedStat === 'mode' && !modeAvailable ? 'median' : selectedStat
 
   const directGrid = useMemo(() => {
     if (!snapshot || !editableMap) return null
@@ -117,6 +125,7 @@ export default function CorrectionSection({ selection, onSelectionChange, onKeyD
       `n=${cell.n.toFixed(1)}`,
       `média=${cell.mean.toFixed(1)}`,
       `mediana=${cell.median.toFixed(1)}`,
+      `moda=${typeof cell.mode === 'number' ? cell.mode.toFixed(1) : '—'}`,
       `direto=${directMean.toFixed(3)}`,
       `ponderado=${weightedMean.toFixed(3)}`,
     ].join(' · ')
@@ -148,6 +157,8 @@ export default function CorrectionSection({ selection, onSelectionChange, onKeyD
           <ToggleGroup value={statMode} onChange={setStatMode} options={[
             { value: 'mean',   label: 'Média' },
             { value: 'median', label: 'Mediana' },
+            { value: 'mode',   label: 'Moda', disabled: !modeAvailable,
+              title: modeAvailable ? undefined : 'Snapshot gerado antes da Moda existir — gere o fator de correção novamente' },
           ]} />
         </div>
 

@@ -1,4 +1,5 @@
 import type { LogEntry, TimeSelection } from '@/types/datalog'
+import { MODE_TOLERANCE } from '@/types/correction'
 import type { CorrectionCell, CorrectionFilterConfig, CorrectionSnapshot } from '@/types/correction'
 import { computeVeLambda } from '@/signals/veLambdaFormula'
 import { evaluateCorrectionFilters } from './correctionFilters'
@@ -69,6 +70,32 @@ function median(values: number[]): number {
   return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid]
 }
 
+/**
+ * Approximate most frequent value: slide a window of width 2·MODE_TOLERANCE starting at each value,
+ * keep the one with most points and return the mean of the points inside it. Ties go to the window
+ * closest to the median, then to the lower value, so the result is deterministic.
+ */
+export function densestClusterMode(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b)
+  const med    = median(sorted)
+  const width  = 2 * MODE_TOLERANCE + 1e-9
+  let best: { count: number; mean: number } | null = null
+  let j = 0
+  let sum = 0
+  for (let i = 0; i < sorted.length; i++) {
+    if (j < i) { j = i; sum = 0 }
+    while (j < sorted.length && sorted[j] - sorted[i] <= width) { sum += sorted[j]; j++ }
+    const count = j - i
+    const mean  = sum / count
+    if (
+      best === null || count > best.count ||
+      (count === best.count && Math.abs(mean - med) < Math.abs(best.mean - med))
+    ) best = { count, mean }
+    sum -= sorted[i]
+  }
+  return best!.mean
+}
+
 function makeGrid(rows: number, cols: number): number[][] {
   return Array.from({ length: rows }, () => new Array(cols).fill(0))
 }
@@ -107,11 +134,12 @@ export function generateCorrectionSnapshot(
 
   const cells: CorrectionCell[][] = weightSum.map((row, rowI) =>
     row.map((n, colJ) => {
-      if (n === 0) return { n: 0, mean: null, median: null }
+      if (n === 0) return { n: 0, mean: null, median: null, mode: null }
       return {
         n,
         mean:   weightedValueSum[rowI][colJ] / n,
         median: median(valuesPerCell[rowI][colJ]),
+        mode:   densestClusterMode(valuesPerCell[rowI][colJ]),
       }
     })
   )

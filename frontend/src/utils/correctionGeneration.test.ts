@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { bilinearWeights, generateCorrectionSnapshot } from './correctionGeneration'
+import { bilinearWeights, densestClusterMode, generateCorrectionSnapshot } from './correctionGeneration'
 import { DEFAULT_CORRECTION_FILTERS } from '@/types/correction'
 import type { DatalogRow, LogEntry } from '@/types/datalog'
 
@@ -73,8 +73,9 @@ describe('generateCorrectionSnapshot', () => {
     expect(cell.n).toBeCloseTo(2, 6)
     expect(cell.mean).toBeCloseTo(55, 6)
     expect(cell.median).toBeCloseTo(55, 6)
+    expect(cell.mode).toBeCloseTo(50, 6) // 50 and 60 are far apart: two 1-point windows, equidistant from the median -> lower
     // untouched cell has no data
-    expect(snapshot.cells[1][1]).toEqual({ n: 0, mean: null, median: null })
+    expect(snapshot.cells[1][1]).toEqual({ n: 0, mean: null, median: null, mode: null })
   })
 
   it('excludes points outside an active time selection', () => {
@@ -98,5 +99,19 @@ describe('generateCorrectionSnapshot', () => {
     expect(snapshot.provenance.logFilenames).toEqual(['log.csv'])
     expect(snapshot.provenance.timeRange).toBeNull()
     expect(snapshot.provenance.filters).toEqual(DEFAULT_CORRECTION_FILTERS)
+  })
+})
+
+describe('densestClusterMode', () => {
+  it('returns the mean of the densest +-0.5 cluster, not of the whole set', () => {
+    expect(densestClusterMode([58.1, 59.0, 59.2, 59.3, 59.4, 59.6, 61.5, 64.0])).toBeCloseTo(59.3, 6)
+  })
+
+  it('breaks a tie by the window closest to the median', () => {
+    expect(densestClusterMode([10, 10.1, 15, 20, 20.1])).toBeCloseTo(10.05, 6)
+  })
+
+  it('returns the single value when there is one point', () => {
+    expect(densestClusterMode([42.5])).toBe(42.5)
   })
 })
