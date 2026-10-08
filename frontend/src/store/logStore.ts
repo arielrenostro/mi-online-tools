@@ -36,10 +36,12 @@ export function flattenActiveRows(logs: LogEntry[]): DatalogRow[] {
   return result
 }
 
+/** Linhas dos logs ativos SEM os sinais de runtime — para exibição use `useDisplayRows()`. */
 export const selectAllRows = (s: LogState): DatalogRow[] => flattenActiveRows(s.logs)
 export const selectTotalDuration = (s: LogState) => s.logs.filter(l => l.enabled).reduce((a, l) => a + l.duration_ms, 0)
-export const selectAllSignals    = (s: LogState): string[] => {
-  const active = s.logs.filter(l => l.enabled)
+/** Sinais presentes em todos os logs ativos (sem os de runtime). */
+export function commonSignals(logs: LogEntry[]): string[] {
+  const active = logs.filter(l => l.enabled)
   if (!active.length) return []
   if (active.length === 1) return active[0].model.signals
   const first = new Set(active[0].model.signals)
@@ -49,6 +51,7 @@ export const selectAllSignals    = (s: LogState): string[] => {
   }
   return Array.from(first)
 }
+export const selectAllSignals    = (s: LogState): string[] => commonSignals(s.logs)
 
 export const useLogStore = create<LogState & LogActions>()(
   subscribeWithSelector((set, get) => ({

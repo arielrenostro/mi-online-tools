@@ -11,7 +11,7 @@ capabilities do OpenSpec em `openspec/specs/` (`openspec list --specs`).
 | Estilo | Tailwind CSS + shadcn/ui |
 | Gráficos | ECharts (via echarts-for-react) — heatmap, zoom, seleção, tooltip sincronizado |
 | Estado global | Zustand — fatias independentes por domínio |
-| Roteamento | React Router v6 — rotas aninhadas e guards |
+| Roteamento | React Router (hash router, URLs `/#/...`) — rotas aninhadas e guards; funciona em hospedagem estática sem fallback para `index.html` |
 | Armazenamento | IndexedDB + localStorage — sem backend, sem banco de dados |
 
 ## Modelo de sessão

@@ -1,10 +1,10 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { useTimeStore } from '@/store/timeStore'
 import { useUIStore } from '@/store/uiStore'
-import { useLogStore, selectAllRows } from '@/store/logStore'
+import { useDisplayRows } from '@/hooks/useDisplayRows'
 import { useCorrectionStore } from '@/store/correctionStore'
 import { useCorrectionMask } from '@/hooks/useCorrectionMask'
-import { SIGNAL_DEFS } from '@/signals/signalRegistry'
+import { DISPLAY_SIGNAL_DEFS } from '@/signals/signalRegistry'
 import type { DatalogRow, TimeSelection } from '@/types/datalog'
 
 // ─── Column definitions ───────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ const TEMPO_COL: ColDef = {
 }
 
 // Colunas de sinais derivadas do registry
-const SIGNAL_COLS: ColDef[] = SIGNAL_DEFS.map(sig => ({
+const SIGNAL_COLS: ColDef[] = DISPLAY_SIGNAL_DEFS.map(sig => ({
   id:             sig.name,
   label:          sig.name,
   width:          sig.tableWidth,
@@ -243,7 +243,7 @@ export function DataTab() {
   const selection        = useTimeStore(s => s.selection)
   const columnVisibility = useUIStore(s => s.columnVisibility)
   const setColVisibility = useUIStore(s => s.setColumnVisibility)
-  const allRows          = useLogStore(selectAllRows)
+  const allRows          = useDisplayRows()
   const mask              = useCorrectionMask()
   const showFilteredPoints = useCorrectionStore(s => s.showFilteredPoints)
 

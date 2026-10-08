@@ -27,6 +27,9 @@ dependências e tipos TypeScript não são duplicados como spec — são derivá
 | `datalog-dashboard` | Aba Dashboard |
 | `datalog-charts` | Aba Gráficos: painéis sincronizados, sidebar de sinais |
 | `datalog-table` | Aba Dados: tabela, colunas, exportação CSV |
+| `datalog-visual-filter` | Filtro visual (botão ao lado do "?"): ranges que substituem o destaque dos filtros de correção, só exibição e só de sessão |
+| `datalog-constants` | Seção Constantes (aba Logs): cilindrada/AFR/BSFC, calibração de VE (k) e sinais de runtime VE Lambda Corrigido, Potência, Torque |
+| `datalog-dyno` | Aba Dinamômetro: curva potência/torque × RPM (Roda/Motor, Bruto/Suavizado, filtros próprios) |
 | `heatmap-editing` | Contrato compartilhado de edição de tabela N×M (seleção, atalhos, undo/redo) |
 | `tuning-ve` | Aba VE: edição manual, mapa original, seção de correção |
 | `tuning-ve-correction` | Filtros de correção (aba Logs), geração do snapshot, heatmap de correção e aplicação no mapa VE |
@@ -34,6 +37,7 @@ dependências e tipos TypeScript não são duplicados como spec — são derivá
 | `tuning-lambda` | Aba Lambda (bloqueada na v1) |
 | `navigation-guards` | Rotas, guards (`RequireMap`/`RequireLog`), padrão de aba bloqueada |
 | `session-persistence` | O que sobrevive a um reload, ordem de restauração, invalidação |
+| `pwa` | App instalável (manifest), service worker offline, atualização automática, cache dos arquivos de update |
 
 ### Geral
 

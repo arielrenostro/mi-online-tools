@@ -1,6 +1,7 @@
 import { lsGet } from './localStorage'
 import * as mapPersistence       from './mapPersistence'
 import * as logPersistence       from './logPersistence'
+import { upgradeLogEntry }       from './logMigration'
 import * as correctionPersistence from './correctionPersistence'
 import type { LogEntry } from '@/types/datalog'
 
@@ -11,6 +12,8 @@ export async function restoreSession(): Promise<void> {
     restoreCorrection(),
     restoreUI(),
     restoreTime(),
+    restoreConstants(),
+    restoreDyno(),
   ])
   const { useSessionStore } = await import('@/store/sessionStore')
   useSessionStore.getState().setRestoringDone()
@@ -36,6 +39,13 @@ async function restoreLogs(): Promise<void> {
   let entries
   try { entries = await logPersistence.loadAllLogs() } catch { return }
   if (!entries.length) return
+
+  // Logs salvos por um leitor de CSV antigo ganham os sinais novos (ex.: Marcha) sem reimportar.
+  entries = await Promise.all(entries.map(async e => {
+    const upgraded = await upgradeLogEntry(e)
+    if (upgraded !== e) logPersistence.saveLog(upgraded).catch(() => { /* non-fatal */ })
+    return upgraded
+  }))
 
   const ordered = sortByOrder(entries, logOrder?.orderedHashes ?? [])
   const enabledSet = new Set(logOrder?.enabledHashes ?? [])
@@ -70,6 +80,18 @@ async function restoreUI(): Promise<void> {
   const { useUIStore } = await import('@/store/uiStore')
   const saved = lsGet<any>('miot:ui')
   if (saved) useUIStore.getState().hydrate(saved)
+}
+
+async function restoreConstants(): Promise<void> {
+  const { useConstantsStore } = await import('@/store/constantsStore')
+  const saved = lsGet<unknown>('miot:constants')
+  if (saved) useConstantsStore.getState().hydrate(saved)
+}
+
+async function restoreDyno(): Promise<void> {
+  const { useDynoStore } = await import('@/store/dynoStore')
+  const saved = lsGet<unknown>('miot:dyno')
+  if (saved) useDynoStore.getState().hydrate(saved)
 }
 
 async function restoreTime(): Promise<void> {

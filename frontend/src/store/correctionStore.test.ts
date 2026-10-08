@@ -10,6 +10,9 @@ import { useCorrectionStore } from './correctionStore'
 import { useLogStore } from './logStore'
 import { useMapStore } from './mapStore'
 import { useTimeStore } from './timeStore'
+import { useVisualFilterStore } from './visualFilterStore'
+import { useConstantsStore, DEFAULT_CONSTANTS } from './constantsStore'
+import { emptyVisualFilter } from '@/utils/visualFilter'
 import { DEFAULT_CORRECTION_FILTERS } from '@/types/correction'
 import type { MapModel } from '@/types/map'
 import type { DatalogRow, LogEntry } from '@/types/datalog'
@@ -46,6 +49,8 @@ beforeEach(() => {
   useMapStore.setState({ originalMap: null, editableMap: null })
   useLogStore.setState({ logs: [], isUploading: false, lastError: null })
   useTimeStore.setState({ cursor_ms: null, selection: null, sparklineSensor: 'RPM' })
+  useVisualFilterStore.getState().clear()
+  useConstantsStore.setState({ values: DEFAULT_CONSTANTS })
 })
 
 describe('generate', () => {
@@ -66,6 +71,53 @@ describe('generate', () => {
     expect(isStale).toBe(false)
     expect(snapshot!.cells[0][0].n).toBeCloseTo(2, 6)
     expect(snapshot!.provenance.logFilenames).toEqual(['log.csv'])
+  })
+})
+
+describe('generate with a visual filter active', () => {
+  it('ignores the visual filter and leaves the correction filters untouched', () => {
+    useMapStore.setState({ originalMap: makeMap() })
+    useLogStore.setState({ logs: [makeLog()] })
+
+    useCorrectionStore.getState().generate()
+    const baseline = useCorrectionStore.getState().snapshot!.cells
+
+    // A visual range that excludes every row (rows have MAP 90).
+    const visual = emptyVisualFilter()
+    visual.ranges.MAP = { enabled: true, min: 0, max: 10 }
+    useVisualFilterStore.getState().apply(visual)
+    const filtersBefore = useCorrectionStore.getState().filters
+    const draftBefore   = useCorrectionStore.getState().draftFilters
+
+    useCorrectionStore.getState().generate()
+    expect(useCorrectionStore.getState().snapshot!.cells).toEqual(baseline)
+
+    useVisualFilterStore.getState().clear()
+    expect(useCorrectionStore.getState().filters).toBe(filtersBefore)
+    expect(useCorrectionStore.getState().draftFilters).toBe(draftBefore)
+  })
+})
+
+describe('generate with non-default constants', () => {
+  it('produces the same snapshot regardless of the VE calibration', () => {
+    useMapStore.setState({ originalMap: makeMap() })
+    useLogStore.setState({ logs: [makeLog()] })
+
+    useCorrectionStore.getState().generate()
+    const baseline = useCorrectionStore.getState().snapshot!.cells
+
+    useConstantsStore.getState().set({ veAtFull: 873, displacementCc: 2000 })
+    useCorrectionStore.getState().generate()
+    expect(useCorrectionStore.getState().snapshot!.cells).toEqual(baseline)
+  })
+
+  it('does not mark an existing snapshot as stale when a constant changes', () => {
+    useMapStore.setState({ originalMap: makeMap() })
+    useLogStore.setState({ logs: [makeLog()] })
+    useCorrectionStore.getState().generate()
+
+    useConstantsStore.getState().set({ veAtFull: 873 })
+    expect(useCorrectionStore.getState().isStale).toBe(false)
   })
 })
 

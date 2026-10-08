@@ -26,7 +26,6 @@ Colunas identificadas sempre pelo **nome** (header), nunca por índice.
 | `Inj. Utiliz.` | Duty cycle do injetor | % | `int(raw)` |
 | `VE Value` | VE calculada pela ECU | % | `float(raw)/10` |
 | `Ign. Adv.` | Avanço de ignição | º | `int(raw)` |
-| `Batt Volt.` | Tensão da bateria | V | — (reservado) |
 | `CLT` | Temp. líquido arrefecimento | ºC | `int(raw)-273` |
 | `IAT` | Temp. ar admitido | ºC | `int(raw)-273` |
 | `KM/H` | Velocidade | km/h | `int(raw)` |
@@ -35,6 +34,12 @@ Colunas identificadas sempre pelo **nome** (header), nunca por índice.
 | `Lambda Corr` | Correção de combustível (fuel trim) | % | `(float(raw)-1000)/10` |
 | `Turbo Target` | Pressão de boost alvo | kPa | `int(raw)` |
 | `ACC %` | Posição do acelerador (pedal) | % | `min(100.0, float(raw)/990.0*100.0)` |
+| `Inj. Pulse` | Tempo de injeção (já inclui o dead time) | ms | `float(raw)/100` (1337 → 13,37 ms; 10 µs por unidade) |
+| `Inj. DT` | Dead time do injetor (varia com a tensão da bateria) | ms | `float(raw)/1000` (1100 → 1,1 ms) |
+| `ACP %` | Pressão do compressor do A/C (o nome diz `%`, a unidade é kPa) | kPa | `int(raw)` |
+| `dACC %` | Variação do acelerador (positivo = pedal subindo) | % | `(int(raw)-5000)/100` — 5000 = zero; divisor **não verificado** na ECU |
+| `Batt Volt.` | Tensão da bateria | V | `float(raw)/10` |
+| `Lambda 2` | Neste setup carrega a pressão de óleo, não um segundo lambda | bar | `float(raw)/100` (173 → 1,73 bar) |
 
 ### Notas sobre conversores
 
@@ -42,11 +47,13 @@ Colunas identificadas sempre pelo **nome** (header), nunca por índice.
 - **Lambda 1 / Lambda Target**: raw = lambda × 1000; dividir por 1000
 - **Lambda Corr**: offset 1000, escala ×10; `(raw-1000)/10`. raw=1020 → +2.0%; raw=980 → -2.0%
 - **ACC %**: raw 0–990; normalizar para 0–100%, clampar em 100%
+- **Inj. Pulse / Inj. DT**: escalas diferentes (10 µs e 1 µs por unidade). `Inj. Efetivo = Inj. Pulse − Inj. DT` é derivado no parse (só existe se as duas colunas existirem)
+- **dACC %**: 5000 = pedal estável; o divisor 100 é a melhor leitura disponível, não calibrada — não usar em cálculo
 - **Lambda Loop**: `0`=open loop (ECU não corrige), `1`=closed loop (ECU corrige), `2`=closed loop com auto-correção de combustível ativa
 
 ### Colunas presentes mas não usadas na v1
 
-`Event`, `Mess 1`, `Mess 2`, `Idle`, `Inj. Pulse`, `Knock`, `A/C Input`, `Start Input`, `Outputs 1`, `Outputs 2`, `Lambda 2`, `Inj. DT`, `Ign. Dwell`, `Strobo Angle`, `ACP %`, `dACC %`, e as duas colunas sem nome (`0;0` final).
+`Event`, `Mess 1`, `Mess 2`, `Idle`, `Load %`, `Knock`, `A/C Input`, `Start Input`, `Outputs 1`, `Outputs 2`, `Ign. Dwell`, `Strobo Angle`. As duas colunas finais chamadas `0`: a última é a marcha (sinal `Marcha`, ver `datalog-import`); a outra não é usada.
 
 ## Regras de parsing
 

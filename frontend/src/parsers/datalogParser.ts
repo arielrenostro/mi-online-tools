@@ -4,8 +4,10 @@ import { SIGNAL_DEFS } from '@/signals/signalRegistry'
 
 const RAW_SIGNALS      = SIGNAL_DEFS.filter(s => s.column !== undefined)
 const DERIVED_SIGNALS  = SIGNAL_DEFS.filter(s => s.compute !== undefined)
-const REQUIRED_COLUMNS = RAW_SIGNALS.map(s => s.column!)
-const ALL_SIGNALS      = SIGNAL_DEFS.map(s => s.name)
+const REQUIRED_COLUMNS = RAW_SIGNALS.filter(s => !s.optional).map(s => s.column!)
+
+/** Incrementar quando o parser passar a ler/gerar sinais novos: logs salvos com versão menor são reparseados ao restaurar. */
+export const PARSER_VERSION = 3
 
 export async function parseDatalogClient(file: File): Promise<DatalogModel> {
   const [text, hash] = await Promise.all([file.text(), computeHash(file)])
@@ -27,6 +29,7 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
     const isHeaderLine = fields.find(f => f == 'RPM') && fields.find(f => f == 'MAP') && fields.find(f => f == 'Lambda 1')
     if (isHeaderLine) {
       colMap = {}
+      // Nomes repetidos (as duas colunas "0"): o último índice vence — é onde está a Marcha.
       fields.forEach((f, i) => { colMap[f.trim()] = i })
       const missing = REQUIRED_COLUMNS.filter(c => !(c in colMap))
       if (missing.length > 0) {
@@ -52,14 +55,19 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
     let valid = true
 
     for (const sig of RAW_SIGNALS) {
+      if (sig.optional && !(sig.column! in colMap)) continue
       const converted = sig.convert!(g(sig.column!))
-      if (isNaN(converted)) { valid = false; break }
+      if (isNaN(converted)) {
+        if (sig.optional) continue // linha mantida, só sem esse sinal
+        valid = false; break
+      }
       row[sig.name] = converted
     }
 
     if (!valid) continue
 
     for (const sig of DERIVED_SIGNALS) {
+      if (sig.inputs && !sig.inputs.every(n => Number.isFinite(row[n]))) continue // linha mantida, só sem esse derivado
       row[sig.name] = sig.compute!(row)
     }
 
@@ -70,11 +78,24 @@ export function parseDatalogText(text: string, filename: string, hash: string): 
 
   if (rows.length === 0) throw new Error('Nenhuma linha de dados válida no CSV.')
 
+  // Brutos: colunas obrigatórias ou presentes no CSV. Derivados com `inputs`: só se todos estiverem listados.
+  const listed = new Set<string>()
+  const signals: string[] = []
+  for (const s of SIGNAL_DEFS) {
+    const available = s.column !== undefined
+      ? !s.optional || s.column in colMap
+      : !s.inputs || s.inputs.every(n => listed.has(n))
+    if (!available) continue
+    listed.add(s.name)
+    signals.push(s.name)
+  }
+
   return {
     hash,
     filename,
     rows,
     duration_ms: rows[rows.length - 1].timestamp_ms,
-    signals:     ALL_SIGNALS,
+    signals,
+    parserVersion: PARSER_VERSION,
   }
 }

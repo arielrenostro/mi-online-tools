@@ -1,57 +1,15 @@
-import { useRef } from 'react'
 import { SyncedChart } from '@/components/SyncedChart'
 import { useUIStore } from '@/store/uiStore'
-import { useLogStore, selectAllRows, selectAllSignals } from '@/store/logStore'
+import { useDisplayRows, useDisplaySignals } from '@/hooks/useDisplayRows'
 import { useTimeStore } from '@/store/timeStore'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
-import type { DatalogRow } from '@/types/datalog'
-
-function ResizeHandle({ height, onResize }: { height: number; onResize: (h: number) => void }) {
-  const startRef = useRef<{ y: number; h: number } | null>(null)
-
-  function onMouseDown(e: React.MouseEvent) {
-    e.preventDefault()
-    startRef.current = { y: e.clientY, h: height }
-    function onMove(ev: MouseEvent) {
-      if (!startRef.current) return
-      const newH = Math.max(200, Math.min(1200, startRef.current.h + ev.clientY - startRef.current.y))
-      onResize(newH)
-    }
-    function onUp() {
-      startRef.current = null
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-  }
-
-  return (
-    <div
-      className="flex-shrink-0 h-3 cursor-ns-resize flex items-center justify-center group hover:bg-gray-800/60"
-      onMouseDown={onMouseDown}
-    >
-      <div className="w-10 h-0.5 rounded-full bg-gray-700 group-hover:bg-gray-400 transition-colors" />
-    </div>
-  )
-}
-
-function findLastRow(rows: DatalogRow[], t: number): DatalogRow | null {
-  if (!rows.length || rows[0].timestamp_ms > t) return null
-  let lo = 0, hi = rows.length - 1
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1
-    if (rows[mid].timestamp_ms <= t) lo = mid
-    else hi = mid - 1
-  }
-  return rows[lo]
-}
+import { findLastRow } from '@/utils/findLastRow'
 
 function SignalSidebar() {
   const open            = useUIStore(s => s.chartSidebarOpen)
   const setOpen         = useUIStore(s => s.setChartSidebarOpen)
-  const allRows         = useLogStore(selectAllRows)
-  const allSignals      = useLogStore(selectAllSignals)
+  const allRows         = useDisplayRows()
+  const allSignals      = useDisplaySignals()
   const cursor_ms       = useTimeStore(s => s.cursor_ms)
 
   const currentRow = cursor_ms !== null ? findLastRow(allRows, cursor_ms) : null
@@ -108,20 +66,15 @@ function SignalSidebar() {
 }
 
 export function ChartsTab() {
-  const chartsHeight    = useUIStore(s => s.chartsHeight)
-  const setChartsHeight = useUIStore(s => s.setChartsHeight)
-
   return (
     <div className="h-full flex flex-col">
       <div className="flex flex-1 min-h-0">
-        <div className="flex-1 min-w-0 overflow-y-auto">
-          <div style={{ height: chartsHeight }}>
-            <SyncedChart />
-          </div>
+        {/* A altura vem dos painéis (soma das linhas): rola na vertical, nunca na horizontal. */}
+        <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+          <SyncedChart />
         </div>
         <SignalSidebar />
       </div>
-      <ResizeHandle height={chartsHeight} onResize={setChartsHeight} />
     </div>
   )
 }

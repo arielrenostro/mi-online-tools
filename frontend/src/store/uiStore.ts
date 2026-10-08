@@ -2,16 +2,15 @@ import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { UIState, TuningAnalysisMode, DatalogTab, ChartLayout, ChartPanel, ChartSplit } from '@/types/ui'
 import { lsSet } from '@/persistence/localStorage'
-
-const INITIAL_PANEL_ID = crypto.randomUUID()
+import { buildDefaultChartLayout, findPanel, resizePanelHeight, resizePanelWidth } from '@/utils/chartLayoutSize'
+import { migrateChartLayout } from '@/utils/chartLayoutMigration'
 
 const initialState: UIState = {
   originalMapCollapsed: false,
   tuningAnalysisMode:   've_lambda',
   datalogTab:           'logs',
   columnVisibility:     {},
-  chartLayout:          { type: 'panel', panelId: INITIAL_PANEL_ID, signals: ['RPM'] },
-  chartsHeight:         400,
+  chartLayout:          buildDefaultChartLayout(),
   chartSidebarOpen:     true,
 }
 
@@ -21,13 +20,16 @@ interface UIActions {
   setDatalogTab(tab: DatalogTab): void
   setColumnVisibility(signal: string, visible: boolean): void
   setChartLayout(layout: ChartLayout): void
-  addChartPanel(parentId: string, direction: 'horizontal' | 'vertical', extraHeight?: number): void
+  addChartPanel(parentId: string, direction: 'horizontal' | 'vertical'): void
   removeChartPanel(panelId: string): void
   updatePanelSignals(panelId: string, signals: string[]): void
-  updateSplitRatio(splitId: string, ratio: number): void
-  setChartsHeight(h: number): void
+  /** `dir` 1 = aumentar, -1 = diminuir; mexe na altura da linha do painel. */
+  resizePanelHeight(panelId: string, dir: 1 | -1): void
+  /** `dir` 1 = aumentar, -1 = diminuir; toma do (ou devolve ao) vizinho lado a lado. */
+  resizePanelWidth(panelId: string, dir: 1 | -1): void
   setChartSidebarOpen(v: boolean): void
-  hydrate(state: Partial<UIState>): void
+  /** `chartsHeight` só existe em estados salvos pela versão com arrasto — usado na migração. */
+  hydrate(state: Partial<UIState> & { chartsHeight?: number }): void
 }
 
 export const useUIStore = create<UIState & UIActions>()(
@@ -45,15 +47,13 @@ export const useUIStore = create<UIState & UIActions>()(
 
     setChartLayout(layout) { set({ chartLayout: layout }); persist() },
 
-    addChartPanel(parentId, direction, extraHeight) {
-      const newPanel: ChartPanel = { type: 'panel', panelId: crypto.randomUUID(), signals: [] }
+    addChartPanel(parentId, direction) {
+      const source = findPanel(get().chartLayout, parentId)
+      if (!source) return
+      // o novo painel nasce com a altura do de origem; nenhum outro painel muda de tamanho
+      const newPanel: ChartPanel = { type: 'panel', panelId: crypto.randomUUID(), signals: [], height: source.height }
       const updated = splitPanel(get().chartLayout, parentId, direction, newPanel)
-      if (updated) {
-        const update: Partial<UIState> = { chartLayout: updated }
-        if (extraHeight && direction === 'vertical') update.chartsHeight = get().chartsHeight + extraHeight
-        set(update)
-        persist()
-      }
+      if (updated) { set({ chartLayout: updated }); persist() }
     },
 
     removeChartPanel(panelId) {
@@ -68,17 +68,22 @@ export const useUIStore = create<UIState & UIActions>()(
       if (updated) { set({ chartLayout: updated }); persist() }
     },
 
-    updateSplitRatio(splitId, ratio) {
-      const updated = updateRatio(get().chartLayout, splitId, ratio)
+    resizePanelHeight(panelId, dir) {
+      const updated = resizePanelHeight(get().chartLayout, panelId, dir)
       if (updated) { set({ chartLayout: updated }); persist() }
     },
 
-    setChartsHeight(h) { set({ chartsHeight: h }); persist() },
+    resizePanelWidth(panelId, dir) {
+      const updated = resizePanelWidth(get().chartLayout, panelId, dir)
+      if (updated) { set({ chartLayout: updated }); persist() }
+    },
+
     setChartSidebarOpen(v) { set({ chartSidebarOpen: v }); persist() },
 
     hydrate(savedState) {
-      const migratedLayout = savedState.chartLayout ? migrateSplitIds(savedState.chartLayout) : undefined
-      set({ ...initialState, ...savedState, ...(migratedLayout ? { chartLayout: migratedLayout } : {}) })
+      const { chartsHeight, chartLayout, ...rest } = savedState
+      const migratedLayout = chartLayout ? migrateChartLayout(chartLayout, chartsHeight) : null
+      set({ ...initialState, ...rest, ...(migratedLayout ? { chartLayout: migratedLayout } : {}) })
     },
   }))
 )
@@ -91,7 +96,6 @@ function persist() {
     datalogTab:           s.datalogTab,
     columnVisibility:     s.columnVisibility,
     chartLayout:          s.chartLayout,
-    chartsHeight:         s.chartsHeight,
     chartSidebarOpen:     s.chartSidebarOpen,
   })
 }
@@ -99,7 +103,11 @@ function persist() {
 function splitPanel(layout: ChartLayout, targetId: string, direction: 'horizontal' | 'vertical', newPanel: ChartPanel): ChartLayout | null {
   if (layout.type === 'panel') {
     if (layout.panelId !== targetId) return null
-    const split: ChartSplit = { type: 'split', direction, children: [layout, newPanel], splitId: crypto.randomUUID(), ratio: 0.5 }
+    const children: [ChartLayout, ChartLayout] = [layout, newPanel]
+    const splitId = crypto.randomUUID()
+    const split: ChartSplit = direction === 'horizontal'
+      ? { type: 'split', direction, children, splitId, ratio: 0.5 }
+      : { type: 'split', direction, children, splitId }
     return split
   }
   let changed = false
@@ -148,31 +156,6 @@ function updateSignals(layout: ChartLayout, targetId: string, signals: string[])
 function countPanels(layout: ChartLayout): number {
   if (layout.type === 'panel') return 1
   return layout.children.reduce((acc, c) => acc + countPanels(c), 0)
-}
-
-function updateRatio(layout: ChartLayout, splitId: string, ratio: number): ChartLayout | null {
-  if (layout.type === 'panel') return null
-  if (layout.splitId === splitId) return { ...layout, ratio }
-  let changed = false
-  const newChildren = layout.children.map(child => {
-    if (changed) return child
-    const r = updateRatio(child, splitId, ratio)
-    if (r) { changed = true; return r }
-    return child
-  }) as [ChartLayout, ChartLayout]
-  return changed ? { ...layout, children: newChildren } : null
-}
-
-function migrateSplitIds(layout: ChartLayout): ChartLayout {
-  if (layout.type === 'panel') return layout
-  return {
-    ...layout,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    splitId: (layout as any).splitId ?? crypto.randomUUID(),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ratio:   (layout as any).ratio   ?? 0.5,
-    children: [migrateSplitIds(layout.children[0]), migrateSplitIds(layout.children[1])],
-  }
 }
 
 export function flattenPanels(layout: ChartLayout): import('@/types/ui').ChartPanel[] {

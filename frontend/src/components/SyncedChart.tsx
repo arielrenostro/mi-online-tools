@@ -3,10 +3,12 @@ import ReactECharts from 'echarts-for-react'
 import * as echarts from 'echarts'
 import { useUIStore, flattenPanels } from '@/store/uiStore'
 import { useTimeStore } from '@/store/timeStore'
-import { useLogStore, selectAllRows, selectAllSignals } from '@/store/logStore'
+import { useDisplayRows, useDisplaySignals } from '@/hooks/useDisplayRows'
 import { useCorrectionStore } from '@/store/correctionStore'
 import { useCorrectionMask } from '@/hooks/useCorrectionMask'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
+import { findLastRow } from '@/utils/findLastRow'
+import { layoutHeight, canResizeHeight, canResizeWidth, hasHorizontalNeighbour } from '@/utils/chartLayoutSize'
 import type { ChartLayout, ChartPanel } from '@/types/ui'
 import type { DatalogRow } from '@/types/datalog'
 
@@ -16,17 +18,6 @@ const PALETTE = ['#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f87171', '#fb923c
 
 function sigColor(signal: string, idx: number): string {
   return PALETTE[idx % PALETTE.length]
-}
-
-function findLastRow(rows: DatalogRow[], t: number): DatalogRow | null {
-  if (!rows.length || rows[0].timestamp_ms > t) return null
-  let lo = 0, hi = rows.length - 1
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1
-    if (rows[mid].timestamp_ms <= t) lo = mid
-    else hi = mid - 1
-  }
-  return rows[lo]
 }
 
 function fmtMs(ms: number): string {
@@ -218,6 +209,24 @@ function AddSignalDropdown({ available, onAdd }: { available: string[]; onAdd: (
   )
 }
 
+// ─── Size Buttons ─────────────────────────────────────────────────────────────
+
+function SizeButtons({ label, what, onDecrease, onIncrease, canDecrease, canIncrease }: {
+  label: string; what: 'altura' | 'largura'
+  onDecrease: () => void; onIncrease: () => void
+  canDecrease: boolean; canIncrease: boolean
+}) {
+  const cls = 'px-1.5 py-0.5 text-xs text-gray-500 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded ' +
+    'disabled:opacity-30 disabled:hover:text-gray-500 disabled:hover:border-gray-700 disabled:cursor-not-allowed'
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      <span className="text-xs text-gray-600 select-none">{label}</span>
+      <button onClick={onDecrease} disabled={!canDecrease} title={`Diminuir ${what}`} className={cls}>−</button>
+      <button onClick={onIncrease} disabled={!canIncrease} title={`Aumentar ${what}`} className={cls}>+</button>
+    </span>
+  )
+}
+
 // ─── Panel View ───────────────────────────────────────────────────────────────
 
 const PanelView = memo(function PanelView({
@@ -238,7 +247,6 @@ const PanelView = memo(function PanelView({
   showFilteredPoints: boolean
 }) {
   const chartRef    = useRef<ReactECharts>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
   const cursorRef   = useRef(cursor_ms)
   cursorRef.current = cursor_ms
 
@@ -247,6 +255,15 @@ const PanelView = memo(function PanelView({
   const updatePanelSignals = useUIStore(s => s.updatePanelSignals)
   const addChartPanel      = useUIStore(s => s.addChartPanel)
   const removeChartPanel   = useUIStore(s => s.removeChartPanel)
+  const resizeHeight       = useUIStore(s => s.resizePanelHeight)
+  const resizeWidth        = useUIStore(s => s.resizePanelWidth)
+  const id = panel.panelId
+  // booleanos: o painel só re-renderiza quando um botão muda de estado
+  const canTaller  = useUIStore(s => canResizeHeight(s.chartLayout, id, 1))
+  const canShorter = useUIStore(s => canResizeHeight(s.chartLayout, id, -1))
+  const hasNeighbour = useUIStore(s => hasHorizontalNeighbour(s.chartLayout, id))
+  const canWider   = useUIStore(s => canResizeWidth(s.chartLayout, id, 1))
+  const canNarrower = useUIStore(s => canResizeWidth(s.chartLayout, id, -1))
 
   const available = allSignals.filter(s => !panel.signals.includes(s))
 
@@ -281,7 +298,15 @@ const PanelView = memo(function PanelView({
     echarts.connect(GROUP_ID)
     applyMarkLine(inst, cursorRef.current)
     syncCtx?.registerChart(panel.panelId, inst)
+    syncCtx?.applySelectionZoom(inst)
   }, [applyMarkLine, syncCtx, panel.panelId])
+
+  // `notMerge` reinicia o dataZoom a cada novo `option` (e um painel recém-criado nasce a 100%):
+  // reaplica o intervalo da seleção sempre que o gráfico é reconstruído.
+  useEffect(() => {
+    const inst = chartRef.current?.getEchartsInstance?.()
+    if (inst) syncCtx?.applySelectionZoom(inst)
+  }, [option, syncCtx])
 
   // Unregister on unmount
   useEffect(() => {
@@ -295,7 +320,7 @@ const PanelView = memo(function PanelView({
   }, [syncCtx, panel.panelId])
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full min-h-0 border border-gray-700 rounded">
+    <div className="flex flex-col h-full min-h-0 min-w-0 overflow-hidden border border-gray-700 rounded">
       {/* Control bar */}
       <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-900 border-b border-gray-700 flex-shrink-0 flex-wrap">
         {panel.signals.map((sig, i) => (
@@ -310,14 +335,27 @@ const PanelView = memo(function PanelView({
           available={available}
           onAdd={sig => updatePanelSignals(panel.panelId, [...panel.signals, sig])}
         />
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+          <SizeButtons
+            label="↕" what="altura"
+            onDecrease={() => resizeHeight(id, -1)} onIncrease={() => resizeHeight(id, 1)}
+            canDecrease={canShorter} canIncrease={canTaller}
+          />
+          {hasNeighbour && (
+            <SizeButtons
+              label="⟷" what="largura"
+              onDecrease={() => resizeWidth(id, -1)} onIncrease={() => resizeWidth(id, 1)}
+              canDecrease={canNarrower} canIncrease={canWider}
+            />
+          )}
+          <span className="w-px h-4 bg-gray-700 mx-0.5" />
           <button
             onClick={() => addChartPanel(panel.panelId, 'horizontal')}
             title="Dividir lado a lado"
             className="px-1.5 py-0.5 text-xs text-gray-500 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded"
           >↔</button>
           <button
-            onClick={() => addChartPanel(panel.panelId, 'vertical', containerRef.current?.clientHeight)}
+            onClick={() => addChartPanel(panel.panelId, 'vertical')}
             title="Adicionar abaixo"
             className="px-1.5 py-0.5 text-xs text-gray-500 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded"
           >+ ↓</button>
@@ -351,45 +389,6 @@ const PanelView = memo(function PanelView({
     </div>
   )
 })
-
-// ─── Vertical Divider ─────────────────────────────────────────────────────────
-
-function VerticalDivider({ splitId, ratio }: { splitId: string; ratio: number }) {
-  const updateSplitRatio = useUIStore(s => s.updateSplitRatio)
-  const startRef = useRef<{ y: number; ratio: number; containerH: number } | null>(null)
-
-  function onMouseDown(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    const parent = (e.currentTarget as HTMLElement).parentElement
-    const containerH = parent?.getBoundingClientRect().height ?? 1
-    startRef.current = { y: e.clientY, ratio, containerH }
-    function onMove(ev: MouseEvent) {
-      if (!startRef.current) return
-      const delta = ev.clientY - startRef.current.y
-      const newRatio = Math.max(0.1, Math.min(0.9,
-        startRef.current.ratio + delta / startRef.current.containerH,
-      ))
-      updateSplitRatio(splitId, newRatio)
-    }
-    function onUp() {
-      startRef.current = null
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-  }
-
-  return (
-    <div
-      className="flex-shrink-0 h-1.5 cursor-ns-resize flex items-center justify-center group hover:bg-blue-900/20"
-      onMouseDown={onMouseDown}
-    >
-      <div className="w-8 h-0.5 rounded bg-gray-700 group-hover:bg-blue-400 transition-colors" />
-    </div>
-  )
-}
 
 // ─── Layout Renderer ──────────────────────────────────────────────────────────
 
@@ -426,27 +425,28 @@ function LayoutRenderer({
 
   const commonProps = { rows, cursor_ms, allSignals, panelCount, mask, showFilteredPoints }
 
+  // Altura: cada filho de uma pilha cresce na proporção da própria altura (base 0), o que é exato
+  // quando o contêiner mede a soma; numa coluna mais baixa que a linha, estica proporcionalmente.
   if (layout.direction === 'vertical') {
-    const ratio = layout.ratio ?? 0.5
     return (
       <div className="flex flex-col h-full">
-        <div style={{ flex: ratio, minHeight: 0, minWidth: 0 }}>
-          <LayoutRenderer layout={layout.children[0]} {...commonProps} />
-        </div>
-        <VerticalDivider splitId={layout.splitId} ratio={ratio} />
-        <div style={{ flex: 1 - ratio, minHeight: 0, minWidth: 0 }}>
-          <LayoutRenderer layout={layout.children[1]} {...commonProps} />
-        </div>
+        {layout.children.map((child, i) => (
+          <div key={i} style={{ flex: `${layoutHeight(child)} 1 0px`, minHeight: 0, minWidth: 0 }}>
+            <LayoutRenderer layout={child} {...commonProps} />
+          </div>
+        ))}
       </div>
     )
   }
 
+  // Largura: o `ratio` reparte o espaço entre os dois lados; a soma é sempre a largura disponível.
+  const ratio = layout.ratio
   return (
     <div className="flex flex-row gap-1 h-full">
-      <div className="flex-1 min-h-0 min-w-0">
+      <div style={{ flex: `${ratio} 1 0px`, minHeight: 0, minWidth: 0 }}>
         <LayoutRenderer layout={layout.children[0]} {...commonProps} />
       </div>
-      <div className="flex-1 min-h-0 min-w-0">
+      <div style={{ flex: `${1 - ratio} 1 0px`, minHeight: 0, minWidth: 0 }}>
         <LayoutRenderer layout={layout.children[1]} {...commonProps} />
       </div>
     </div>
@@ -466,6 +466,8 @@ type CtrlDrag =
 const ChartSyncContext = React.createContext<{
   registerChart:   (id: string, inst: echarts.ECharts) => void
   unregisterChart: (id: string) => void
+  /** Aplica a seleção atual (ou o intervalo completo) ao zoom de um gráfico recém-criado/reconstruído. */
+  applySelectionZoom: (inst: echarts.ECharts) => void
   instancesRef:    React.MutableRefObject<Map<string, echarts.ECharts>>
 } | null>(null)
 
@@ -476,9 +478,10 @@ export function SyncedChart() {
   const selection      = useTimeStore(s => s.selection)
   const setSelection   = useTimeStore(s => s.setSelection)
   const clearSelection = useTimeStore(s => s.clearSelection)
-  const allRows        = useLogStore(selectAllRows)
-  const allSignals     = useLogStore(selectAllSignals)
+  const allRows        = useDisplayRows()
+  const allSignals     = useDisplaySignals()
   const panelCount     = flattenPanels(chartLayout).length
+  const totalHeight    = useMemo(() => layoutHeight(chartLayout), [chartLayout])
   const mask                = useCorrectionMask()
   const showFilteredPoints  = useCorrectionStore(s => s.showFilteredPoints)
 
@@ -508,21 +511,31 @@ export function SyncedChart() {
   }, [setCtrlDrag])
 
   // ── selection → ECharts sync (TimeRail/clear → chart zoom) ──────────────────
-  useEffect(() => {
-    const instances = Array.from(instancesRef.current.values()).filter(i => !i.isDisposed())
+  // O dispatch roda sob `updatingFromExternal` para o handler de `datazoom` não devolver ao store
+  // (e, no caso de intervalo completo, limpar) uma seleção que acabou de vir dele.
+  const selectionRef = useRef(selection)
+  selectionRef.current = selection
+
+  const dispatchZoom = useCallback((instances: echarts.ECharts[], sel: typeof selection) => {
     if (instances.length === 0) return
     updatingFromExternal.current = true
-    if (selection) {
-      instances.forEach(inst =>
-        inst.dispatchAction({ type: 'dataZoom', startValue: selection.start_ms, endValue: selection.end_ms })
-      )
-    } else {
-      instances.forEach(inst =>
-        inst.dispatchAction({ type: 'dataZoom', start: 0, end: 100 })
-      )
-    }
+    instances.forEach(inst =>
+      inst.dispatchAction(sel
+        ? { type: 'dataZoom', startValue: sel.start_ms, endValue: sel.end_ms }
+        : { type: 'dataZoom', start: 0, end: 100 })
+    )
     requestAnimationFrame(() => { updatingFromExternal.current = false })
-  }, [selection])
+  }, [])
+
+  useEffect(() => {
+    dispatchZoom(Array.from(instancesRef.current.values()).filter(i => !i.isDisposed()), selection)
+  }, [selection, dispatchZoom])
+
+  // Gráfico novo/reconstruído nasce a 100%: só precisa de ação quando há seleção.
+  const applySelectionZoom = useCallback((inst: echarts.ECharts) => {
+    const sel = selectionRef.current
+    if (sel && !inst.isDisposed()) dispatchZoom([inst], sel)
+  }, [dispatchZoom])
 
   // ── ECharts instances registry + datazoom → store ────────────────────────────
   // echarts.connect propaga o zoom visual entre painéis, mas o evento datazoom
@@ -659,7 +672,10 @@ export function SyncedChart() {
     }
   }, [])
 
-  const ctx = useMemo(() => ({ registerChart, unregisterChart, instancesRef }), [registerChart, unregisterChart])
+  const ctx = useMemo(
+    () => ({ registerChart, unregisterChart, applySelectionZoom, instancesRef }),
+    [registerChart, unregisterChart, applySelectionZoom],
+  )
 
   // ── Selection rectangle position ──────────────────────────────────────────────
   const selectionRect = useMemo(() => {
@@ -675,7 +691,8 @@ export function SyncedChart() {
     <ChartSyncContext.Provider value={ctx}>
       <div
         ref={containerRef}
-        className="h-full relative"
+        className="relative"
+        style={{ height: totalHeight }}
         onClick={handleContainerClick}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}

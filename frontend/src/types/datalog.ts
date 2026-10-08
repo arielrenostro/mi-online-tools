@@ -9,6 +9,8 @@ export interface DatalogModel {
   rows:        DatalogRow[]
   duration_ms: number
   signals:     string[]
+  /** Versão do leitor de CSV que gerou este model; ausente = 1 (antes da Marcha). */
+  parserVersion?: number
 }
 
 export interface LogEntry {

@@ -1,7 +1,11 @@
-import { useRef, useEffect, useState, useMemo } from 'react'
+import { useRef, useState, useMemo } from 'react'
 import { useTimeStore } from '@/store/timeStore'
-import { useLogStore, selectActiveLogs, selectTotalDuration, selectAllRows, selectAllSignals } from '@/store/logStore'
-import type { DatalogRow, TimeSelection } from '@/types/datalog'
+import { useLogStore, selectActiveLogs, selectTotalDuration } from '@/store/logStore'
+import { useDisplayRows, useDisplaySignals } from '@/hooks/useDisplayRows'
+import { SIGNAL_MAP } from '@/signals/signalRegistry'
+import { buildSparkline, type SparklineData } from '@/utils/sparkline'
+import { findLastRow } from '@/utils/findLastRow'
+import type { TimeSelection } from '@/types/datalog'
 
 // ─── utils ───────────────────────────────────────────────────────────────────
 
@@ -31,42 +35,78 @@ function fmtDur(ms: number): string {
   return `${m}min ${s}s`
 }
 
-function getSignalValue(row: DatalogRow, signal: string): number {
-  return row[signal] ?? 0
+const SPARK_W = 1000
+const SPARK_H = 100
+const SPARK_PAD = 10
+
+function isNum(v: unknown): v is number {
+  return typeof v === 'number' && !isNaN(v)
+}
+
+function sparkY(v: number, min: number, max: number): number {
+  if (max === min) return SPARK_H / 2
+  return SPARK_H - SPARK_PAD - ((v - min) / (max - min)) * (SPARK_H - 2 * SPARK_PAD)
+}
+
+function formatSignal(signal: string, v: number): string {
+  const def = SIGNAL_MAP.get(signal)
+  return def ? def.format(v) : v.toFixed(3)
 }
 
 // ─── SparklineSVG ─────────────────────────────────────────────────────────────
 
-function SparklineSVG({ data, total }: { data: [number, number][]; total: number }) {
-  const svgRef = useRef<SVGSVGElement>(null)
-  const [dims, setDims] = useState({ w: 0, h: 48 })
+// viewBox fixo + preserveAspectRatio="none": o navegador escala, sem medir o contêiner.
+function SparklineSVG({ data, total }: { data: SparklineData; total: number }) {
+  if (data.segments.length === 0 || total === 0) return null
+  const { min, max } = data
 
-  useEffect(() => {
-    const el = svgRef.current?.parentElement
-    if (!el) return
-    const obs = new ResizeObserver(e => setDims({ w: e[0].contentRect.width, h: e[0].contentRect.height }))
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [])
-
-  if (data.length < 2 || dims.w === 0 || total === 0) return null
-
-  const vals = data.map(([, v]) => v)
-  const minV = Math.min(...vals)
-  const maxV = Math.max(...vals)
-  const range = maxV - minV || 1
-
-  const pts = data.map(([t, v]) => {
-    const x = (t / total) * dims.w
-    const y = dims.h - ((v - minV) / range) * (dims.h * 0.8) - dims.h * 0.1
-    return `${x.toFixed(1)},${y.toFixed(1)}`
-  }).join(' ')
+  let line = ''
+  let area = ''
+  for (const seg of data.segments) {
+    const pts = seg.map(([t, v]) => [(t / total) * SPARK_W, sparkY(v, min, max)] as const)
+    line += pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join('')
+    if (pts.length === 1) { line += 'h0'; continue }
+    area += `M${pts[0][0].toFixed(1)},${SPARK_H}`
+      + pts.map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(1)}`).join('')
+      + `L${pts[pts.length - 1][0].toFixed(1)},${SPARK_H}Z`
+  }
 
   return (
-    <svg ref={svgRef} className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none">
-      <polygon points={`0,${dims.h} ${pts} ${dims.w},${dims.h}`} fill="rgba(59,130,246,0.1)" />
-      <polyline points={pts} fill="none" stroke="rgba(59,130,246,0.4)" strokeWidth="1.5" strokeLinejoin="round" />
+    <svg
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      viewBox={`0 0 ${SPARK_W} ${SPARK_H}`}
+      preserveAspectRatio="none"
+    >
+      <path d={area} fill="rgba(96,165,250,0.18)" />
+      <path
+        d={line} fill="none" stroke="rgba(96,165,250,0.85)" strokeWidth="1.5"
+        strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke"
+      />
     </svg>
+  )
+}
+
+// ─── SparklineScale / SparklineDot ────────────────────────────────────────────
+
+function SparklineScale({ data, signal }: { data: SparklineData; signal: string }) {
+  if (data.segments.length === 0) return null
+  return (
+    <div className="absolute left-1 top-0 bottom-0 z-30 flex flex-col justify-between py-0.5 text-[10px] leading-none text-gray-400 font-mono pointer-events-none">
+      <span>{formatSignal(signal, data.max)}</span>
+      <span>{formatSignal(signal, data.min)}</span>
+    </div>
+  )
+}
+
+function SparklineDot({ data, cursor_ms, value, total }: {
+  data: SparklineData; cursor_ms: number; value: number | null; total: number
+}) {
+  if (value === null || data.segments.length === 0) return null
+  return (
+    <div
+      className="absolute z-30 w-2 h-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-400 ring-1 ring-gray-900 pointer-events-none"
+      style={{ left: `${msToPct(cursor_ms, total)}%`, top: `${sparkY(value, data.min, data.max)}%` }}
+    />
   )
 }
 
@@ -137,10 +177,12 @@ function LogSeparators({ logs, total }: { logs: { duration_ms: number }[]; total
 
 // ─── StatusBar ────────────────────────────────────────────────────────────────
 
-function StatusBar({ cursor_ms, selection, onClear }: {
+function StatusBar({ cursor_ms, selection, onClear, sensor, sensorValue }: {
   cursor_ms: number | null
   selection: TimeSelection | null
   onClear: () => void
+  sensor: string
+  sensorValue: number | null
 }) {
   return (
     <div className="flex items-center gap-4 px-3 pb-2 text-xs text-gray-400 font-mono">
@@ -148,6 +190,12 @@ function StatusBar({ cursor_ms, selection, onClear }: {
         ? <span><span className="text-gray-500">Cursor:</span> <span className="text-red-400">{fmtTime(cursor_ms)}</span></span>
         : <span className="text-gray-600">Cursor: —</span>
       }
+      {cursor_ms !== null && (
+        <span>
+          <span className="text-gray-500">{sensor}:</span>{' '}
+          <span className="text-gray-200">{sensorValue !== null ? formatSignal(sensor, sensorValue) : '—'}</span>
+        </span>
+      )}
       {selection ? (
         <>
           <span>
@@ -192,16 +240,19 @@ export function TimeRail() {
 
   const activeLogs    = useLogStore(selectActiveLogs)
   const total         = useLogStore(selectTotalDuration)
-  const allRows       = useLogStore(selectAllRows)
-  const allSignals    = useLogStore(selectAllSignals)
+  const allRows       = useDisplayRows()
+  const allSignals    = useDisplaySignals()
 
-  const sparklineData = useMemo<[number, number][]>(() => {
-    if (total === 0) return []
-    const step = Math.max(1, Math.floor(allRows.length / 500))
-    return allRows
-      .filter((_, i) => i % step === 0)
-      .map(row => [row.timestamp_ms, getSignalValue(row, sparklineSensor)])
-  }, [allRows, sparklineSensor, total])
+  const sparklineData = useMemo<SparklineData>(
+    () => buildSparkline(allRows, sparklineSensor, total),
+    [allRows, sparklineSensor, total],
+  )
+
+  const cursorValue = useMemo<number | null>(() => {
+    if (cursor_ms === null) return null
+    const v = findLastRow(allRows, cursor_ms)?.[sparklineSensor]
+    return isNum(v) ? v : null
+  }, [allRows, cursor_ms, sparklineSensor])
 
   function isHandleHit(clientX: number): 'left' | 'right' | null {
     if (!selection || total === 0) return null
@@ -313,14 +364,21 @@ export function TimeRail() {
           onKeyDown={handleKeyDown}
         >
           <SparklineSVG data={sparklineData} total={total} />
+          <SparklineScale data={sparklineData} signal={sparklineSensor} />
           {selection && <ViewportBand zoom={selection} total={total} />}
           {selection && <SelectionBand selection={selection} total={total} />}
           <LogSeparators logs={activeLogs} total={total} />
           {cursor_ms !== null && <CursorLine cursor_ms={cursor_ms} total={total} />}
+          {cursor_ms !== null && (
+            <SparklineDot data={sparklineData} cursor_ms={cursor_ms} value={cursorValue} total={total} />
+          )}
         </div>
       </div>
 
-      <StatusBar cursor_ms={cursor_ms} selection={selection} onClear={clearSelection} />
+      <StatusBar
+        cursor_ms={cursor_ms} selection={selection} onClear={clearSelection}
+        sensor={sparklineSensor} sensorValue={cursorValue}
+      />
     </div>
   )
 }

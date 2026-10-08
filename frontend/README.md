@@ -181,24 +181,20 @@ para o restante da aba VE.
 
 ## Routing
 
-React Router v6:
+React Router v7 com **hash router**: as rotas ficam depois do `#` (ex.: `https://host/#/datalog/charts`),
+para que o app funcione em hospedagem estática (CloudFront/S3) sem fallback para `index.html`.
 
 ```
-/              → Home
-/datalog       → Tela Datalog (default: aba Logs)
-  ?tab=logs
-  ?tab=dashboard
-  ?tab=charts
-  ?tab=data
-/tuning        → Tela Tuning (default: aba VE)
-  ?tab=ve
-  ?tab=ignition
-  ?tab=lambda
+/#/                    → Home
+/#/tuning              → redireciona para /#/tuning/ve
+  /#/tuning/ve | ignition | lambda
+/#/datalog             → redireciona para /#/datalog/logs
+  /#/datalog/logs | dashboard | charts | data | dyno
 ```
 
 **Guards:**
-- `/datalog` requer mapa carregado
-- `/tuning` requer mapa carregado + logs ativos
+- `/tuning/*` requer mapa carregado (`RequireMap`)
+- `/datalog/dashboard|charts|data|dyno` requerem ao menos um log ativo (`RequireLog`)
 
 Ver [`openspec/specs/navigation-guards/spec.md`](../openspec/specs/navigation-guards/spec.md).
 

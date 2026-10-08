@@ -20,6 +20,9 @@ para o conteúdo completo. Veja também o índice geral no `CLAUDE.md` da raiz.
 | `datalog-dashboard` | Aba Dashboard |
 | `datalog-charts` | Aba Gráficos: painéis sincronizados, sidebar de sinais |
 | `datalog-table` | Aba Dados: tabela, colunas, exportação CSV |
+| `datalog-visual-filter` | Filtro visual (botão ao lado do "?"): ranges que substituem o destaque dos filtros de correção, só exibição e só de sessão |
+| `datalog-constants` | Seção Constantes (aba Logs): cilindrada/AFR/BSFC, calibração de VE (k) e sinais de runtime VE Lambda Corrigido, Potência, Torque |
+| `datalog-dyno` | Aba Dinamômetro: curva potência/torque × RPM (Roda/Motor, Bruto/Suavizado, filtros próprios) |
 | `heatmap-editing` | Edição de tabela N×M (seleção, atalhos de teclado, undo/redo) — usada por VE/Ignition/Lambda |
 | `tuning-ve` | Aba VE: mapa original, mapa editável, seção de correção |
 | `tuning-ve-correction` | Filtros de correção, geração do snapshot (atribuição bilinear + agregação), heatmap de correção, aplicação no mapa |
@@ -27,6 +30,7 @@ para o conteúdo completo. Veja também o índice geral no `CLAUDE.md` da raiz.
 | `tuning-lambda` | Aba Lambda (bloqueada na v1) |
 | `navigation-guards` | Rotas, guards (`RequireMap`/`RequireLog`), padrão de aba bloqueada |
 | `session-persistence` | O que sobrevive a um reload, ordem de restauração, invalidação |
+| `pwa` | App instalável (manifest), service worker offline, atualização automática, cache dos arquivos de update |
 
 `../specs/master/datalog.md` documenta o formato CSV do datalog (usado pelo parser client-side). O
 formato do mapa CSV é coberto pela capability `map-import-export` acima.
@@ -51,15 +55,15 @@ com `vi.mock` nos testes de store, para o teste continuar puro e determinístico
 ```
 src/
 ├── api/          client.ts (só computeHash — dedupe de logs por SHA-1)
-├── components/   HeatmapTable.tsx · SyncedChart.tsx · TimeRail.tsx
-├── features/     tuning/ (inclui CorrectionSection.tsx) · datalog/ (inclui CorrectionFilterPanel.tsx)
+├── components/   HeatmapTable.tsx · SyncedChart.tsx · TimeRail.tsx · DynoChart.tsx · DraftNumberField.tsx
+├── features/     tuning/ (inclui CorrectionSection.tsx) · datalog/ (inclui CorrectionFilterPanel.tsx · ConstantsPanel.tsx · DynoTab.tsx)
 ├── pages/        TuningPage.tsx · DatalogPage.tsx
 ├── parsers/      mapParser.ts · datalogParser.ts
 ├── persistence/  db.ts · *Persistence.ts · localStorage.ts · sessionRestorer.ts
-├── signals/      signalRegistry.ts (sinais crus + derivados) · veLambdaFormula.ts
-├── utils/        correctionFilters.ts · correctionGeneration.ts · mapRowOrder.ts · mapEditOps.ts · mapGridSelection.ts
-├── hooks/        useCorrectionMask.ts
-├── store/        mapStore · logStore · correctionStore · timeStore · uiStore
+├── signals/      signalRegistry.ts (sinais crus + derivados) · veLambdaFormula.ts · injectionEffective.ts · enginePower.ts · runtimeSignals.ts · displayRows.ts
+├── utils/        correctionFilters.ts · visualFilter.ts · correctionGeneration.ts · dynoFilter.ts · dynoCurve.ts · mapRowOrder.ts · mapEditOps.ts · mapGridSelection.ts · chartLayoutSize.ts · chartLayoutMigration.ts · sparkline.ts · findLastRow.ts
+├── hooks/        useCorrectionMask.ts · useDisplayRows.ts
+├── store/        mapStore · logStore · correctionStore · visualFilterStore · constantsStore · dynoStore · timeStore · uiStore
 └── types/        map · datalog · correction · ui
 ```
 
@@ -68,16 +72,29 @@ src/
 - **`useMapStore`** — dono do mapa. `updateCell` = 1 undo; `bulkUpdateCells` = 1 undo para o batch inteiro. Histórico session-only, não persiste em IndexedDB.
 - **`useLogStore`** — dono dos logs (parsing, ativação, ordem). `flattenActiveRows(logs)` concatena os logs ativos com timestamps deslocados — usada por qualquer código que precise da timeline única.
 - **`useCorrectionStore`** — `draftFilters` (edição em andamento) vs. `filters` (aplicado — o que Dashboard/Gráficos/Dados e `generate()` realmente usam); `applyFilters()` copia draft→filters; `isFiltersDirty()` compara os dois. Toggle de visibilidade não passa por draft (aplica na hora). `generate()` roda a pipeline e grava o snapshot; `isStale`.
+- **`useVisualFilterStore`** — filtro visual (`filter: { ranges, lambdaLoop }` — ranges de MAP/RPM/Lambda 1/Lambda Corr/Pedal + estados de Lambda Loop, em AND), só em memória (sem persistência, fora do `correctionStore` de propósito). Quando ativo, `useCorrectionMask()` devolve a máscara dele **no lugar** da dos filtros de correção — Gráficos/Dados/Dashboard seguem a máscara ativa. `generate()` nunca passa pelo hook, então o filtro visual não afeta o fator de correção.
+- **`useConstantsStore`** — `values`: cilindrada, AFR, BSFC e `veAtFull` ("VE atual onde a VE deveria ser 100%", escala da tabela: 100% = 1000); só guarda valores válidos (> 0) — o texto cru em edição vive em `DraftNumberField`. `selectCalibrationFactor` → `k = 1000 / veAtFull`. Persiste em `miot:constants`. Mudar uma constante **não** marca o snapshot de correção como desatualizado.
+- **`useDynoStore`** — filtros do dinamômetro (`null` = sem limite; `gears` = marchas aceitas, subconjunto de 0–5, todas = sem restrição, ao menos uma), `mode` (`engine`/`wheel`), `lossPct`, `smoothing` (`raw`/`smoothed`, padrão suavizado). Persiste em `miot:dyno`; `resetFilters()` devolve filtros e perda aos padrões. A faixa de RPM do suavizado é fixa (`RPM_BAND_WIDTH = 100` em `dynoCurve.ts`), não é configuração.
 - **`useTimeStore`** — cursor_ms, selection, sparklineSensor, chartZoom. Persiste em `miot:time`.
-- **`useUIStore`** — chartLayout (árvore de painéis), columnVisibility, chartsHeight, datalogTab. Persiste em `miot:ui`.
+- **`useUIStore`** — chartLayout (árvore de painéis), columnVisibility, datalogTab. Persiste em `miot:ui`. O tamanho dos painéis vive no layout: cada `ChartPanel` tem `height` (px) e o split `horizontal` tem `ratio` (fração da largura de `children[0]`); pilha vertical não tem proporção. Altura de uma linha = a maior dos painéis lado a lado; o total é a soma das linhas e a área rola na vertical (nunca estica). Só botões `+`/`−` redimensionam (`utils/chartLayoutSize.ts`, funções puras); não há arrasto. `hydrate` migra layouts antigos (`chartsHeight` + `ratio` vertical) via `utils/chartLayoutMigration.ts`.
 
 ## Convenções críticas
 
 **Imports circulares:** `mapStore`, `logStore` e `timeStore` importam `correctionStore` via `import()` dinâmico dentro de métodos async (para invalidar/marcar o snapshot como desatualizado). Não importar na raiz do módulo.
 
+**Roteamento por hash:** `App.tsx` usa `createHashRouter` (URLs `/#/datalog/charts`) para funcionar no CloudFront/S3 sem fallback para `index.html`. Leia a rota sempre via `useLocation`/`useBlocker`, nunca `window.location` (o `pathname` global é sempre `/`). Não use `href="#..."` como âncora.
+
+**Favicon e preview de link:** ícones e `og-image.png` (1200×630) ficam em `public/` e são servidos na raiz; as tags `<link rel="icon">`/`og:*` estão em `index.html`. `og:url`/`og:image` precisam ser URL **absoluta** (o WhatsApp ignora caminho relativo) — hoje com o placeholder `https://SEU-DOMINIO`, trocar pelo domínio de produção. O `Makefile` sobe `public/*` com cache `immutable` de 1 ano (sem hash no nome): ao trocar uma imagem, renomeie o arquivo.
+
+**PWA:** `vite-plugin-pwa` (config em `vite.config.ts`; manifest + `sw.js` gerados no `npm run build`, nada a registrar no código). Ícones `pwa-*.png` em `public/`. `sw.js`/`registerSW.js`/`manifest.webmanifest`/`index.html` não podem ter cache longo (ver `Makefile` e `nginx.conf`). Spec: `pwa`.
+
 **Parsing client-side:** `parseMapClient` lê `#I20` (RPM), `#I21` (MAP), `#F01–#F16`. `parseDatalogClient` converte raw→real e calcula SHA-1 (só para deduplicar logs, sem upload).
 
-**Sinais derivados:** um `SignalDef` tem `column`+`convert` (lido do CSV) OU `compute` (calculado de outros sinais já convertidos da mesma linha) — nunca os dois. `datalogParser.ts` aplica primeiro todos os `convert`, depois todos os `compute`, por linha. Exemplo: `VE Lambda`.
+**Sinais derivados:** um `SignalDef` tem `column`+`convert` (lido do CSV) OU `compute` (calculado de outros sinais já convertidos da mesma linha) — nunca os dois. `datalogParser.ts` aplica primeiro todos os `convert`, depois todos os `compute`, por linha. Exemplos: `VE Lambda`, `Inj. Efetivo` (`Inj. Pulse − Inj. DT`). Um derivado pode declarar `inputs` (nomes dos sinais que lê): só é calculado numa linha em que todos são números válidos e só é listado em `model.signals` quando todos estão listados — é como um derivado depende de colunas `optional` (sem `inputs`, como `VE Lambda`, é sempre calculado).
+
+**Sinais de runtime:** sinal que depende de valor editável em runtime (hoje: `VE Lambda Corrigido`, `Potência`, `Torque`, calculados por `applyRuntimeSignals` em `runtimeSignals.ts` com as constantes) **nunca** vai no `compute` do parse nem no `model` persistido. Entra só na leitura: `getDisplayRows` (cache de 1 entrada) via `useDisplayRows()`/`useDisplaySignals()` — use-os em tudo que EXIBE dados (Dashboard, Gráficos, Dados, TimeRail, Dinamômetro). `generateCorrectionSnapshot`/`useCorrectionMask` seguem em `flattenActiveRows`/`log.model.rows`, sem essas chaves — é isso que impede o fator `k` de reescalar o mapa. `SIGNAL_MAP` cobre os dois tipos; o parser só lê `SIGNAL_DEFS`.
+
+**Dinamômetro (`datalog-dyno`):** pipeline em funções puras memoizadas por etapa — `selectDynoRows` (seleção de tempo + filtros próprios, independente da máscara de correção/visual) → `buildRawCurve`/`buildSmoothedCurve` (faixas de RPM: mediana + mediana móvel com regra de ponta de Tukey + média móvel) → `applyLoss` (modo Roda). Filtros e Perda ficam num modal (`DynoFilterModal`, botão "Filtros" na barra da aba; sem rascunho/Aplicar — edição já vale); Roda/Motor e Bruto/Suavizado ficam na barra. O botão "Filtro visual" do `DatalogPage` fica oculto na rota `/datalog/dyno`. Potência em cv e torque em kgf·m (`Torque = Potência × 716,2 / RPM`).
 
 **Conversões raw→real** (definidas em `signalRegistry.ts`):
 
@@ -88,6 +105,13 @@ src/
 | CLT, IAT | `raw - 273` |
 | Pedal | `min(100, raw / 990 * 100)` |
 | Lambda Loop | `raw` (0=OL, 1=CL) |
+| Marcha | `parseInt` da **última** coluna chamada `0` (o CSV tem duas; 0 a 5 — 0 = sem marcha engatada). Sinal `optional`: CSV sem a coluna importa normalmente, sem o sinal |
+| Inj. Pulse | `raw / 100` (ms; 1337 = 13,37 ms — já inclui o dead time) |
+| Inj. DT | `raw / 1000` (ms; 1100 = 1,1 ms) |
+| ACP | `raw` (kPa — a coluna se chama `ACP %`, mas é a pressão do compressor do A/C) |
+| dACC | `(raw - 5000) / DACC_DIVISOR` (`signalRegistry.ts`, hoje 100; 5000 = zero; escala **não verificada**, só exibição) |
+| Batt Volt. | `raw / 10` (V) |
+| Pressão Óleo | `raw / 100` (bar) — vem da coluna `Lambda 2` |
 
 **Correção VE (`tuning-ve-correction`):** filtros (Lambda Loop, CLT, Lambda, delta TPS, delta MAP, delta Lambda×Target, skip-closed-loop, skip-open-loop) são avaliados por `evaluateCorrectionFilters` — a MESMA função usada pela geração do snapshot e pela aplicação em Dashboard/Gráficos/Dados, para nunca haver duas implementações divergentes da mesma regra. Editar um filtro só muda o *draft* (aba Logs); nada em Dashboard/Gráficos/Dados/Gerar muda até clicar "Aplicar filtros" — sair da aba Logs com draft pendente (`useBlocker` do react-router) pede confirmação. "Gerar fator de correção" roda `generateCorrectionSnapshot` (atribuição bilinear em até 4 células + agregação por célula) uma vez sobre os filtros *aplicados*; os toggles Direto/Ponderado, Média/Mediana/Moda e Cor são derivações baratas em cima do snapshot já gerado, recalculadas ao vivo — só filtro aplicado/logs/seleção de tempo exigem gerar de novo.
 
@@ -95,12 +119,19 @@ src/
 
 **Delta TPS/MAP** compartilham `computeDeltaAmplitude(rows, signal)` (amplitude max−min numa janela retroativa de 200ms) — mesma mecânica, sinal diferente (`Pedal` vs `MAP`).
 
+**Gráficos e zoom da seleção:** `selection` (timeStore) é a fonte da verdade do zoom. Como o `option` usa `notMerge` (reinicia o `dataZoom` a 100%) e painéis novos/remontados também nascem a 100%, `PanelView` chama `applySelectionZoom` (contexto de `SyncedChart`) em `onChartReady` e num efeito `[option]` — sob a flag `updatingFromExternal`, para o handler de `datazoom` não devolver o zoom ao store. Não coloque o zoom no `option`: reconstruiria todas as séries a cada gesto.
+
+**Sparkline da TimeRail:** `SparklineSVG` usa `viewBox` fixo (nada de medir o contêiner — o `ResizeObserver` antigo nunca era montado e a linha nunca desenhava); os dados vêm de `buildSparkline` (`utils/sparkline.ts`: min/max por bucket, lacunas viram trechos separados).
+
 **Gráficos e pontos filtrados:** ECharts não colore segmento de linha por valor de forma confiável com `visualMap` nos nossos testes — `SyncedChart.tsx`'s `buildOption` em vez disso quebra cada sinal em uma série por trecho contíguo (`computeRuns`), uma cor cheia por trecho que passa no filtro e uma versão `rgba(...,0.25)` pro que não passa, com 1 ponto de sobreposição em cada fronteira pra nunca ter buraco na linha. Painéis com filtro pesado geram bastante série pequena — é o tradeoff aceito por confiabilidade visual.
 
 **Persistência:**
 - IndexedDB: mapa (blob + model), logs (blob + model), último snapshot de correção
-- localStorage: `miot:log-order` · `miot:correction-filters` · `miot:correction-show-filtered` · `miot:ui` · `miot:time`
+- localStorage: `miot:log-order` · `miot:correction-filters` · `miot:correction-show-filtered` · `miot:ui` · `miot:time` · `miot:constants` · `miot:dyno`
 - `sessionRestorer.ts` restaura tudo na inicialização sem nenhuma chamada de rede
+- **Versão do leitor de CSV:** `parseDatalogText` grava `model.parserVersion = PARSER_VERSION` (em `datalogParser.ts`). Ao ler um sinal novo do CSV (ou mudar uma conversão), **incremente `PARSER_VERSION`** (hoje 3): `restoreLogs` chama `upgradeLogEntry` (`persistence/logMigration.ts`), que reparseia do `csvBlob` os logs salvos com versão menor (ausente = 1) e regrava no IndexedDB, sem reimportar; falha de leitura mantém o log como estava
+
+**Ordem de exibição dos sinais:** `SIGNAL_GROUPS` (`signalRegistry.ts`) define grupos de sinais parecidos (VE → VE Lambda → VE Lambda Corrigido; Inj. Pulse → DT → Efetivo → Utiliz.; ...). `sortSignals` aplica essa ordem em `DISPLAY_SIGNAL_DEFS` (colunas e menu de Dados) e em `withRuntimeSignals` (`useDisplaySignals`: Dashboard, Gráficos, Dinamômetro) — na leitura, nunca gravada no `model`. Sinal novo: nomeie-o em um grupo (um teste falha se algum sinal conhecido ficar fora). A ordem do parser (`SIGNAL_DEFS`) é independente.
 
 **Hash:** `computeHash(file)` → `"sha1:<hex>"` (só para detectar log duplicado, não usado em upload)
 

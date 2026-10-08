@@ -3,6 +3,7 @@ import { useBlocker } from 'react-router-dom'
 import { useLogStore } from '@/store/logStore'
 import { useCorrectionStore } from '@/store/correctionStore'
 import { CorrectionFilterPanel } from './CorrectionFilterPanel'
+import { ConstantsPanel } from './ConstantsPanel'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import type { LogEntry } from '@/types/datalog'
 
@@ -215,6 +216,8 @@ export function LogsTab() {
       )}
 
       <CorrectionFilterPanel />
+
+      <ConstantsPanel />
 
       <ConfirmDialog
         open={blocker.state === 'blocked'}
