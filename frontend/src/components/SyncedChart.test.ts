@@ -84,3 +84,41 @@ describe('buildOption', () => {
     })
   })
 })
+
+describe('buildOption — right-side Y axes', () => {
+  const rows: DatalogRow[] = [{ timestamp_ms: 0, RPM: 1000, MAP: 100, Pedal: 10, 'Lambda 1': 1 }]
+  const mask = [true]
+  type Opt = { grid: { right: number }; yAxis: { position: string; offset: number; axisLabel: { margin: number } }[] }
+  const build = (signals: string[]) => buildOption(signals, rows, mask, true) as Opt
+
+  it('puts the first signal on the left and the rest on the right, the first right axis flush with the plot', () => {
+    const o = build(['RPM', 'MAP', 'Pedal', 'Lambda 1'])
+    expect(o.yAxis.map(a => a.position)).toEqual(['left', 'right', 'right', 'right'])
+    expect(o.yAxis[1].offset).toBe(0)
+    expect(o.yAxis[2].offset).toBeGreaterThan(0)
+    expect(o.yAxis[3].offset).toBeGreaterThan(o.yAxis[2].offset)
+  })
+
+  it('reserves just enough on the right for the stacked axes', () => {
+    expect(build(['RPM']).grid.right).toBe(20)
+    const two = build(['RPM', 'MAP']).grid.right
+    const four = build(['RPM', 'MAP', 'Pedal', 'Lambda 1']).grid.right
+    expect(two).toBeLessThan(60)
+    expect(four).toBeGreaterThan(two)
+  })
+
+  it('takes the shared margins when given, so every panel lines up', () => {
+    const o = buildOption(['RPM'], rows, mask, true, undefined, undefined, { left: 40, right: 90 }) as Opt & { grid: { left: number } }
+    expect(o.grid.left).toBe(40)
+    expect(o.grid.right).toBe(90)
+  })
+
+  it('sizes the left margin to the first signal\'s labels, with no fixed padding', () => {
+    const left = (buildOption(['RPM'], rows, mask, true) as { grid: { left: number } }).grid.left
+    expect(left).toBeLessThan(52)
+  })
+
+  it('uses a tight gap between each axis line and its labels', () => {
+    expect(build(['RPM', 'MAP']).yAxis.every(a => a.axisLabel.margin === 4)).toBe(true)
+  })
+})

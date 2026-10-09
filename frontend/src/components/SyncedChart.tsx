@@ -12,6 +12,7 @@ import { signalOriginHint } from '@/signals/signalOrigin'
 import { findLastRow } from '@/utils/findLastRow'
 import { sigColor, dimColor as dim } from '@/utils/signalColor'
 import { layoutHeight, canResizeHeight, canResizeWidth, hasHorizontalNeighbour } from '@/utils/chartLayoutSize'
+import { rightAxisLayout, panelMargins, sharedMargins, AXIS_LABEL_MARGIN, type PlotMargins } from '@/utils/chartAxisLayout'
 import { nextWindow, windowRows, type TimeWindow } from '@/utils/chartWindow'
 import { useAfterPaint, applyQueue } from '@/hooks/useAfterPaint'
 import { flushSync } from 'react-dom'
@@ -63,6 +64,8 @@ export function buildOption(
   signals: string[], rows: DatalogRow[], mask: boolean[], showFilteredPoints: boolean, view?: ChartView,
   /** Faixas que o usuário sobrescreveu (Configurações); sem entrada, vale a faixa padrão do sinal. */
   ranges?: SignalRangeOverrides,
+  /** Margens comuns a todos os painéis (alinha as áreas de plotagem); sem elas, só as deste painel. */
+  margins?: PlotMargins,
 ): object {
   if (signals.length === 0) return {}
 
@@ -70,16 +73,18 @@ export function buildOption(
   const mask_ = showFilteredPoints ? mask : rows_.map(() => true)
   const runs  = computeRuns(mask_)
 
-  const rightCount = Math.max(0, signals.length - 1)
+  const resolved = signals.map(sig => resolveRange(sig, ranges))
+  const right    = rightAxisLayout(resolved.slice(1))
+  const plot     = margins ?? panelMargins(resolved)
   const yAxes = signals.map((sig, i) => {
-    const range = resolveRange(sig, ranges)
+    const range = resolved[i]
     return {
       type:      'value',
       min:       range?.min,
       max:       range?.max,
       position:  i === 0 ? 'left' : 'right',
-      offset:    i > 1 ? (i - 1) * 52 : 0,
-      axisLabel: { color: sigColor(sig, i), fontSize: 9 },
+      offset:    i > 0 ? right.offsets[i - 1] : 0,
+      axisLabel: { color: sigColor(sig, i), fontSize: 9, margin: AXIS_LABEL_MARGIN },
       axisLine:  { show: true, lineStyle: { color: sigColor(sig, i) } },
       splitLine: { show: i === 0, lineStyle: { color: '#1f2937' } },
     }
@@ -115,7 +120,7 @@ export function buildOption(
   return {
     backgroundColor: 'transparent',
     animation: false,
-    grid: { left: 52, right: rightCount > 0 ? rightCount * 52 + 20 : 20, top: 8, bottom: 28 },
+    grid: { left: plot.left, right: plot.right, top: 8, bottom: 28 },
     xAxis: {
       type: 'value',
       min:  view ? view.xDomain[0] : 'dataMin',
@@ -271,7 +276,8 @@ const PanelView = memo(function PanelView({
   const syncCtx = useContext(ChartSyncContext)
   // Vem do contexto (cópia congelada com o resto das entradas): editar uma faixa em Configurações não
   // reconstrói os gráficos escondidos; a volta à aba aplica uma única vez.
-  const ranges = syncCtx?.ranges
+  const ranges  = syncCtx?.ranges
+  const margins = syncCtx?.margins
 
   const updatePanelSignals = useUIStore(s => s.updatePanelSignals)
   const addChartPanel      = useUIStore(s => s.addChartPanel)
@@ -289,8 +295,8 @@ const PanelView = memo(function PanelView({
   const available = allSignals.filter(s => !panel.signals.includes(s))
 
   const option = useMemo(
-    () => buildOption(panel.signals, rows, mask, showFilteredPoints, view, ranges),
-    [panel.signals, rows, mask, showFilteredPoints, view, ranges],
+    () => buildOption(panel.signals, rows, mask, showFilteredPoints, view, ranges, margins),
+    [panel.signals, rows, mask, showFilteredPoints, view, ranges, margins],
   )
   // O ECharts processa o `option` de forma síncrona (centenas de ms por painel num log grande): aplica
   // só depois de pintar o "Carregando…", em vez de congelar a tela com o gráfico antigo.
@@ -507,6 +513,8 @@ const ChartSyncContext = React.createContext<{
   instancesRef:    React.MutableRefObject<Map<string, echarts.ECharts>>
   /** Faixas sobrescritas pelo usuário (Configurações), no mesmo instante congelado das demais entradas. */
   ranges: SignalRangeOverrides
+  /** Margens esquerda/direita comuns a todos os painéis (a maior de cada lado). */
+  margins: PlotMargins | undefined
 } | null>(null)
 
 /**
@@ -784,9 +792,23 @@ export function SyncedChart({ active = true }: { active?: boolean }) {
     }
   }, [])
 
+  // Margem comum a todos os painéis. Dois passos de propósito: `m` muda de referência a cada edição do
+  // layout, mas o objeto entregue só muda quando left/right mudam — senão todo painel reconstruiria o
+  // gráfico a cada sinal adicionado/removido, mesmo sem alterar a margem.
+  const m = useMemo(
+    () => sharedMargins(flattenPanels(chartLayout).map(p => p.signals.map(sig => resolveRange(sig, ranges)))),
+    [chartLayout, ranges],
+  )
+  const marginLeft = m?.left
+  const marginRight = m?.right
+  const margins = useMemo<PlotMargins | undefined>(
+    () => marginLeft === undefined || marginRight === undefined ? undefined : { left: marginLeft, right: marginRight },
+    [marginLeft, marginRight],
+  )
+
   const ctx = useMemo(
-    () => ({ registerChart, unregisterChart, applySelectionZoom, zooming, instancesRef, ranges }),
-    [registerChart, unregisterChart, applySelectionZoom, zooming, ranges],
+    () => ({ registerChart, unregisterChart, applySelectionZoom, zooming, instancesRef, ranges, margins }),
+    [registerChart, unregisterChart, applySelectionZoom, zooming, ranges, margins],
   )
 
   // ── Selection rectangle position ──────────────────────────────────────────────
