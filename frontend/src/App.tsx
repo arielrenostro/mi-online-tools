@@ -1,18 +1,17 @@
 import { createHashRouter, RouterProvider, Navigate } from 'react-router-dom'
 import { RootLayout } from '@/pages/RootLayout'
 import HomePage from '@/pages/HomePage'
-import TuningPage from '@/pages/TuningPage'
-import { DatalogPage } from '@/pages/DatalogPage'
-import { DashboardTab } from '@/features/datalog/DashboardTab'
-import { ChartsTab } from '@/features/datalog/ChartsTab'
-import { DataTab } from '@/features/datalog/DataTab'
-import { DynoTab } from '@/features/datalog/DynoTab'
+import MapaPage from '@/pages/MapaPage'
 import { RequireMap } from '@/components/guards/RequireMap'
-import { RequireLog } from '@/components/guards/RequireLog'
-import { VETab } from '@/features/tuning/ve/VETab'
-import { IgnitionTab } from '@/features/tuning/ignition/IgnitionTab'
-import { LambdaTab } from '@/features/tuning/lambda/LambdaTab'
-import { LogsTab } from '@/features/datalog/LogsTab'
+import { LastTabRedirect } from '@/components/LastTabRedirect'
+import { VETab } from '@/features/mapa/ve/VETab'
+import { IgnitionTab } from '@/features/mapa/ignition/IgnitionTab'
+import { LambdaTab } from '@/features/mapa/lambda/LambdaTab'
+import { ArquivoTab } from '@/features/mapa/arquivo/ArquivoTab'
+import SettingsPage from '@/pages/SettingsPage'
+
+/** Elemento vazio de uma rota cujo conteúdo é desenhado fora do <Outlet/> (ver `DatalogPage`). */
+function Nothing() { return null }
 
 const router = createHashRouter([
   {
@@ -22,26 +21,29 @@ const router = createHashRouter([
       { index: true, element: <HomePage /> },
 
       {
-        path: 'tuning',
-        element: <RequireMap><TuningPage /></RequireMap>,
+        path: 'mapa',
+        element: <MapaPage />,
         children: [
-          { index: true, element: <Navigate to="ve" replace /> },
-          { path: 've',        element: <VETab /> },
-          { path: 'ignition',  element: <IgnitionTab /> },
-          { path: 'lambda',    element: <LambdaTab /> },
+          { index: true, element: <LastTabRedirect section="mapa" /> },
+          { path: 'arquivo',   element: <ArquivoTab /> },
+          { path: 've',        element: <RequireMap><VETab /></RequireMap> },
+          { path: 'ignition',  element: <RequireMap><IgnitionTab /></RequireMap> },
+          { path: 'lambda',    element: <RequireMap><LambdaTab /></RequireMap> },
         ],
       },
 
+      // Prefixo antigo da seção, mantido para favoritos e abas em cache.
+      { path: 'tuning/*', element: <Navigate to="/mapa" replace /> },
+
+      { path: 'settings', element: <SettingsPage /> },
+
+      // A seção Datalog é renderizada pelo `RootLayout` (`DatalogPage`), que a mantém montada ao sair
+      // dela e resolve a aba pela rota; aqui ficam só os caminhos e o índice que reabre a última aba.
       {
         path: 'datalog',
-        element: <DatalogPage />,
         children: [
-          { index: true, element: <Navigate to="logs" replace /> },
-          { path: 'logs',      element: <LogsTab /> },
-          { path: 'dashboard', element: <RequireLog><DashboardTab /></RequireLog> },
-          { path: 'charts',    element: <RequireLog><ChartsTab /></RequireLog> },
-          { path: 'data',      element: <RequireLog><DataTab /></RequireLog> },
-          { path: 'dyno',      element: <RequireLog><DynoTab /></RequireLog> },
+          { index: true, element: <LastTabRedirect section="datalog" /> },
+          ...['logs', 'dashboard', 'charts', 'data', 'dyno', 'xy'].map(path => ({ path, element: <Nothing /> })),
         ],
       },
     ],

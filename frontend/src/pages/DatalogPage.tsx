@@ -1,10 +1,20 @@
-import { useState } from 'react'
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { NavLink, useLocation } from 'react-router-dom'
 import { TimeRail } from '@/components/TimeRail'
 import DatalogHelpModal from '@/features/datalog/DatalogHelpModal'
-import VisualFilterModal from '@/features/datalog/VisualFilterModal'
-import { useVisualFilterStore } from '@/store/visualFilterStore'
-import { isVisualFilterActive } from '@/utils/visualFilter'
+import { FilterButton } from '@/features/datalog/FilterButton'
+import { GenerateCorrectionButton } from '@/features/datalog/GenerateCorrectionButton'
+import { ChartsTab } from '@/features/datalog/ChartsTab'
+import { LogsTab } from '@/features/datalog/LogsTab'
+import { DashboardTab } from '@/features/datalog/DashboardTab'
+import { DataTab } from '@/features/datalog/DataTab'
+import { DynoTab } from '@/features/datalog/DynoTab'
+import { XYTab } from '@/features/datalog/XYTab'
+import { RequireLog } from '@/components/guards/RequireLog'
+import { useUIStore } from '@/store/uiStore'
+import { useLogStore } from '@/store/logStore'
+import { useSessionStore } from '@/store/sessionStore'
+import { tabFromPath, DATALOG_TABS } from '@/utils/lastTab'
 
 function TabLink({ to, label }: { to: string; label: string }) {
   return (
@@ -21,33 +31,48 @@ function TabLink({ to, label }: { to: string; label: string }) {
   )
 }
 
-export function DatalogPage() {
+/**
+ * A seção Datalog. Fica montada pelo `RootLayout` mesmo ao ir para Mapa/Home/Configurações (`visible`
+ * false: escondida, só os gráficos continuam vivos), para voltar sem reconstruir os gráficos — as
+ * demais abas só existem enquanto estão abertas.
+ */
+export function DatalogPage({ visible }: { visible: boolean }) {
   const [helpOpen, setHelpOpen] = useState(false)
-  const [visualOpen, setVisualOpen] = useState(false)
-  const visualActive = useVisualFilterStore(s => isVisualFilterActive(s.filter))
-  // O filtro visual só destaca Gráficos/Dados/Dashboard; no Dinamômetro não tem efeito, então some do cabeçalho.
-  const onDyno = useLocation().pathname.endsWith('/dyno')
+  // O filtro (e a geração de correção) não têm efeito no Dinamômetro, que tem filtros próprios — somem do cabeçalho.
+  const pathname = useLocation().pathname
+  const onDyno = visible && pathname.endsWith('/dyno')
+  const onCharts = visible && pathname.endsWith('/charts')
+  const tab = tabFromPath('datalog', pathname, DATALOG_TABS)
+  const setDatalogTab = useUIStore(s => s.setDatalogTab)
+
+  // Lembra a aba para a TopBar reabrir nela ao voltar para Datalog.
+  useEffect(() => {
+    const tab = tabFromPath('datalog', pathname, DATALOG_TABS)
+    if (tab) setDatalogTab(tab)
+  }, [pathname, setDatalogTab])
+
+  // Os gráficos custam caro para montar: depois da primeira visita ficam montados (escondidos nas
+  // outras abas, sem reconstruir) em vez de refeitos a cada volta. A guarda de log da rota `charts`
+  // continua valendo; sem log ativo (ou restaurando a sessão) não há o que manter.
+  const hasLogs = useLogStore(s => s.logs.some(l => l.enabled))
+  const isRestoring = useSessionStore(s => s.isRestoring)
+  const [chartsVisited, setChartsVisited] = useState(onCharts)
+  useEffect(() => { if (onCharts) setChartsVisited(true) }, [onCharts])
+  const keepCharts = chartsVisited && hasLogs && !isRestoring
 
   return (
-    <div className="flex flex-col h-full">
+    <div className={visible ? 'flex flex-col h-full' : 'hidden'}>
+      {visible && (<>
       <nav className="flex items-end gap-1 border-b border-gray-800 px-4 pt-2 flex-shrink-0">
-        <TabLink to="logs" label="Logs" />
-        <TabLink to="dashboard" label="Dashboard" />
-        <TabLink to="charts" label="Gráficos" />
-        <TabLink to="data" label="Dados" />
-        <TabLink to="dyno" label="Dinamômetro" />
+        <TabLink to="/datalog/logs" label="Logs" />
+        <TabLink to="/datalog/data" label="Dados" />
+        <TabLink to="/datalog/dashboard" label="Dashboard" />
+        <TabLink to="/datalog/charts" label="Gráficos" />
+        <TabLink to="/datalog/xy" label="XY" />
+        <TabLink to="/datalog/dyno" label="Dinamômetro" />
         <div className="ml-auto pb-2 flex items-center gap-2">
-          {!onDyno && <button
-            onClick={() => setVisualOpen(true)}
-            title={visualActive ? 'Filtro visual ativo — substitui o destaque dos filtros de correção' : 'Filtro visual'}
-            className={
-              visualActive
-                ? 'px-2.5 h-6 flex items-center rounded-full border border-yellow-500 bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25 text-xs font-medium transition-colors'
-                : 'px-2.5 h-6 flex items-center rounded-full border border-gray-600 text-gray-400 hover:text-white hover:border-gray-400 text-xs font-medium transition-colors'
-            }
-          >
-            Filtro visual{visualActive ? ' •' : ''}
-          </button>}
+          {!onDyno && <FilterButton />}
+          {!onDyno && <GenerateCorrectionButton />}
           <button
             onClick={() => setHelpOpen(true)}
             title="Ajuda"
@@ -58,12 +83,21 @@ export function DatalogPage() {
         </div>
       </nav>
       <DatalogHelpModal open={helpOpen} onClose={() => setHelpOpen(false)} />
-      <VisualFilterModal open={visualOpen && !onDyno} onClose={() => setVisualOpen(false)} />
       <TimeRail />
+      </>)}
       <div className="flex-1 overflow-auto min-h-0">
-        <Outlet />
+        {keepCharts && (
+          <div className={onCharts ? 'h-full' : 'hidden'}>
+            <ChartsTab active={onCharts} />
+          </div>
+        )}
+        {visible && tab === 'logs'      && <LogsTab />}
+        {visible && tab === 'dashboard' && <RequireLog><DashboardTab /></RequireLog>}
+        {visible && tab === 'charts'    && <RequireLog>{null}</RequireLog>}
+        {visible && tab === 'data'      && <RequireLog><DataTab /></RequireLog>}
+        {visible && tab === 'dyno'      && <RequireLog><DynoTab /></RequireLog>}
+        {visible && tab === 'xy'        && <RequireLog><XYTab /></RequireLog>}
       </div>
     </div>
   )
 }
-

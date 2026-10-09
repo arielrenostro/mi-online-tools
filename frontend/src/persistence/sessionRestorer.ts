@@ -1,19 +1,25 @@
-import { lsGet } from './localStorage'
+import { lsGet, lsSet, lsClear } from './localStorage'
 import * as mapPersistence       from './mapPersistence'
 import * as logPersistence       from './logPersistence'
 import { upgradeLogEntry }       from './logMigration'
-import * as correctionPersistence from './correctionPersistence'
+import * as runPersistence from './runPersistence'
+import * as legacySnapshot from './legacySnapshotPersistence'
+import { legacySnapshotToRun } from './legacyMigration'
+import { isLegacyCorrectionFilters, migrateLegacyCorrectionFilters } from '@/utils/filterMigration'
+import type { CorrectionRun } from '@/types/correction'
 import type { LogEntry } from '@/types/datalog'
 
 export async function restoreSession(): Promise<void> {
   await Promise.allSettled([
-    restoreMap(),
+    // O snapshot antigo só vira run com os breakpoints do mapa restaurado — por isso depois dele.
+    restoreMap().then(() => restoreCorrection()),
     restoreLogs(),
-    restoreCorrection(),
     restoreUI(),
     restoreTime(),
     restoreConstants(),
+    restoreCorrectionSettings(),
     restoreDyno(),
+    restoreXY(),
   ])
   const { useSessionStore } = await import('@/store/sessionStore')
   useSessionStore.getState().setRestoringDone()
@@ -61,19 +67,60 @@ async function restoreLogs(): Promise<void> {
   useLogStore.getState().hydrate(logEntries)
 }
 
-async function restoreCorrection(): Promise<void> {
+export const FILTER_KEY        = 'miot:correction-filter'
+export const LEGACY_FILTER_KEY = 'miot:correction-filters'
+const SHOW_FILTERED_KEY        = 'miot:correction-show-filtered'
+const SELECTED_RUN_KEY         = 'miot:correction-selected-run'
+
+export async function restoreCorrection(): Promise<void> {
+  await restoreFilter()
+  await restoreRuns()
+}
+
+/** Filtro único; o filtro de correção salvo pelo formato antigo é convertido uma vez e a chave antiga some. */
+async function restoreFilter(): Promise<void> {
+  const { useFilterStore } = await import('@/store/filterStore')
+  let filter: unknown = lsGet<unknown>(FILTER_KEY)
+  if (filter === null) {
+    const legacy = lsGet<unknown>(LEGACY_FILTER_KEY)
+    if (isLegacyCorrectionFilters(legacy)) {
+      filter = migrateLegacyCorrectionFilters(legacy)
+      lsSet(FILTER_KEY, filter)
+    }
+  }
+  lsClear(LEGACY_FILTER_KEY)
+  useFilterStore.getState().hydrate({ filter, showFilteredPoints: lsGet<boolean>(SHOW_FILTERED_KEY) })
+}
+
+async function restoreRuns(): Promise<void> {
   const { useCorrectionStore } = await import('@/store/correctionStore')
-  const { DEFAULT_CORRECTION_FILTERS } = await import('@/types/correction')
+  const { useMapStore } = await import('@/store/mapStore')
 
-  const filters           = lsGet<typeof DEFAULT_CORRECTION_FILTERS>('miot:correction-filters')
-  const showFilteredPoints = lsGet<boolean>('miot:correction-show-filtered')
+  let runs: CorrectionRun[] = []
+  try { runs = await runPersistence.loadAllRuns() } catch { /* sem runs salvos legíveis */ }
+  let selectedRunId = lsGet<string>(SELECTED_RUN_KEY)
 
-  if (filters)                    useCorrectionStore.getState().hydrateFilters(filters)
-  if (showFilteredPoints !== null) useCorrectionStore.getState().hydrateShowFilteredPoints(showFilteredPoints)
+  // Primeira abertura depois da atualização: o snapshot único vira o "Run 1". Só é apagado depois
+  // de o run estar gravado; sem mapa restaurado não há como conhecer seus breakpoints e ele é descartado.
+  let legacy
+  try { legacy = await legacySnapshot.loadLegacySnapshot() } catch { legacy = undefined }
+  if (legacy) {
+    const map = useMapStore.getState().originalMap
+    if (runs.length === 0 && map) {
+      const run = legacySnapshotToRun(legacy, map)
+      try {
+        await runPersistence.saveRun(run)
+        runs = [run]
+        selectedRunId = run.id
+        lsSet(SELECTED_RUN_KEY, run.id)
+        await legacySnapshot.clearLegacySnapshot()
+      } catch { /* mantém o snapshot antigo para tentar de novo na próxima abertura */ }
+    } else {
+      try { await legacySnapshot.clearLegacySnapshot() } catch { /* non-fatal */ }
+    }
+  }
 
-  let entry
-  try { entry = await correctionPersistence.loadSnapshot() } catch { return }
-  if (entry) useCorrectionStore.getState().hydrateSnapshot(entry)
+  if (runs.length) useCorrectionStore.getState().hydrate({ runs, selectedRunId })
 }
 
 async function restoreUI(): Promise<void> {
@@ -88,10 +135,22 @@ async function restoreConstants(): Promise<void> {
   if (saved) useConstantsStore.getState().hydrate(saved)
 }
 
+async function restoreCorrectionSettings(): Promise<void> {
+  const { useCorrectionSettingsStore } = await import('@/store/correctionSettingsStore')
+  const saved = lsGet<unknown>('miot:correction-settings')
+  if (saved) useCorrectionSettingsStore.getState().hydrate(saved)
+}
+
 async function restoreDyno(): Promise<void> {
   const { useDynoStore } = await import('@/store/dynoStore')
   const saved = lsGet<unknown>('miot:dyno')
   if (saved) useDynoStore.getState().hydrate(saved)
+}
+
+async function restoreXY(): Promise<void> {
+  const { useXYStore } = await import('@/store/xyStore')
+  const saved = lsGet<unknown>('miot:xy')
+  if (saved) useXYStore.getState().hydrate(saved)
 }
 
 async function restoreTime(): Promise<void> {

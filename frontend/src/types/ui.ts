@@ -4,8 +4,9 @@ export interface ScatterPoint {
   density: number
 }
 
-export type TuningAnalysisMode = 've_lambda' | 'coverage' | 'confidence'
-export type DatalogTab = 'logs' | 'dashboard' | 'charts' | 'data' | 'dyno'
+export type MapaAnalysisMode = 've_lambda' | 'coverage' | 'confidence'
+export type MapaTab = 'arquivo' | 've' | 'ignition' | 'lambda'
+export type DatalogTab = 'logs' | 'dashboard' | 'charts' | 'data' | 'dyno' | 'xy'
 
 export interface ChartPanel {
   type:    'panel'
@@ -38,8 +39,10 @@ export type ChartLayout = ChartPanel | ChartSplit
 
 export interface UIState {
   originalMapCollapsed: boolean
-  tuningAnalysisMode:   TuningAnalysisMode
+  mapaAnalysisMode:     MapaAnalysisMode
   datalogTab:           DatalogTab
+  /** Última aba aberta em Mapa (a TopBar reabre nela). */
+  mapaTab:              MapaTab
   columnVisibility:     Record<string, boolean>
   chartLayout:          ChartLayout
   chartSidebarOpen:     boolean

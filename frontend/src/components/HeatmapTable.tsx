@@ -1,19 +1,22 @@
 import { useState, useRef, useEffect } from 'react'
-import BulkEditModal from '@/features/tuning/BulkEditModal'
+import BulkEditModal from '@/features/mapa/BulkEditModal'
 import {
   selectionRect, isSingleCell, interpolateHorizontal, interpolateVertical, bulkAdjustChanges,
   scaleChanges, clearRangeChanges, toTsv, pasteChanges,
   type Pos, type Selection, type BulkType,
 } from '@/utils/mapEditOps'
+import { correctionColor, fadeToNeutral } from '@/utils/correctionColor'
 import { IconAdjust, IconInterpolateH, IconInterpolateV, IconUndo, IconRedo } from '@/components/MapEditIcons'
 
-export type ColorScale = 'warm' | 'diverging' | 'confidence' | 'coverage' | 'convergence' | 'symmetric'
+export type ColorScale = 'warm' | 'diverging' | 'confidence' | 'coverage' | 'convergence' | 'correction'
 
 interface HeatmapTableProps {
   cells:               (number | boolean | null)[][]
   rowHeaders:          number[]      // MAP breakpoints (kPa), cells[0] = highest MAP (top row)
   colHeaders:          number[]      // RPM breakpoints
   colorScale?:         ColorScale
+  /** Intensidade (0..1) por célula, mesma forma de `cells`: a cor continua a do valor, mas desbota para o tom neutro quando baixa. */
+  opacityValues?:      (number | null)[][]
   readOnly?:           boolean
   onCellChange?:       (row: number, col: number, value: number) => void
   onBulkChange?:       (changes: { row: number; col: number; value: number }[]) => void
@@ -84,6 +87,7 @@ function cellBg(
   scale: ColorScale,
   min: number,
   max: number,
+  opacity?: number,
 ): { bg: string; fg: string } {
   const empty = { bg: 'rgb(31,41,55)', fg: '#9ca3af' }
   if (value === null) return empty
@@ -100,11 +104,10 @@ function cellBg(
   let col: RGB
   if (scale === 'warm') {
     col = multiStop(WARM_STOPS, (value - min) / range)
-  } else if (scale === 'symmetric') {
-    // Both extremes render hot; only the midpoint (e.g. a neutral 1.00 factor) is cool.
-    const mid       = (max + min) / 2
-    const halfRange = Math.max(mid - min, max - mid) || 1
-    col = multiStop(WARM_STOPS, Math.abs(value - mid) / halfRange)
+  } else if (scale === 'correction') {
+    // `value` is a signed percent correction; min/max are ignored. Intensity is non-linear
+    // (see utils/correctionColor.ts): both directions render hot, 0% is cool.
+    col = correctionColor(value)
   } else if (scale === 'diverging') {
     const mid = (max + min) / 2
     col = value <= mid
@@ -116,6 +119,10 @@ function cellBg(
     col = multiStop(COVERAGE_STOPS, Math.min(1, (value - min) / range))
   }
 
+  if (opacity !== undefined && opacity < 1) {
+    // Pouca confiança: a cor desbota para o tom neutro de célula vazia (opaco, sem escurecer ao fundo).
+    col = fadeToNeutral(col, opacity)
+  }
   return { bg: rgb(col), fg: brightness(col) > 128 ? '#111' : '#f3f4f6' }
 }
 
@@ -126,6 +133,7 @@ export default function HeatmapTable({
   rowHeaders,
   colHeaders,
   colorScale = 'warm',
+  opacityValues,
   readOnly   = true,
   onCellChange,
   onBulkChange,
@@ -554,7 +562,7 @@ export default function HeatmapTable({
                   {rowHeaders[ri]}
                 </td>
                 {cells[ri].map((val, ci) => {
-                  const { bg, fg } = cellBg(val, colorScale, cMin, cMax)
+                  const { bg, fg } = cellBg(val, colorScale, cMin, cMax, opacityValues?.[ri]?.[ci] ?? undefined)
                   const sel           = inSel(ri, ci)
                   const anch          = isAnchor(ri, ci)
                   const isEdit        = editing?.r === ri && editing?.c === ci

@@ -18,13 +18,15 @@ map, imported logs, or any manual edits made to them.
 
 ### Requirement: What persists across a session
 The app SHALL persist, across reloads: the imported map (original and current edits), imported logs
-(content, active/inactive state, and order), the last generated VE correction snapshot with its
-provenance (logs, time range, filter values), the correction filter panel's current settings and
-visibility toggle, the timeline's cursor/selection/sparkline choice, the Constantes section's values
-(displacement, air-fuel ratio, BSFC, VE calibration), the Dinamômetro tab's settings (filters,
-Roda/Motor choice, loss percentage, Bruto/Suavizado choice), and UI layout
-preferences (collapsed panels, active analysis view, chart layout including each panel's height and
-the width split between side-by-side panels, signal sidebar state, table column visibility).
+(content, active/inactive state, and order), the history of correction runs (see `correction-runs`:
+compiled cells, breakpoints, name, creation instant and recipe) and which run is selected, the applied
+Datalog filter and its "Mostrar pontos filtrados" setting (see `datalog-filter`), the timeline's
+cursor/selection/sparkline choice, the Configurações screen's values (displacement, air-fuel ratio,
+BSFC, VE calibration, and the Ponderado confidence constant k), the Dinamômetro tab's settings (filters, Roda/Motor choice, loss percentage,
+Bruto/Suavizado choice), the XY tab's choices (the X signal, the ordered list of Y signals and the
+"Linha média", "Linha máxima" and "Linha mínima" checkboxes, see `datalog-xy`), and UI layout preferences (collapsed panels, active analysis view, chart
+layout including each panel's height and the width split between side-by-side panels, signal sidebar
+state, table column visibility).
 
 #### Scenario: Restoring UI preferences
 - **WHEN** the user reloads after collapsing the original-map panel and customizing the chart
@@ -42,17 +44,30 @@ the width split between side-by-side panels, signal sidebar state, table column 
   side-by-side panels keep their width split, and nothing is lost or shows an error
 
 #### Scenario: Restoring the last tuning result
-- **WHEN** the user reloads after generating a VE correction snapshot
-- **THEN** the last snapshot, its provenance, and its staleness state are available again without
-  regenerating
+- **WHEN** the user reloads after generating correction runs and selecting one of them
+- **THEN** the whole history, each run's name and recipe, and the selected run are available again
+  without regenerating
+
+#### Scenario: Restoring the applied filter
+- **WHEN** the user reloads after applying a filter and changing "Mostrar pontos filtrados"
+- **THEN** the same filter is applied and the same setting is in effect
 
 #### Scenario: Restoring constants and dyno settings
 - **WHEN** the user reloads after changing the constants and the Dinamômetro tab's settings
-- **THEN** the Constantes section and the Dinamômetro tab show the same values as before the reload,
-  and the derived signals are computed with them
+- **THEN** the Configurações screen and the Dinamômetro tab show the same values as before the
+  reload, and the derived signals are computed with them
+
+#### Scenario: Restoring the XY signal choice
+- **WHEN** the user reloads after choosing the X signal and several Y signals on the XY tab
+- **THEN** the XY tab shows the same X signal and the same Y signals in the same order
+
+#### Scenario: Restoring the confidence constant
+- **WHEN** the user reloads after changing k on the Configurações screen
+- **THEN** the same k is in effect, and the Ponderado heatmap uses it
 
 #### Scenario: Saved values are invalid or missing
-- **WHEN** the stored constants or dyno settings are absent or unreadable
+- **WHEN** the stored constants, confidence constant, dyno settings or XY signal choice are absent or
+  unreadable
 - **THEN** the defaults are used instead and no error is shown
 
 ### Requirement: Restore feedback and non-blocking startup
@@ -68,41 +83,6 @@ without blocking the initial render on the restore process.
 - **WHEN** the app starts with nothing previously imported
 - **THEN** no restore confirmation is shown
 
-### Requirement: Invalidation rules keep derived data consistent
-Changing the active log set, the correction filters, or the time selection after a correction
-snapshot has been generated SHALL mark it as outdated without discarding it; replacing the map
-SHALL clear it, since it no longer corresponds to any map; editing the map's cells SHALL NOT affect
-it.
-
-#### Scenario: Replacing the map
-- **WHEN** the user imports a new map to replace the current one
-- **THEN** the last generated correction snapshot is cleared and edits reset to the newly imported
-  map
-
-#### Scenario: Removing or deactivating an active log
-- **WHEN** the user removes or deactivates a log that was part of the active set
-- **THEN** the last generated correction snapshot is marked as outdated, since it was computed from
-  a different set of logs
-
-#### Scenario: Reordering logs does not invalidate anything
-- **WHEN** the user reorders active logs without changing which ones are active
-- **THEN** the last generated correction snapshot is left untouched
-
-#### Scenario: Changing the tuning config
-- **WHEN** the user changes any correction filter (the closest equivalent left to the removed
-  tuning config) after a snapshot exists
-- **THEN** the snapshot is kept and displayed but marked as outdated, not discarded
-
-#### Scenario: Changing the selected engine
-- **WHEN** — this scenario no longer applies: the client-side correction algorithm has no
-  selectable engines
-- **THEN** there is no engine-selection trigger for snapshot invalidation; see "Changing the tuning
-  config" and "Removing or deactivating an active log" above for the triggers that replace it
-
-#### Scenario: Editing the map does not invalidate the snapshot
-- **WHEN** the user edits the editable map's cells
-- **THEN** the last generated correction snapshot is left untouched and not marked as outdated
-
 ### Requirement: Graceful fallback when persistent storage is unavailable
 When the browser's persistent storage is unavailable (e.g., private browsing mode), the app SHALL
 continue to function for the current session using in-memory state, and SHALL warn the user that a
@@ -112,25 +92,6 @@ reload will lose their work.
 - **WHEN** the browser's persistent storage cannot be used
 - **THEN** the app continues to work normally within the current session, and the user is warned
   that reloading will lose unsaved data
-
-### Requirement: Restored snapshot without a mode
-A correction snapshot restored from a session saved before the Mode statistic existed SHALL remain
-displayable and usable with Mean and Median, and the Mode option SHALL be unavailable for it until a
-new snapshot is generated.
-
-#### Scenario: Restoring an older snapshot
-- **WHEN** the user reloads and the restored snapshot's cells have no mode value
-- **THEN** the snapshot is shown normally with Mean and Median working, the Mode option is disabled
-  with a hint that regenerating the correction factor enables it, and the snapshot is not discarded
-  or flagged as outdated on that account alone
-
-#### Scenario: Regenerating enables Mode
-- **WHEN** the user runs "Gerar fator de correção" again
-- **THEN** the new snapshot carries a mode for every cell with data and the Mode option is enabled
-
-#### Scenario: Selected statistic no longer available
-- **WHEN** Mode was the selected statistic and an older snapshot without mode is displayed
-- **THEN** the selection falls back to Median instead of showing empty factors
 
 ### Requirement: Logs saved by an older CSV reader gain new signals on restore
 When a log restored from a previous session was built by an older version of the app's CSV reader
@@ -156,3 +117,82 @@ does not contain a signal SHALL NOT be rebuilt again on every restore.
 #### Scenario: Rebuild fails
 - **WHEN** the stored CSV of an outdated log cannot be read or parsed
 - **THEN** the log is restored as stored and the restore does not fail
+
+### Requirement: The former single snapshot becomes a run
+A correction snapshot saved by a version of the app that kept only one ("last") snapshot SHALL be
+converted, on the first restore, into the first correction run of the history, named after its
+generation date and time, with the logs, time range and filter settings it recorded, and SHALL be
+selected. The former saved correction filter SHALL be converted to the unified filter (see
+`datalog-filter`). Nothing is lost and no error is shown.
+
+#### Scenario: Upgrading with an existing snapshot
+- **WHEN** the app starts after the update with a snapshot saved by the previous version
+- **THEN** the history holds one run built from it, it is selected, and its factors show against the
+  loaded map if the breakpoints match
+
+#### Scenario: Upgrading without a snapshot
+- **WHEN** the app starts after the update with no saved snapshot
+- **THEN** the history is empty and the Eficiência Volumétrica tab shows the explanatory message of the correction
+  section
+
+### Requirement: Correction runs are never invalidated
+Correction runs are fixed results and SHALL NOT be invalidated, flagged or discarded by changes to
+the active log set, the filter, the time selection, the constants or the map's cells. Replacing or
+clearing the map SHALL NOT delete any run; a run whose breakpoints differ from the loaded map's is
+shown as incompatible (see `correction-runs`). Only deleting a run, or exceeding the history limit,
+removes one.
+
+#### Scenario: Replacing the map
+- **WHEN** the user imports a new map to replace the current one
+- **THEN** every correction run stays in the history, edits reset to the newly imported map, and runs
+  with different breakpoints are shown as incompatible
+
+#### Scenario: Removing or deactivating an active log
+- **WHEN** the user removes or deactivates a log that was used by a run
+- **THEN** the run is unchanged and not flagged
+
+#### Scenario: Reordering logs does not invalidate anything
+- **WHEN** the user reorders active logs
+- **THEN** no correction run changes
+
+#### Scenario: Changing the filter or the time selection
+- **WHEN** the user applies a different filter or changes the time selection after runs exist
+- **THEN** no run changes and none is flagged
+
+#### Scenario: Editing the map does not invalidate anything
+- **WHEN** the user edits the editable map's cells
+- **THEN** no run changes; the displayed factors of the selected run are recomputed from the new
+  cells
+
+### Requirement: Restored run without a mode
+A correction run restored from a session saved before the Mode statistic existed — including the run
+migrated from the former single snapshot — SHALL remain displayable and usable with Mean and Median,
+and the Mode option SHALL be unavailable for it, since a run is never regenerated.
+
+#### Scenario: Restoring an older run
+- **WHEN** the user reloads and the restored run's cells have no mode value
+- **THEN** the run is shown normally with Mean and Median working, the Mode option is disabled with a
+  hint that only runs generated from now on carry a mode, and the run is not discarded
+
+#### Scenario: Generating a new run enables Mode
+- **WHEN** the user generates a new run
+- **THEN** it carries a mode for every cell with data and the Mode option is enabled while it is
+  selected
+
+#### Scenario: Selected statistic no longer available
+- **WHEN** Mode was the selected statistic and a run without mode is selected
+- **THEN** the selection falls back to Median instead of showing empty factors
+
+### Requirement: The last open tab of Mapa and Datalog persists
+The app SHALL persist, across reloads, the tab the user last had open in the Mapa section and in the
+Datalog section, so that entering either section from the TopBar reopens it (see `navigation-guards`).
+A saved tab the app no longer knows SHALL be ignored in favour of the section's default.
+
+#### Scenario: Reopening a section after a reload
+- **WHEN** the user reloads after leaving Datalog on the Gráficos tab and then opens Datalog from
+  the TopBar
+- **THEN** the Gráficos tab is shown
+
+#### Scenario: Saved tab is unknown
+- **WHEN** the stored last tab is missing or names a tab that no longer exists
+- **THEN** the section's default tab opens and no error is shown

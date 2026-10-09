@@ -60,6 +60,15 @@ export default function DatalogHelpModal({ open, onClose }: Props) {
             </ul>
           </Section>
 
+          <Section title="Filtro e Gerar Correção">
+            <ul className="space-y-1.5 list-disc list-inside">
+              <Item>O botão <strong>Filtro</strong> (em qualquer aba, menos Dinamômetro) abre os critérios: faixas de MAP, RPM, Lambda, Pedal, CLT, IAT, bateria, dead time, utilização e pulso dos injetores, Lambda Target e Boost, estados de Lambda Loop, variação de TPS/MAP e pulo de pontos após transições. Um ponto passa se cumprir <strong>todos</strong> os critérios ligados.</Item>
+              <Item>O mesmo filtro destaca os pontos no Dashboard, Gráficos e Dados e escolhe os pontos usados para gerar a correção — o que está destacado é o que gera.</Item>
+              <Item>As edições só valem depois de <strong>Aplicar</strong>; <strong>Restaurar padrão</strong> volta ao filtro inicial. O botão fica amarelo quando o filtro difere do padrão.</Item>
+              <Item><strong>Gerar Correção</strong> abre uma confirmação e cria um <em>run</em> (até 10 ficam no histórico) com os pontos que passam no filtro. Um switch na confirmação decide se o intervalo selecionado no TimeRail limita os pontos. Escolha, renomeie ou exclua runs na aba Eficiência Volumétrica do Mapa.</Item>
+            </ul>
+          </Section>
+
           <Section title="TimeRail — Barra de Tempo">
             <ul className="space-y-1.5 list-disc list-inside">
               <Item>Clique em qualquer ponto para posicionar o <strong className="text-red-400">cursor</strong> (linha vertical vermelha).</Item>
@@ -80,6 +89,18 @@ export default function DatalogHelpModal({ open, onClose }: Props) {
               <Item>Exibe o valor de <strong>todos os sinais</strong> no instante do cursor em um grid de cards.</Item>
               <Item>Mova o cursor no TimeRail para atualizar os valores em tempo real.</Item>
               <Item>Requer um log ativo e o cursor posicionado para exibir dados.</Item>
+            </ul>
+          </Section>
+
+          <Section title="Aba XY">
+            <ul className="space-y-1.5 list-disc list-inside">
+              <Item>Nuvem de pontos: escolha o sinal do eixo <strong>X</strong> e um ou mais sinais no eixo <strong>Y</strong>. Cada sinal do Y tem sua cor e seu próprio eixo.</Item>
+              <Item>Usa o mesmo <strong>Filtro</strong> das outras abas: pontos que não passam ficam esmaecidos (ou somem, conforme <strong>Mostrar pontos filtrados</strong>).</Item>
+              <Item>Com um intervalo selecionado no TimeRail, só os pontos dele são mostrados. O ponto do <strong className="text-red-400">cursor</strong> aparece destacado.</Item>
+              <Item>Marque <strong>Linha média</strong> para traçar, em cada sinal do Y, a curva do valor médio dele em cada faixa de X (ex.: pressão de óleo média por RPM), só com os pontos que passam no filtro e estão na seleção de tempo; a linha cobre toda a extensão horizontal desses pontos, inclusive as pontas com poucos pontos.</Item>
+              <Item><strong>Linha máxima</strong> e <strong>Linha mínima</strong> traçam, do mesmo jeito, o maior e o menor valor de cada sinal do Y em cada faixa de X — o envelope da nuvem. Cada linha liga e desliga sozinha.</Item>
+              <Item>Remova um sinal do Y com o <span className="font-mono text-gray-400">×</span> do chip, inclusive o último; sem nenhum Y, o gráfico pede para adicionar um.</Item>
+              <Item>Os eixos seguem a faixa padrão de cada sinal, como nos Gráficos.</Item>
             </ul>
           </Section>
 

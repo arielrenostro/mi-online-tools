@@ -16,7 +16,7 @@ export function isGearRestricted(filters: DynoFilters): boolean {
  * Linhas usadas pelo dinamômetro: dentro da seleção de tempo (quando há) e satisfazendo TODOS os
  * campos preenchidos (AND, limites inclusivos; `null` = sem limite). Valor não numérico (NaN) falha
  * o campo preenchido correspondente. Marcha só restringe quando nem todas estão marcadas — com tudo
- * marcado, linhas sem Marcha (logs sem a coluna) passam. Independente da máscara de correção e do filtro visual.
+ * marcado, linhas sem Marcha (logs sem a coluna) passam. Independente do filtro único do Datalog.
  */
 export function selectDynoRows(
   rows: DatalogRow[],

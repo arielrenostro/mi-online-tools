@@ -1,8 +1,7 @@
 import { useTimeStore } from '@/store/timeStore'
 import { useDisplayRows, useDisplaySignals } from '@/hooks/useDisplayRows'
-import { useCorrectionMask } from '@/hooks/useCorrectionMask'
-import { useVisualFilterStore } from '@/store/visualFilterStore'
-import { isVisualFilterActive } from '@/utils/visualFilter'
+import { useFilterMask } from '@/hooks/useFilterMask'
+import { signalOriginHint } from '@/signals/signalOrigin'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
 import type { DatalogRow } from '@/types/datalog'
 
@@ -31,8 +30,7 @@ export function DashboardTab() {
   const cursor_ms  = useTimeStore(s => s.cursor_ms)
   const allRows    = useDisplayRows()
   const allSignals = useDisplaySignals()
-  const mask       = useCorrectionMask()
-  const visualActive = useVisualFilterStore(s => isVisualFilterActive(s.filter))
+  const mask       = useFilterMask()
   const rowIndex   = findRowIndexAtCursor(allRows, cursor_ms)
   const row        = rowIndex !== null ? allRows[rowIndex] : null
   const excluded   = rowIndex !== null && mask[rowIndex] === false
@@ -50,9 +48,7 @@ export function DashboardTab() {
       <div className="text-xs text-gray-500 mb-2 font-mono">t = {fmtTime(row.timestamp_ms)}</div>
       {excluded && (
         <p className="text-xs text-yellow-500 bg-yellow-950/40 border border-yellow-900 rounded px-3 py-2 mb-4 inline-block">
-          {visualActive
-            ? 'Este instante não passa no filtro visual atual'
-            : 'Este instante não passa nos filtros de correção VE atuais'}
+          Este instante não passa no filtro atual
         </p>
       )}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -63,6 +59,7 @@ export function DashboardTab() {
           return (
             <div
               key={name}
+              title={signalOriginHint(name)}
               className={`bg-gray-800 rounded-lg p-4 border ${excluded ? 'border-yellow-700' : 'border-gray-700'}`}
             >
               <div className="text-xs text-gray-500 mb-1">{def.name}</div>

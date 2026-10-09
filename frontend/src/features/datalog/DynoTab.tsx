@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { DynoChart } from '@/components/DynoChart'
 import DynoFilterModal from './DynoFilterModal'
 import { useDisplayRows, useDisplaySignals } from '@/hooks/useDisplayRows'
@@ -84,6 +85,10 @@ export function DynoTab() {
             {mode === 'wheel' ? ` · roda com ${lossPct}% de perda` : ''}
           </span>
         </div>
+        <p className="text-[11px] text-gray-600">
+          Potência e torque são calculados a partir das constantes definidas em{' '}
+          <Link to="/settings" className="text-gray-500 hover:text-gray-300 underline">Configurações</Link>.
+        </p>
         {noGearData && (
           <p className="text-xs text-yellow-500">
             Os logs ativos não têm informação de marcha (CSV sem a coluna) — linhas deles ficam de fora enquanto houver restrição de marcha.

@@ -112,8 +112,6 @@ export const useMapStore = create<MapState & MapActions>()(
           historyLambda:   [], futureLambda:   [],
         })
         await mapPersistence.saveMap(model, editableCells, file)
-        const { useCorrectionStore } = await import('./correctionStore')
-        useCorrectionStore.getState().clear()
       } catch (err) {
         set({ isLoading: false, lastError: err instanceof Error ? err.message : 'Erro ao parsear mapa.' })
       }
@@ -271,8 +269,6 @@ export const useMapStore = create<MapState & MapActions>()(
     async clear() {
       set(initial)
       await mapPersistence.clearMap()
-      const { useCorrectionStore } = await import('./correctionStore')
-      useCorrectionStore.getState().clear()
     },
 
     hydrate({ originalModel, editableCells, editableIgnitionCells, editableLambdaCells }) {

@@ -21,22 +21,26 @@ dependências e tipos TypeScript não são duplicados como spec — são derivá
 | Capability | Cobre |
 |------|-------|
 | `home` | Tela Home (`/`), cards de entrada |
-| `map-import-export` | Parsing/exportação client-side do CSV de mapa; controle de mapa na TopBar |
-| `datalog-import` | Parsing client-side do CSV de datalog; aba Logs; controle de logs na TopBar |
+| `map-import-export` | Parsing/exportação client-side do CSV de mapa |
+| `datalog-import` | Parsing client-side do CSV de datalog; aba Logs (só inventário de logs); controle de logs na TopBar |
 | `datalog-timeline` | TimeRail: cursor, seleção de intervalo, sparkline, múltiplos logs |
 | `datalog-dashboard` | Aba Dashboard |
 | `datalog-charts` | Aba Gráficos: painéis sincronizados, sidebar de sinais |
 | `datalog-table` | Aba Dados: tabela, colunas, exportação CSV |
-| `datalog-visual-filter` | Filtro visual (botão ao lado do "?"): ranges que substituem o destaque dos filtros de correção, só exibição e só de sessão |
-| `datalog-constants` | Seção Constantes (aba Logs): cilindrada/AFR/BSFC, calibração de VE (k) e sinais de runtime VE Lambda Corrigido, Potência, Torque |
+| `datalog-filter` | Filtro único do Datalog (modal no cabeçalho): critérios ligáveis em AND, mesma máscara para destaque e para gerar run, padrão, rascunho/Aplicar, "Mostrar pontos filtrados", persistência |
+| `correction-runs` | Run de correção (compilado independente dos logs), histórico de 10, nome editável, compatibilidade por breakpoints, botão "Gerar Correção" no cabeçalho do Datalog, toast/indicador, seletor na aba Eficiência Volumétrica |
+| `app-settings` | Tela Configurações (TopBar, sem guard): Constantes do motor e a constante k de confiança do Ponderado |
+| `datalog-constants` | Constantes (tela Configurações): cilindrada/AFR/BSFC, calibração de VE (k), sinais de runtime VE Lambda Corrigido, Potência, Torque e o hover que indica a origem deles |
 | `datalog-dyno` | Aba Dinamômetro: curva potência/torque × RPM (Roda/Motor, Bruto/Suavizado, filtros próprios) |
+| `datalog-xy` | Aba XY: nuvem de pontos de um sinal X contra um ou mais Y (eixo por sinal), com o filtro único, a seleção da TimeRail e o cursor |
 | `heatmap-editing` | Contrato compartilhado de edição de tabela N×M (seleção, atalhos, undo/redo) |
-| `tuning-ve` | Aba VE: edição manual, mapa original, seção de correção |
-| `tuning-ve-correction` | Filtros de correção (aba Logs), geração do snapshot, heatmap de correção e aplicação no mapa VE |
-| `tuning-ignition` | Aba Ignition (bloqueada na v1) |
-| `tuning-lambda` | Aba Lambda (bloqueada na v1) |
+| `mapa-arquivo` | Aba Arquivo do Mapa: subir/substituir, exportar e remover o mapa, informações do mapa (livre de guard) |
+| `mapa-ve` | Aba VE: edição manual, mapa original, seção de correção (sempre presente, com estado vazio explicativo) |
+| `mapa-ve-correction` | Atribuição bilinear + estatísticas por célula, heatmaps de correção (Direta/Ponderado/Amostras), proveniência e aplicação no mapa VE |
+| `mapa-ignition` | Aba Ignition (bloqueada na v1) |
+| `mapa-lambda` | Aba Lambda (bloqueada na v1) |
 | `navigation-guards` | Rotas, guards (`RequireMap`/`RequireLog`), padrão de aba bloqueada |
-| `session-persistence` | O que sobrevive a um reload, ordem de restauração, invalidação |
+| `session-persistence` | O que sobrevive a um reload, ordem de restauração, migração do snapshot antigo, runs nunca invalidados |
 | `pwa` | App instalável (manifest), service worker offline, atualização automática, cache dos arquivos de update |
 
 ### Geral
@@ -74,8 +78,8 @@ cd frontend && npm install && npm run dev
 ## Decisões arquiteturais
 
 - **Sem backend.** Um motor de auto-tuning no servidor existiu, nunca funcionou bem na prática e foi
-  removido — a correção do mapa VE é calculada inteiramente no cliente (ver `tuning-ve-correction`).
+  removido — a correção do mapa VE é calculada inteiramente no cliente (ver `correction-runs` e `mapa-ve-correction`).
 - **Parsing é sempre client-side.** `parseMapClient` e `parseDatalogClient` rodam no browser; nada é
   enviado a nenhum servidor.
-- **Frontend é a única fonte de verdade.** Mapa, logs, edições, filtros de correção e o último
-  snapshot gerado vivem em IndexedDB/localStorage no navegador do usuário.
+- **Frontend é a única fonte de verdade.** Mapa, logs, edições, o filtro e o histórico de runs de
+  correção vivem em IndexedDB/localStorage no navegador do usuário.

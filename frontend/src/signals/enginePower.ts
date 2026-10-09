@@ -1,10 +1,10 @@
-/** Constantes de engenharia editáveis na seção "Constantes" da aba Logs. */
+/** Constantes de engenharia editáveis na tela Configurações (seção "Constantes"). */
 export interface EngineConstants {
   /** Cilindrada (cc). */
   displacementCc: number
   /** Relação ar-combustível estequiométrica (etanol ≈ 9). */
   afr:            number
-  /** Consumo específico de combustível (lb/cv·h). */
+  /** Consumo específico de combustível (lb/hp·h). */
   bsfc:           number
 }
 
@@ -27,10 +27,11 @@ const GAS_CONSTANT_AIR = 287      // J/(kg·K)
 const KELVIN_OFFSET    = 273
 const LB_PER_KG        = 2.20462
 const TORQUE_CV_FACTOR = 716.2    // kgf·m = cv × 716,2 / rpm
+const CV_PER_HP        = 745.7 / 735.5 // hp (745,7 W) → cv métrico (735,5 W)
 
 /**
- * Potência (cv) e torque (kgf·m) do motor estimados pelo consumo de combustível — mesma conta das
- * colunas AM/AN da aba "Log" da planilha. NaN quando a entrada não permite o cálculo.
+ * Potência (cv) e torque (kgf·m) do motor estimados pelo consumo de combustível — a conta das
+ * colunas AM/AN da aba "Log" da planilha, com o BSFC em lb/hp·h e a potência em hp convertida para cv. NaN quando a entrada não permite o cálculo.
  */
 export function computeEnginePower(
   input: EnginePowerInput,
@@ -43,7 +44,8 @@ export function computeEnginePower(
   const airKgS  = (map * 1000 * veFraction * (constants.displacementCc / 1e6) * rpm)
                   / (GAS_CONSTANT_AIR * (iatC + KELVIN_OFFSET) * 2 * 60)
   const fuelKgS = airKgS / (constants.afr * lambda1)
-  const power   = (fuelKgS * 3600 * LB_PER_KG) / constants.bsfc
+  const powerHp = (fuelKgS * 3600 * LB_PER_KG) / constants.bsfc
+  const power   = powerHp * CV_PER_HP
   const torque  = rpm > 0 ? (power * TORQUE_CV_FACTOR) / rpm : 0
 
   if (!Number.isFinite(power) || !Number.isFinite(torque)) return invalid

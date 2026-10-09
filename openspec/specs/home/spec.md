@@ -1,29 +1,29 @@
 # home Specification
 
 ## Purpose
-The Home screen is the application's entry point: it presents Tuning and Datalog as gated entry
+The Home screen is the application's entry point: it presents Mapa and Datalog as gated entry
 points and routes the user into whichever flow its prerequisites allow.
 
 ## Requirements
 
 ### Requirement: Entry cards reflect prerequisite state
-The Home screen SHALL present a Tuning card and a Datalog card, each enabled only when its
+The Home screen SHALL present a Mapa card and a Datalog card, each enabled only when its
 prerequisite data has been imported.
 
 #### Scenario: No map and no logs imported
 - **WHEN** the user opens the Home screen with no map imported and no logs active
-- **THEN** both the Tuning and Datalog cards are shown disabled, each displaying its unmet
+- **THEN** both the Mapa and Datalog cards are shown disabled, each displaying its unmet
   requirement ("map imported" / "1+ logs imported")
 
 #### Scenario: Map imported, no logs
 - **WHEN** a map has been imported and no logs are active
-- **THEN** the Tuning card is enabled and displays a checkmark with the map's filename; the
+- **THEN** the Mapa card is enabled and displays a checkmark with the map's filename; the
   Datalog card remains disabled
 
 #### Scenario: Logs imported, no map
 - **WHEN** one or more logs are active and no map has been imported
 - **THEN** the Datalog card is enabled and displays a checkmark with the log count and total
-  duration; the Tuning card remains disabled
+  duration; the Mapa card remains disabled
 
 #### Scenario: Both imported
 - **WHEN** a map has been imported and one or more logs are active
@@ -33,8 +33,8 @@ prerequisite data has been imported.
 Each entry card SHALL navigate to its screen only when it is enabled.
 
 #### Scenario: Clicking an enabled card
-- **WHEN** the user clicks an enabled Tuning or Datalog card
-- **THEN** the app navigates to `/tuning` or `/datalog` respectively
+- **WHEN** the user clicks an enabled Mapa or Datalog card
+- **THEN** the app navigates to `/mapa` or `/datalog` respectively
 
 #### Scenario: Clicking a disabled card
 - **WHEN** the user clicks a disabled card
@@ -45,7 +45,7 @@ Reloading the browser SHALL always render the Home screen, regardless of which s
 before the reload, while the underlying session state (imported map/logs) is restored
 independently.
 
-#### Scenario: Reload while on Tuning or Datalog
-- **WHEN** the user reloads the browser while on `/tuning` or `/datalog`
+#### Scenario: Reload while on Mapa or Datalog
+- **WHEN** the user reloads the browser while on `/mapa` or `/datalog`
 - **THEN** the app renders the Home screen, and the entry cards reflect the restored map/logs
   once session restore completes

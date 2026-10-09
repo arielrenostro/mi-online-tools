@@ -5,6 +5,7 @@ import { useDisplayRows, useDisplaySignals } from '@/hooks/useDisplayRows'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
 import { buildSparkline, type SparklineData } from '@/utils/sparkline'
 import { findLastRow } from '@/utils/findLastRow'
+import { dragSelection } from '@/utils/railDrag'
 import type { TimeSelection } from '@/types/datalog'
 
 // ─── utils ───────────────────────────────────────────────────────────────────
@@ -229,6 +230,9 @@ type DragState =
 export function TimeRail() {
   const railRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<DragState>({ type: 'idle' })
+  // Seleção em arrasto: só a faixa da régua acompanha o mouse; o store (e com ele gráficos, tabela,
+  // etc.) recebe a seleção uma única vez, ao soltar — recalcular tudo a cada movimento trava.
+  const [draft, setDraft] = useState<TimeSelection | null>(null)
 
   const cursor_ms       = useTimeStore(s => s.cursor_ms)
   const selection       = useTimeStore(s => s.selection)
@@ -242,6 +246,7 @@ export function TimeRail() {
   const total         = useLogStore(selectTotalDuration)
   const allRows       = useDisplayRows()
   const allSignals    = useDisplaySignals()
+  const shownSelection = draft ?? selection
 
   const sparklineData = useMemo<SparklineData>(
     () => buildSparkline(allRows, sparklineSensor, total),
@@ -307,35 +312,26 @@ export function TimeRail() {
   function handleMouseMove(e: React.MouseEvent) {
     if (drag.type === 'cursor') {
       setCursor(getRailMs(e.clientX))
-    } else if (drag.type === 'selection') {
-      const cur = getRailMs(e.clientX)
-      if (Math.abs(cur - drag.startMs) > 200) {
-        setSelection(Math.min(drag.startMs, cur), Math.max(drag.startMs, cur))
-      }
-    } else if (drag.type === 'handle' && selection) {
-      const cur = getRailMs(e.clientX)
-      if (drag.side === 'left') {
-        setSelection(Math.min(cur, selection.end_ms - 200), selection.end_ms)
-      } else {
-        setSelection(selection.start_ms, Math.max(cur, selection.start_ms + 200))
-      }
-    } else if (drag.type === 'move') {
-      const cur = getRailMs(e.clientX)
-      const delta  = cur - drag.startMs
-      const width  = drag.selEnd - drag.selStart
-      const newStart = Math.max(0, Math.min(total - width, drag.selStart + delta))
-      setSelection(newStart, newStart + width)
+    } else if (drag.type !== 'idle') {
+      const next = dragSelection(drag, getRailMs(e.clientX), shownSelection, total)
+      if (next) setDraft(next)
     }
   }
 
-  function handleMouseUp() { setDrag({ type: 'idle' }) }
-  function handleMouseLeave() { if (drag.type !== 'idle') setDrag({ type: 'idle' }) }
+  /** Fim do arrasto: grava o rascunho da seleção, se houver, uma única vez. */
+  function endDrag() {
+    if (draft) setSelection(draft.start_ms, draft.end_ms)
+    setDraft(null)
+    setDrag({ type: 'idle' })
+  }
+  function handleMouseUp() { endDrag() }
+  function handleMouseLeave() { if (drag.type !== 'idle') endDrag() }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (cursor_ms === null) return
     if (e.key === 'ArrowLeft') { e.preventDefault(); setCursor(Math.max(0, cursor_ms - (e.shiftKey ? 1000 : 100))) }
     if (e.key === 'ArrowRight') { e.preventDefault(); setCursor(Math.min(total, cursor_ms + (e.shiftKey ? 1000 : 100))) }
-    if (e.key === 'Escape') { e.preventDefault(); clearSelection() }
+    if (e.key === 'Escape') { e.preventDefault(); setDraft(null); clearSelection() }
   }
 
   if (total === 0) return null
@@ -365,8 +361,8 @@ export function TimeRail() {
         >
           <SparklineSVG data={sparklineData} total={total} />
           <SparklineScale data={sparklineData} signal={sparklineSensor} />
-          {selection && <ViewportBand zoom={selection} total={total} />}
-          {selection && <SelectionBand selection={selection} total={total} />}
+          {shownSelection && <ViewportBand zoom={shownSelection} total={total} />}
+          {shownSelection && <SelectionBand selection={shownSelection} total={total} />}
           <LogSeparators logs={activeLogs} total={total} />
           {cursor_ms !== null && <CursorLine cursor_ms={cursor_ms} total={total} />}
           {cursor_ms !== null && (
@@ -376,7 +372,7 @@ export function TimeRail() {
       </div>
 
       <StatusBar
-        cursor_ms={cursor_ms} selection={selection} onClear={clearSelection}
+        cursor_ms={cursor_ms} selection={shownSelection} onClear={clearSelection}
         sensor={sparklineSensor} sensorValue={cursorValue}
       />
     </div>

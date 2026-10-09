@@ -3,7 +3,7 @@ import { computeEnginePower } from './enginePower'
 import type { EngineConstants } from './enginePower'
 
 /**
- * Sinais que dependem das constantes editáveis (seção "Constantes" da aba Logs) — por isso são
+ * Sinais que dependem das constantes editáveis (constantes da tela Configurações) — por isso são
  * calculados na leitura (`getDisplayRows`), nunca no parse nem gravados no `model` persistido.
  */
 export interface RuntimeSignalDef {

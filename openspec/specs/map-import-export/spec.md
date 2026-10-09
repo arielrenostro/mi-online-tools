@@ -44,33 +44,14 @@ SHALL be displayed and edited as a decimal while stored as a scaled integer.
 - **THEN** the table displays and accepts edits to it as `1.00`, and any edit is converted back to
   the stored integer scale
 
-### Requirement: TopBar map control
-The global TopBar SHALL let the user import a map when none is loaded, and replace the current map
-when one is loaded, without leaving the current screen.
-
-#### Scenario: No map loaded
-- **WHEN** no map has been imported
-- **THEN** the TopBar shows an "Import Map" control that opens a native file picker restricted to
-  `.csv`
-
-#### Scenario: Map loaded
-- **WHEN** a map has been imported
-- **THEN** the TopBar shows the map's filename, and clicking it reopens the file picker to replace
-  the map
-
-#### Scenario: Replacing the current map
-- **WHEN** the user selects a new file through the replace control
-- **THEN** the app discards the previous map's edits and loads the new file as both the read-only
-  original and the editable map, while active logs and time selection remain unchanged
-
 ### Requirement: Client-side CSV export
 The app SHALL export the currently edited map as a downloadable CSV that matches the original
 file's format, replacing only the VE/ignition/lambda-target lines with their current edited values
 and leaving every other line unchanged.
 
-#### Scenario: Export disabled without a map
+#### Scenario: Export unavailable without a map
 - **WHEN** no map has been imported
-- **THEN** the export control is disabled
+- **THEN** the export control is not shown (see `mapa-arquivo`)
 
 #### Scenario: Export with a map
 - **WHEN** a map is loaded and the user activates export

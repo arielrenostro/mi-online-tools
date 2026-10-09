@@ -51,13 +51,11 @@ export const useTimeStore = create<TimeState & TimeActions>()(
       const selection: TimeSelection = { start_ms: s, end_ms: e }
       set({ selection })
       persistTime({ ...get(), selection })
-      import('./correctionStore').then(m => m.useCorrectionStore.getState().markStale())
     },
 
     clearSelection() {
       set({ selection: null })
       persistTime({ ...get(), selection: null })
-      import('./correctionStore').then(m => m.useCorrectionStore.getState().markStale())
     },
 
     setSparklineSensor(signal) {

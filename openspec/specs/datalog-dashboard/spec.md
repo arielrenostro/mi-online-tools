@@ -25,21 +25,15 @@ highlighted on its card.
 - **WHEN** a signal's value at the cursor instant is outside its normal range
 - **THEN** that signal's card is rendered with a distinct alarm style
 
-### Requirement: Cards flag correction-filter exclusion
+### Requirement: Cards flag filter exclusion
 A signal's card SHALL be visually flagged, distinctly from the out-of-range alarm style, when the
-cursor's current instant fails the active highlight mask — the correction filters defined by
-`tuning-ve-correction`, or the visual filter defined by `datalog-visual-filter` while one is
-active — regardless of the visibility toggle.
+cursor's current instant fails the applied filter (see `datalog-filter`), regardless of the
+visibility toggle.
 
 #### Scenario: Cursor on an excluded instant
-- **WHEN** the timeline cursor is at an instant that fails the active mask
+- **WHEN** the timeline cursor is at an instant that fails the applied filter
 - **THEN** every signal's card at that instant shows a distinct "excluded" style
 
 #### Scenario: Cursor on a qualifying instant
-- **WHEN** the timeline cursor is at an instant that passes the active mask
+- **WHEN** the timeline cursor is at an instant that passes the applied filter
 - **THEN** cards render normally, without the exclusion style
-
-#### Scenario: Visual filter active
-- **WHEN** a visual filter is active
-- **THEN** the exclusion style follows the visual filter's pass/fail state at the cursor instant,
-  not the correction filters'

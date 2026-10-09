@@ -88,8 +88,6 @@ export const useLogStore = create<LogState & LogActions>()(
       try { await logPersistence.deleteLog(hash) } catch { /* non-fatal */ }
       persistOrder(newLogs)
       if (entry.enabled) {
-        const { useCorrectionStore } = await import('./correctionStore')
-        useCorrectionStore.getState().markStale()
         const newTotal = newLogs.filter(l => l.enabled).reduce((a, l) => a + l.duration_ms, 0)
         useTimeStore.getState().onTotalDurationChanged(newTotal)
       }
@@ -104,7 +102,6 @@ export const useLogStore = create<LogState & LogActions>()(
       persistOrder(newLogs)
       const nowActive = newLogs.filter(l => l.enabled)
       if (entry.enabled && nowActive.length === 0) useTimeStore.getState().clearSelection()
-      import('./correctionStore').then(m => m.useCorrectionStore.getState().markStale())
       const newTotal = nowActive.reduce((a, l) => a + l.duration_ms, 0)
       useTimeStore.getState().onTotalDurationChanged(newTotal)
     },

@@ -9,7 +9,17 @@ vi.mock('@/persistence/mapPersistence', () => ({
   clearMap:            vi.fn(async () => {}),
 }))
 
+vi.mock('@/parsers/mapParser', () => ({
+  parseMapClient: vi.fn(),
+}))
+
 import { useMapStore } from './mapStore'
+import { useCorrectionStore } from './correctionStore'
+import { useFilterStore } from './filterStore'
+import { useLogStore } from './logStore'
+import * as mapPersistence from '@/persistence/mapPersistence'
+import { parseMapClient } from '@/parsers/mapParser'
+import { computeApplyChanges, computeFactorGrid } from '@/utils/correctionDisplay'
 import type { MapModel } from '@/types/map'
 
 function makeMap(): MapModel {
@@ -101,6 +111,35 @@ describe('bulkUpdateCells (VE)', () => {
       { row: 0, col: 1, value: 600 },
     ])
     expect(useMapStore.getState().history.length).toBe(1)
+  })
+})
+
+describe('applying a correction run to the map', () => {
+  // Map cells are raw VE (%×10); the run holds VE Lambda in real %: 10 → 100 raw.
+  const run = {
+    cells: [
+      [{ n: 50, mean: 20, median: 20, mode: 20 }, { n: 0, mean: null, median: null, mode: null }, { n: 50, mean: 30, median: 30, mode: 30 }],
+      [{ n: 0, mean: null, median: null, mode: null }, { n: 0, mean: null, median: null, mode: null }, { n: 0, mean: null, median: null, mode: null }],
+    ],
+  }
+
+  it('multiplies the cells with data by the selected factor, in one undo step, leaving the others alone', () => {
+    const grid = computeFactorGrid(run, useMapStore.getState().editableMap!, 'mean', 'direct')
+    useMapStore.getState().bulkUpdateCells(computeApplyChanges(grid, useMapStore.getState().editableMap!))
+    const map = useMapStore.getState().editableMap!
+    expect(map[0][0]).toBe(200) // 100 raw (10%) × (20 / 10) = 200
+    expect(map[0][2]).toBe(300) // 200 raw (20%) × (30 / 20) = 300
+    expect(map[0][1]).toBe(150) // no data → unchanged
+    expect(map[1]).toEqual([300, 350, 400])
+    expect(useMapStore.getState().history.length).toBe(1)
+    useMapStore.getState().undo()
+    expect(useMapStore.getState().editableMap![0][0]).toBe(100)
+  })
+
+  it('a run with no data produces no changes', () => {
+    const empty = { cells: run.cells.map(r => r.map(() => ({ n: 0, mean: null, median: null, mode: null }))) }
+    const grid = computeFactorGrid(empty, useMapStore.getState().editableMap!, 'mean', 'direct')
+    expect(computeApplyChanges(grid, useMapStore.getState().editableMap!)).toEqual([])
   })
 })
 
@@ -201,5 +240,79 @@ describe('Ignition/Lambda parity', () => {
     useMapStore.getState().undoIgnition()
     expect(useMapStore.getState().editableIgnitionMap![0][0]).toBe(10)
     expect(useMapStore.getState().editableMap![0][0]).toBe(999) // VE untouched by Ignition undo
+  })
+})
+
+describe('clear (Remover mapa)', () => {
+  it('zera mapa, tabelas editáveis, flags, históricos e erro', async () => {
+    useMapStore.getState().updateCell(0, 0, 999)
+    useMapStore.getState().updateIgnitionCell(0, 0, 50)
+    useMapStore.getState().updateLambdaCell(0, 0, 1500)
+    useMapStore.setState({ lastError: 'x' })
+
+    await useMapStore.getState().clear()
+
+    const s = useMapStore.getState()
+    expect(s.originalMap).toBeNull()
+    expect(s.editableMap).toBeNull()
+    expect(s.editableIgnitionMap).toBeNull()
+    expect(s.editableLambdaMap).toBeNull()
+    expect([s.isDirty, s.isDirtyIgnition, s.isDirtyLambda]).toEqual([false, false, false])
+    expect([s.history, s.historyIgnition, s.historyLambda].every(h => h.length === 0)).toBe(true)
+    expect([s.future, s.futureIgnition, s.futureLambda].every(h => h.length === 0)).toBe(true)
+    expect(s.lastError).toBeNull()
+  })
+
+  it('apaga a cópia persistida do mapa', async () => {
+    vi.mocked(mapPersistence.clearMap).mockClear()
+    await useMapStore.getState().clear()
+    expect(mapPersistence.clearMap).toHaveBeenCalledTimes(1)
+  })
+
+  it('não altera logs, filtro nem runs de correção', async () => {
+    const run = { id: 'r1' } as never
+    useCorrectionStore.setState({ runs: [run], selectedRunId: 'r1' })
+    const logs = useLogStore.getState().logs
+    const filter = useFilterStore.getState().filter
+
+    await useMapStore.getState().clear()
+
+    expect(useCorrectionStore.getState().runs).toEqual([run])
+    expect(useCorrectionStore.getState().selectedRunId).toBe('r1')
+    expect(useLogStore.getState().logs).toBe(logs)
+    expect(useFilterStore.getState().filter).toBe(filter)
+    useCorrectionStore.setState({ runs: [], selectedRunId: null })
+  })
+})
+
+describe('loadMap (Importar mapa)', () => {
+  const file = new File(['x'], 'novo.csv')
+
+  it('arquivo inválido mantém o mapa anterior e preenche lastError', async () => {
+    vi.mocked(parseMapClient).mockRejectedValueOnce(new Error('CSV inválido'))
+    useMapStore.getState().updateCell(0, 0, 999)
+
+    await useMapStore.getState().loadMap(file)
+
+    const s = useMapStore.getState()
+    expect(s.lastError).toBe('CSV inválido')
+    expect(s.isLoading).toBe(false)
+    expect(s.originalMap!.name).toBe('test.csv')
+    expect(s.editableMap![0][0]).toBe(999)
+  })
+
+  it('importação bem-sucedida troca o mapa, descarta edições e limpa lastError', async () => {
+    useMapStore.getState().updateCell(0, 0, 999)
+    useMapStore.setState({ lastError: 'antigo' })
+    vi.mocked(parseMapClient).mockResolvedValueOnce({ ...makeMap(), name: 'novo.csv' })
+
+    await useMapStore.getState().loadMap(file)
+
+    const s = useMapStore.getState()
+    expect(s.originalMap!.name).toBe('novo.csv')
+    expect(s.editableMap![0][0]).toBe(100)
+    expect(s.isDirty).toBe(false)
+    expect(s.history).toEqual([])
+    expect(s.lastError).toBeNull()
   })
 })

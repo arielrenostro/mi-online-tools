@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
+import { useAfterPaint } from '@/hooks/useAfterPaint'
+import { LoadingOverlay } from '@/components/LoadingOverlay'
 import type { EChartsOption } from 'echarts'
 import type { DynoPoint } from '@/utils/dynoCurve'
 
@@ -79,6 +81,7 @@ export function buildDynoOption(points: DynoPoint[], smoothed: boolean): ECharts
 
 export function DynoChart({ points, smoothed }: { points: DynoPoint[]; smoothed: boolean }) {
   const option = useMemo(() => buildDynoOption(points, smoothed), [points, smoothed])
+  const { shown: shownOption, pending } = useAfterPaint(option)
 
   if (points.length === 0) {
     return (
@@ -87,5 +90,10 @@ export function DynoChart({ points, smoothed }: { points: DynoPoint[]; smoothed:
       </div>
     )
   }
-  return <ReactECharts option={option} notMerge style={{ height: '100%', width: '100%' }} />
+  return (
+    <div className="relative h-full w-full">
+      {shownOption && <ReactECharts option={shownOption} notMerge style={{ height: '100%', width: '100%' }} />}
+      {pending && <LoadingOverlay />}
+    </div>
+  )
 }

@@ -126,3 +126,28 @@ describe('uiStore — hydrate (migração de layouts salvos)', () => {
     expect(useUIStore.getState().originalMapCollapsed).toBe(true)
   })
 })
+
+describe('uiStore — modo de análise do Mapa', () => {
+  beforeEach(() => {
+    useUIStore.setState({ mapaAnalysisMode: 've_lambda' })
+    vi.mocked(lsSet).mockClear()
+  })
+
+  it('restaura o campo antigo tuningAnalysisMode como mapaAnalysisMode', () => {
+    useUIStore.getState().hydrate({ tuningAnalysisMode: 'coverage' })
+    expect(useUIStore.getState().mapaAnalysisMode).toBe('coverage')
+  })
+
+  it('o campo novo vence o antigo quando os dois existem', () => {
+    useUIStore.getState().hydrate({ tuningAnalysisMode: 'coverage', mapaAnalysisMode: 'confidence' })
+    expect(useUIStore.getState().mapaAnalysisMode).toBe('confidence')
+  })
+
+  it('o próximo persist grava só o nome novo', () => {
+    useUIStore.getState().hydrate({ tuningAnalysisMode: 'coverage' })
+    useUIStore.getState().setMapaAnalysisMode('confidence')
+    const saved = vi.mocked(lsSet).mock.calls[vi.mocked(lsSet).mock.calls.length - 1][1] as Record<string, unknown>
+    expect(saved.mapaAnalysisMode).toBe('confidence')
+    expect('tuningAnalysisMode' in saved).toBe(false)
+  })
+})

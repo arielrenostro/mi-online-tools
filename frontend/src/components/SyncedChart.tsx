@@ -4,21 +4,23 @@ import * as echarts from 'echarts'
 import { useUIStore, flattenPanels } from '@/store/uiStore'
 import { useTimeStore } from '@/store/timeStore'
 import { useDisplayRows, useDisplaySignals } from '@/hooks/useDisplayRows'
-import { useCorrectionStore } from '@/store/correctionStore'
-import { useCorrectionMask } from '@/hooks/useCorrectionMask'
+import { useFilterStore } from '@/store/filterStore'
+import { useFilterMask } from '@/hooks/useFilterMask'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
+import { signalOriginHint } from '@/signals/signalOrigin'
 import { findLastRow } from '@/utils/findLastRow'
+import { sigColor, dimColor as dim } from '@/utils/signalColor'
 import { layoutHeight, canResizeHeight, canResizeWidth, hasHorizontalNeighbour } from '@/utils/chartLayoutSize'
+import { nextWindow, windowRows, type TimeWindow } from '@/utils/chartWindow'
+import { useAfterPaint, applyQueue } from '@/hooks/useAfterPaint'
+import { flushSync } from 'react-dom'
+import { useBusy } from '@/hooks/useBusy'
+import { LoadingOverlay } from '@/components/LoadingOverlay'
 import type { ChartLayout, ChartPanel } from '@/types/ui'
+import type { TimeSelection } from '@/types/datalog'
 import type { DatalogRow } from '@/types/datalog'
 
 const GROUP_ID = 'datalog-charts'
-
-const PALETTE = ['#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f87171', '#fb923c', '#4ade80', '#e879f9']
-
-function sigColor(signal: string, idx: number): string {
-  return PALETTE[idx % PALETTE.length]
-}
 
 function fmtMs(ms: number): string {
   const totalSec = Math.floor(ms / 1000)
@@ -47,15 +49,18 @@ export function computeRuns(mask: boolean[]): Run[] {
   return runs
 }
 
-function dim(color: string): string {
-  // color is one of the hex entries in PALETTE — reduce opacity by converting to rgba
-  const r = parseInt(color.slice(1, 3), 16)
-  const g = parseInt(color.slice(3, 5), 16)
-  const b = parseInt(color.slice(5, 7), 16)
-  return `rgba(${r},${g},${b},0.25)`
+/**
+ * Quando as linhas são só um trecho do log (janelamento), `view` mantém o gráfico igual ao do log
+ * inteiro: o eixo X cobre o log todo, não só o trecho carregado. (O eixo Y não precisa de nada:
+ * todo sinal tem faixa fixa em `SIGNAL_MAP`.)
+ */
+export interface ChartView {
+  xDomain: [number, number]
 }
 
-function buildOption(signals: string[], rows: DatalogRow[], mask: boolean[], showFilteredPoints: boolean): object {
+export function buildOption(
+  signals: string[], rows: DatalogRow[], mask: boolean[], showFilteredPoints: boolean, view?: ChartView,
+): object {
   if (signals.length === 0) return {}
 
   const rows_ = showFilteredPoints ? rows : rows.filter((_, i) => mask[i])
@@ -92,6 +97,12 @@ function buildOption(signals: string[], rows: DatalogRow[], mask: boolean[], sho
         yAxisIndex: i,
         data:       segRows.map(r => [r.timestamp_ms, r[sig] ?? NaN]),
         symbol:     'none',
+        // Sem símbolos: `showSymbol: false` pula o `SymbolDraw` inteiro (que, mesmo com `symbol: 'none'`,
+        // diffava e percorria todos os pontos a cada atualização); `silent` e `emphasis` desligados
+        // porque nada usa o hover da série (tooltip e cursor vão por `dispatchAction`).
+        showSymbol: false,
+        silent:     true,
+        emphasis:   { disabled: true },
         lineStyle:  { color: run.pass ? color : dimmed, width: 1.5 },
         itemStyle:  { color: run.pass ? color : dimmed },
       }
@@ -104,8 +115,8 @@ function buildOption(signals: string[], rows: DatalogRow[], mask: boolean[], sho
     grid: { left: 52, right: rightCount > 0 ? rightCount * 52 + 20 : 20, top: 8, bottom: 28 },
     xAxis: {
       type: 'value',
-      min:  'dataMin',
-      max:  'dataMax',
+      min:  view ? view.xDomain[0] : 'dataMin',
+      max:  view ? view.xDomain[1] : 'dataMax',
       axisLabel: { formatter: fmtMs, color: '#6b7280', fontSize: 9 },
       splitLine: { show: false },
       axisLine:  { lineStyle: { color: '#374151' } },
@@ -154,6 +165,7 @@ function buildOption(signals: string[], rows: DatalogRow[], mask: boolean[], sho
 function SignalChip({ signal, idx, onRemove }: { signal: string; idx: number; onRemove: () => void }) {
   return (
     <span
+      title={signalOriginHint(signal)}
       className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium"
       style={{
         backgroundColor: sigColor(signal, idx) + '22',
@@ -197,6 +209,7 @@ function AddSignalDropdown({ available, onAdd }: { available: string[]; onAdd: (
           {available.map(sig => (
             <button
               key={sig}
+              title={signalOriginHint(sig)}
               className="w-full text-left px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700"
               onClick={() => { onAdd(sig); setOpen(false) }}
             >
@@ -237,6 +250,7 @@ const PanelView = memo(function PanelView({
   panelCount,
   mask,
   showFilteredPoints,
+  view,
 }: {
   panel:      ChartPanel
   rows:       DatalogRow[]
@@ -245,6 +259,7 @@ const PanelView = memo(function PanelView({
   panelCount: number
   mask:       boolean[]
   showFilteredPoints: boolean
+  view:       ChartView | undefined
 }) {
   const chartRef    = useRef<ReactECharts>(null)
   const cursorRef   = useRef(cursor_ms)
@@ -268,9 +283,14 @@ const PanelView = memo(function PanelView({
   const available = allSignals.filter(s => !panel.signals.includes(s))
 
   const option = useMemo(
-    () => buildOption(panel.signals, rows, mask, showFilteredPoints),
-    [panel.signals, rows, mask, showFilteredPoints],
+    () => buildOption(panel.signals, rows, mask, showFilteredPoints, view),
+    [panel.signals, rows, mask, showFilteredPoints, view],
   )
+  // O ECharts processa o `option` de forma síncrona (centenas de ms por painel num log grande): aplica
+  // só depois de pintar o "Carregando…", em vez de congelar a tela com o gráfico antigo.
+  const { shown: shownOption, pending: optionPending } = useAfterPaint(option)
+  const zooming = syncCtx?.zooming.has(panel.panelId) ?? false
+  const pending = optionPending || zooming
 
   const applyMarkLine = useCallback((inst: echarts.ECharts, ms: number | null) => {
     if (panel.signals.length === 0) return
@@ -291,7 +311,7 @@ const PanelView = memo(function PanelView({
   useEffect(() => {
     const inst = chartRef.current?.getEchartsInstance?.()
     if (inst) applyMarkLine(inst, cursor_ms)
-  }, [cursor_ms, option, applyMarkLine])
+  }, [cursor_ms, shownOption, applyMarkLine])
 
   const onChartReady = useCallback((inst: echarts.ECharts) => {
     inst.group = GROUP_ID
@@ -306,7 +326,7 @@ const PanelView = memo(function PanelView({
   useEffect(() => {
     const inst = chartRef.current?.getEchartsInstance?.()
     if (inst) syncCtx?.applySelectionZoom(inst)
-  }, [option, syncCtx])
+  }, [shownOption, syncCtx])
 
   // Unregister on unmount
   useEffect(() => {
@@ -370,20 +390,25 @@ const PanelView = memo(function PanelView({
       </div>
 
       {/* Chart area */}
-      <div className="flex-1 min-h-0 overflow-hidden">
+      <div className="relative flex-1 min-h-0 overflow-hidden">
         {panel.signals.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-600 text-xs">
             Adicione um sinal acima
           </div>
         ) : (
-          <ReactECharts
-            ref={chartRef}
-            option={option}
-            notMerge={true}
-            style={{ height: '100%', width: '100%' }}
-            opts={{ renderer: 'canvas' }}
-            onChartReady={onChartReady}
-          />
+          <>
+            {shownOption && (
+              <ReactECharts
+                ref={chartRef}
+                option={shownOption}
+                notMerge={true}
+                style={{ height: '100%', width: '100%' }}
+                opts={{ renderer: 'canvas' }}
+                onChartReady={onChartReady}
+              />
+            )}
+            {pending && <LoadingOverlay />}
+          </>
         )}
       </div>
     </div>
@@ -400,6 +425,7 @@ function LayoutRenderer({
   panelCount,
   mask,
   showFilteredPoints,
+  view,
 }: {
   layout:     ChartLayout
   rows:       DatalogRow[]
@@ -408,6 +434,7 @@ function LayoutRenderer({
   panelCount: number
   mask:       boolean[]
   showFilteredPoints: boolean
+  view:       ChartView | undefined
 }) {
   if (layout.type === 'panel') {
     return (
@@ -419,11 +446,12 @@ function LayoutRenderer({
         panelCount={panelCount}
         mask={mask}
         showFilteredPoints={showFilteredPoints}
+        view={view}
       />
     )
   }
 
-  const commonProps = { rows, cursor_ms, allSignals, panelCount, mask, showFilteredPoints }
+  const commonProps = { rows, cursor_ms, allSignals, panelCount, mask, showFilteredPoints, view }
 
   // Altura: cada filho de uma pilha cresce na proporção da própria altura (base 0), o que é exato
   // quando o contêiner mede a soma; numa coluna mais baixa que a linha, estica proporcionalmente.
@@ -468,22 +496,57 @@ const ChartSyncContext = React.createContext<{
   unregisterChart: (id: string) => void
   /** Aplica a seleção atual (ou o intervalo completo) ao zoom de um gráfico recém-criado/reconstruído. */
   applySelectionZoom: (inst: echarts.ECharts) => void
+  /** Painéis cujo zoom está esperando a vez (mostram o "Carregando…"). */
+  zooming: ReadonlySet<string>
   instancesRef:    React.MutableRefObject<Map<string, echarts.ECharts>>
 } | null>(null)
 
-export function SyncedChart() {
-  const chartLayout    = useUIStore(s => s.chartLayout)
-  const cursor_ms      = useTimeStore(s => s.cursor_ms)
+/**
+ * `active` = a aba Gráficos está à vista. Escondida (as outras abas do Datalog mantêm este componente
+ * montado), ele trabalha sobre uma cópia congelada das entradas: nada muda, então nenhum gráfico se
+ * reconstrói nem recebe zoom enquanto não se vê; ao voltar, o que mudou nesse meio-tempo é aplicado
+ * uma única vez.
+ */
+export function SyncedChart({ active = true }: { active?: boolean }) {
+  const live = {
+    chartLayout:        useUIStore(s => s.chartLayout),
+    cursor_ms:          useTimeStore(s => s.cursor_ms),
+    selection:          useTimeStore(s => s.selection),
+    allRows:            useDisplayRows(active),
+    allSignals:         useDisplaySignals(),
+    mask:               useFilterMask(),
+    showFilteredPoints: useFilterStore(s => s.showFilteredPoints),
+  }
+  const frozenRef = useRef(live)
+  if (active) frozenRef.current = live
+  const { chartLayout, cursor_ms, selection, allRows, allSignals, mask, showFilteredPoints } = frozenRef.current
+
   const setCursor      = useTimeStore(s => s.setCursor)
-  const selection      = useTimeStore(s => s.selection)
   const setSelection   = useTimeStore(s => s.setSelection)
   const clearSelection = useTimeStore(s => s.clearSelection)
-  const allRows        = useDisplayRows()
-  const allSignals     = useDisplaySignals()
   const panelCount     = flattenPanels(chartLayout).length
   const totalHeight    = useMemo(() => layoutHeight(chartLayout), [chartLayout])
-  const mask                = useCorrectionMask()
-  const showFilteredPoints  = useCorrectionStore(s => s.showFilteredPoints)
+
+  // ── Janelamento: cada painel recebe só o trecho do log perto do intervalo visível ───────────────
+  // A janela carregada só é refeita quando o intervalo visível sai dela (ou o zoom fecha bastante):
+  // refazer a cada gesto reconstruiria o gráfico (`notMerge`) o tempo todo.
+  const domain = useMemo<TimeWindow | null>(
+    () => allRows.length > 0
+      ? { start_ms: allRows[0].timestamp_ms, end_ms: allRows[allRows.length - 1].timestamp_ms }
+      : null,
+    [allRows],
+  )
+  const loadedWindowRef = useRef<TimeWindow | null>(null)
+  const loadedWindow = useMemo(() => {
+    const next = domain ? nextWindow(loadedWindowRef.current, selection ?? domain, domain) : null
+    loadedWindowRef.current = next
+    return next
+  }, [selection, domain])
+  const windowed = useMemo(() => windowRows(allRows, mask, loadedWindow), [allRows, mask, loadedWindow])
+  const view = useMemo<ChartView | undefined>(
+    () => domain ? { xDomain: [domain.start_ms, domain.end_ms] } : undefined,
+    [domain],
+  )
 
   const allRowsRef         = useRef(allRows)
   useEffect(() => { allRowsRef.current = allRows }, [allRows])
@@ -519,16 +582,54 @@ export function SyncedChart() {
   const dispatchZoom = useCallback((instances: echarts.ECharts[], sel: typeof selection) => {
     if (instances.length === 0) return
     updatingFromExternal.current = true
-    instances.forEach(inst =>
-      inst.dispatchAction(sel
-        ? { type: 'dataZoom', startValue: sel.start_ms, endValue: sel.end_ms }
-        : { type: 'dataZoom', start: 0, end: 100 })
-    )
+    // Um `dispatchAction` num gráfico do grupo conectado (`echarts.connect`) se propaga aos outros
+    // cinco: despachar em cada um fazia o mesmo zoom 6x (medido: ~1,3 s contra ~0,2 s). Cada gráfico
+    // recebe o zoom uma única vez, com a propagação desligada durante a chamada.
+    instances.forEach(inst => {
+      const group = inst.group
+      inst.group = ''
+      try {
+        inst.dispatchAction(sel
+          ? { type: 'dataZoom', startValue: sel.start_ms, endValue: sel.end_ms }
+          : { type: 'dataZoom', start: 0, end: 100 })
+      } finally {
+        inst.group = group
+      }
+    })
     requestAnimationFrame(() => { updatingFromExternal.current = false })
   }, [])
 
+  // O zoom de cada gráfico custa dezenas de ms: roda depois de pintar o "Carregando…", um gráfico por
+  // quadro (fila compartilhada), em vez de todos juntos logo após o commit — que travava a tela antes
+  // de o indicador aparecer. Mudança que veio do próprio gráfico (roda/arrasto) já foi propagada pelo
+  // `echarts.connect`: não é reaplicada.
+  const [zooming, setZooming] = useState<ReadonlySet<string>>(() => new Set())
+  const fromChartRef = useRef<TimeSelection | 'clear' | null>(null)
+  useBusy(zooming.size > 0)
+
   useEffect(() => {
-    dispatchZoom(Array.from(instancesRef.current.values()).filter(i => !i.isDisposed()), selection)
+    const origin = fromChartRef.current
+    fromChartRef.current = null
+    if (origin === 'clear' ? selection === null
+        : origin !== null && selection !== null
+          && Math.abs(origin.start_ms - selection.start_ms) < 1 && Math.abs(origin.end_ms - selection.end_ms) < 1) return
+
+    const entries = Array.from(instancesRef.current.entries()).filter(([, i]) => !i.isDisposed())
+    if (entries.length === 0) return
+    setZooming(new Set(entries.map(([id]) => id)))
+    let cancelled = false
+    let first = 0, second = 0
+    first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => {
+        entries.forEach(([id, inst]) => applyQueue.enqueue(() => {
+          if (cancelled) return false
+          if (!inst.isDisposed()) dispatchZoom([inst], selection)
+          flushSync(() => setZooming(prev => { const n = new Set(prev); n.delete(id); return n }))
+          return true
+        }))
+      })
+    })
+    return () => { cancelled = true; cancelAnimationFrame(first); cancelAnimationFrame(second) }
   }, [selection, dispatchZoom])
 
   // Gráfico novo/reconstruído nasce a 100%: só precisa de ação quando há seleção.
@@ -554,6 +655,7 @@ export function SyncedChart() {
       const startPct = p.batch?.[0]?.start ?? p.start
       const endPct   = p.batch?.[0]?.end   ?? p.end
       if (startPct !== undefined && endPct !== undefined && startPct <= 0.5 && endPct >= 99.5) {
+        fromChartRef.current = 'clear'
         clearSelection(); return
       }
       let startVal: number | null = p.batch?.[0]?.startValue ?? p.startValue ?? null
@@ -568,6 +670,7 @@ export function SyncedChart() {
         startVal = tMin + (startPct / 100) * (tMax - tMin)
         endVal   = tMin + (endPct / 100)   * (tMax - tMin)
       }
+      fromChartRef.current = { start_ms: Math.max(0, startVal), end_ms: Math.max(0, endVal) }
       setSelection(startVal, endVal)
     }
     inst.on('datazoom', handler)
@@ -673,8 +776,8 @@ export function SyncedChart() {
   }, [])
 
   const ctx = useMemo(
-    () => ({ registerChart, unregisterChart, applySelectionZoom, instancesRef }),
-    [registerChart, unregisterChart, applySelectionZoom],
+    () => ({ registerChart, unregisterChart, applySelectionZoom, zooming, instancesRef }),
+    [registerChart, unregisterChart, applySelectionZoom, zooming],
   )
 
   // ── Selection rectangle position ──────────────────────────────────────────────
@@ -699,12 +802,13 @@ export function SyncedChart() {
       >
         <LayoutRenderer
           layout={chartLayout}
-          rows={allRows}
+          rows={windowed.rows}
           cursor_ms={cursor_ms}
           allSignals={allSignals}
           panelCount={panelCount}
-          mask={mask}
+          mask={windowed.mask}
           showFilteredPoints={showFilteredPoints}
+          view={view}
         />
 
         {/* CTRL+drag overlay — captura eventos só quando CTRL pressionado */}

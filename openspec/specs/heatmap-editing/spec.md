@@ -2,8 +2,8 @@
 
 ## Purpose
 Defines the shared interaction contract for editing an N×M ECU map table (selection, keyboard
-navigation, inline and bulk editing, clipboard, undo/redo) that the VE, Ignition, and Lambda tuning
-tabs all build on, so that editing feels identical across all three.
+navigation, inline and bulk editing, clipboard, undo/redo) that the Eficiência Volumétrica, Ignition, and Lambda tabs of
+Mapa all build on, so that editing feels identical across all three.
 
 ## Requirements
 
@@ -166,7 +166,8 @@ Delete or Backspace SHALL behave differently for a single cell versus a range.
 
 ### Requirement: Undo and redo history
 Every discrete editing action on the table SHALL be undoable for at least the 50 most recent
-actions, scoped independently per map table and not preserved across a page reload.
+actions, scoped independently per map table and not preserved across a page reload. The undo/redo
+keyboard shortcuts SHALL act only on the editable table of the tab currently being viewed.
 
 #### Scenario: Undo
 - **WHEN** the user triggers undo while the page (not a text field) has focus
@@ -192,6 +193,16 @@ actions, scoped independently per map table and not preserved across a page relo
 #### Scenario: Each table keeps its own history
 - **WHEN** the user edits one map table (e.g. VE) and then switches to another (e.g. Ignition)
 - **THEN** undo/redo on each table only affects that table's own history
+
+#### Scenario: Shortcuts follow the active tab
+- **WHEN** the user presses Ctrl/Cmd+Z (or Ctrl/Cmd+Y, Ctrl/Cmd+Shift+Z) on the Eficiência Volumétrica, Ignition or
+  Lambda tab
+- **THEN** only that tab's editable table is undone (or redone); the tables of the other tabs are
+  not changed
+
+#### Scenario: Tab without an editable table
+- **WHEN** the user presses the undo or redo shortcut on the Arquivo tab, which has no editable table
+- **THEN** no table changes
 
 ### Requirement: Cell visual states communicate edit status
 A cell SHALL visually indicate, simultaneously if applicable, whether it has been modified, has a
@@ -368,3 +379,39 @@ Escape keep operating on the selection from whichever table has focus.
 - **WHEN** the user double-clicks a cell, presses Enter, or types a digit with focus on a read-only
   table
 - **THEN** no inline edit opens in any table, and no value changes
+
+### Requirement: Editable tables show original, current and difference on hover
+Every editable map table that follows this contract — the VE, Ignição and Lambda tables — SHALL show,
+when the pointer rests on a cell, a tooltip with three lines: the cell's original value (as imported),
+its current value, and the difference between them as a signed percentage of the original
+(`+5.0%`, `-5.0%`, `0.0%`). Values SHALL be formatted as the table formats them, except that the Lambda
+table SHALL show three decimals so small differences are visible. When the original value is zero and
+the cell changed, there is no base for a percentage and the difference SHALL be shown as "—".
+
+#### Scenario: Hovering an edited cell
+- **WHEN** a VE cell imported as 560 is now 588 and the user hovers it
+- **THEN** the tooltip reads "Original: 560", "Atual: 588" and "Diferença: +5.0%"
+
+#### Scenario: Hovering a cell that went down
+- **WHEN** a cell imported as 560 is now 532 and the user hovers it
+- **THEN** the difference reads "-5.0%"
+
+#### Scenario: Hovering an untouched cell
+- **WHEN** the user hovers a cell that was never edited
+- **THEN** the original and current values are equal and the difference reads "0.0%"
+
+#### Scenario: Tooltip follows edits and undo
+- **WHEN** the user edits a cell, then undoes the edit
+- **THEN** the tooltip shows the new current value after the edit and the original again after the undo
+
+#### Scenario: Ignition and Lambda tables
+- **WHEN** the user hovers a cell in the Ignição or Lambda editable table
+- **THEN** the same three lines appear, with the Lambda values shown with three decimals
+
+#### Scenario: Original value zero
+- **WHEN** an Ignição cell imported as 0 is now 4 and the user hovers it
+- **THEN** the tooltip shows "Original: 0", "Atual: 4" and "Diferença: —"
+
+#### Scenario: Read-only tables
+- **WHEN** the user hovers a cell of the original (read-only) map
+- **THEN** no original/current/difference tooltip is shown, since the table only holds the original

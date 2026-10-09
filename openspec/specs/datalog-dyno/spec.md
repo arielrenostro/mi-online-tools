@@ -8,9 +8,11 @@ the app. Uses the Potência and Torque signals defined by `datalog-constants`.
 ## Requirements
 
 ### Requirement: Dinamômetro tab
-The Datalog screen SHALL provide a "Dinamômetro" tab, after "Dados", showing one chart with RPM on
+The Datalog screen SHALL provide a "Dinamômetro" tab, after "XY" (the last tab), showing one chart with RPM on
 the X axis, power (cv) on one Y axis and torque (kgf·m) on a second Y axis, each with its own series
-and unit label.
+and unit label. The tab SHALL carry a discreet note saying the power and torque values are calculated
+from the constants set on the Configurações screen, with a link to it that navigates only when
+activated.
 
 #### Scenario: Opening the tab with active logs
 - **WHEN** the user opens the Dinamômetro tab with at least one active log
@@ -22,29 +24,17 @@ and unit label.
 - **THEN** a tooltip shows the RPM and the power and torque values at that point
 
 #### Scenario: Constants change
-- **WHEN** the user edits a constant or the VE calibration on the Logs tab and returns to the tab
+- **WHEN** the user edits a constant or the VE calibration on the Configurações screen and returns
+  to the tab
 - **THEN** the curves reflect the new values
 
-### Requirement: Data selection
-The chart SHALL be built from the rows of the active logs that pass the dyno filters and, when a
-time interval is selected on the timeline, fall inside that interval. The correction filters and the
-visual filter SHALL NOT affect the chart.
-
-#### Scenario: Time selection active
-- **WHEN** an interval is selected on the timeline
-- **THEN** only rows inside that interval and passing the dyno filters contribute to the curves
-
-#### Scenario: Visual filter active
-- **WHEN** a visual filter is active
-- **THEN** the dynamometer chart is unchanged by it
-
-#### Scenario: No row qualifies
-- **WHEN** no row passes the dyno filters and the time selection
-- **THEN** the chart area shows a message saying no data matches the current filters instead of an
-  empty or broken chart
+#### Scenario: Note about the constants
+- **WHEN** the user opens the Dinamômetro tab
+- **THEN** a low-emphasis note states that the data is calculated from the constants in
+  Configurações, and activating its link opens the Configurações screen
 
 ### Requirement: Dyno filters
-The tab SHALL provide a "Filtros" button that opens a modal dialog, styled like the visual filter
+The tab SHALL provide a "Filtros" button that opens a modal dialog, styled like the Datalog filter
 modal, holding its own filter fields: minimum Pedal (default 90%), minimum RPM, maximum RPM, minimum
 MAP, minimum CLT (default 80 ºC), the accepted Lambda Loop states (default all three) and the accepted
 gears (Marcha 0 to 5, default all six), plus the drivetrain-loss field (see "Engine and wheel
@@ -160,3 +150,21 @@ SHALL be restored after a reload.
 #### Scenario: Reload after configuring the tab
 - **WHEN** the user sets a minimum Pedal of 80, selects Roda with 12% loss and Suavizado, and reloads
 - **THEN** the tab reopens with those exact settings
+
+### Requirement: Dyno data selection
+The chart SHALL be built from the rows of the active logs that pass the dyno filters and, when a
+time interval is selected on the timeline, fall inside that interval. The Datalog filter (see
+`datalog-filter`) SHALL NOT affect the chart.
+
+#### Scenario: Time selection active
+- **WHEN** an interval is selected on the timeline
+- **THEN** only rows inside that interval and passing the dyno filters contribute to the curves
+
+#### Scenario: Datalog filter changed
+- **WHEN** the Datalog filter is changed or applied
+- **THEN** the dynamometer chart is unchanged by it
+
+#### Scenario: No row qualifies
+- **WHEN** no row passes the dyno filters and the time selection
+- **THEN** the chart area shows a message saying no data matches the current filters instead of an
+  empty or broken chart

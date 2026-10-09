@@ -26,7 +26,7 @@ type BoundKey = Exclude<keyof DynoFilters, 'lambdaLoop' | 'gears'>
 const finite = (n: number) => Number.isFinite(n)
 
 /**
- * Filtros do dinamômetro e perda de transmissão. Mesma casca do `VisualFilterModal`, mas sem
+ * Filtros do dinamômetro e perda de transmissão. Mesma casca do `FilterModal`, mas sem
  * rascunho/Aplicar: cada campo já grava direto no `dynoStore` (só valores válidos) e fechar mantém tudo.
  */
 export default function DynoFilterModal({ open, onClose, usedRows, totalRows, noGearData }: Props) {

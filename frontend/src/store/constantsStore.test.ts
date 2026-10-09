@@ -5,10 +5,10 @@ vi.mock('@/persistence/localStorage', () => ({
   lsGet:   vi.fn(() => null),
   lsClear: vi.fn(),
 }))
-vi.mock('@/persistence/correctionPersistence', () => ({
-  saveSnapshot:  vi.fn(async () => {}),
-  loadSnapshot:  vi.fn(async () => undefined),
-  clearSnapshot: vi.fn(async () => {}),
+vi.mock('@/persistence/runPersistence', () => ({
+  saveRun:     vi.fn(async () => {}),
+  deleteRun:   vi.fn(async () => {}),
+  loadAllRuns: vi.fn(async () => []),
 }))
 
 import { useConstantsStore, selectCalibrationFactor, DEFAULT_CONSTANTS, sanitizeConstants } from './constantsStore'
@@ -17,7 +17,7 @@ import { lsSet } from '@/persistence/localStorage'
 
 beforeEach(() => {
   useConstantsStore.setState({ values: DEFAULT_CONSTANTS })
-  useCorrectionStore.setState({ snapshot: null, isStale: false })
+  useCorrectionStore.setState({ runs: [], selectedRunId: null, hasUnseenRun: false })
   vi.mocked(lsSet).mockClear()
 })
 
@@ -59,9 +59,10 @@ describe('constantsStore', () => {
     expect(sanitizeConstants('lixo')).toEqual(DEFAULT_CONSTANTS)
   })
 
-  it('alterar uma constante não marca o snapshot como desatualizado', () => {
-    useCorrectionStore.setState({ snapshot: { cells: [], generatedAt: 0, provenance: { logFilenames: [], timeRange: null, filters: useCorrectionStore.getState().filters } }, isStale: false })
+  it('alterar uma constante não altera os runs de correção', () => {
+    const run = { id: 'r1', name: 'x', createdAt: 0, breakpoints: { map: [1], rpm: [1] }, cells: [], recipe: { logs: [], filter: null } }
+    useCorrectionStore.setState({ runs: [run], selectedRunId: 'r1' })
     useConstantsStore.getState().set({ veAtFull: 873 })
-    expect(useCorrectionStore.getState().isStale).toBe(false)
+    expect(useCorrectionStore.getState().runs).toEqual([run])
   })
 })

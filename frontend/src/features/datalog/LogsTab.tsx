@@ -1,10 +1,5 @@
 import { useRef } from 'react'
-import { useBlocker } from 'react-router-dom'
 import { useLogStore } from '@/store/logStore'
-import { useCorrectionStore } from '@/store/correctionStore'
-import { CorrectionFilterPanel } from './CorrectionFilterPanel'
-import { ConstantsPanel } from './ConstantsPanel'
-import ConfirmDialog from '@/components/ConfirmDialog'
 import type { LogEntry } from '@/types/datalog'
 
 function fmtDuration(ms: number): string {
@@ -107,12 +102,6 @@ export function LogsTab() {
   const toggleLog = useLogStore(s => s.toggleLog)
   const reorder   = useLogStore(s => s.reorder)
 
-  const isFiltersDirty = useCorrectionStore(s => s.isFiltersDirty())
-  const blocker = useBlocker(
-    ({ currentLocation, nextLocation }) =>
-      isFiltersDirty && currentLocation.pathname !== nextLocation.pathname,
-  )
-
   const totalActive = logs
     .filter(l => l.enabled)
     .reduce((acc, l) => acc + l.duration_ms, 0)
@@ -214,20 +203,6 @@ export function LogsTab() {
           Total ativo: <span className="text-gray-300">{fmtDuration(totalActive)}</span>
         </p>
       )}
-
-      <CorrectionFilterPanel />
-
-      <ConstantsPanel />
-
-      <ConfirmDialog
-        open={blocker.state === 'blocked'}
-        onClose={() => { if (blocker.state === 'blocked') blocker.reset() }}
-        onConfirm={() => { if (blocker.state === 'blocked') blocker.proceed() }}
-        title="Filtros não aplicados"
-        message="Você alterou os filtros mas ainda não clicou em 'Aplicar filtros' — as mudanças não valem para o Dashboard, Gráficos, Dados nem para gerar a correção até serem aplicadas. Sair mesmo assim?"
-        confirmLabel="Sair sem aplicar"
-        cancelLabel="Voltar e aplicar"
-      />
     </div>
   )
 }

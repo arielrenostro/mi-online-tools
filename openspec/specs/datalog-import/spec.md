@@ -3,8 +3,8 @@
 ## Purpose
 Parses MasterInjection datalog CSVs into signal rows the rest of the app consumes, and lets the
 user manage the set of logs active in the current session (add, remove, reorder, enable/disable)
-from both the Logs tab and the global TopBar. The Logs tab also hosts the VE correction filter
-panel (see `tuning-ve-correction`) and the Constantes section (see `datalog-constants`).
+from both the Logs tab and the global TopBar. The Logs tab holds only the log inventory; the filter
+(see `datalog-filter`) and the constants (see `app-settings`) live elsewhere.
 
 ## Requirements
 
@@ -53,7 +53,7 @@ log's inclusion in the active session, reorder logs, and remove a log permanentl
 #### Scenario: Toggling a log inactive
 - **WHEN** the user toggles a log to inactive
 - **THEN** the log is visually dimmed and excluded from the active session's timeline, charts, and
-  correction snapshot generation (see `tuning-ve-correction`), without being deleted
+  correction snapshot generation (see `mapa-ve-correction`), without being deleted
 
 #### Scenario: Removing a log
 - **WHEN** the user removes a log
@@ -92,18 +92,17 @@ through a dropdown panel once one or more are loaded.
   automatically without a page reload
 
 ### Requirement: Logs tab sections
-The Logs tab SHALL be organized, in order, as the log import area and list, the VE correction filter
-panel (see `tuning-ve-correction`) and the "Constantes" section (see `datalog-constants`). The
-Constantes section SHALL NOT require any log or map to be present.
+The Logs tab SHALL contain only the log import area and the list of imported logs. It SHALL NOT host
+the filter (see `datalog-filter`), the correction generation action (see `correction-runs`) or the
+engine constants (see `app-settings`).
 
 #### Scenario: Logs tab with logs loaded
 - **WHEN** the user opens the Logs tab with one or more logs imported
-- **THEN** the log list, the correction filter panel and the Constantes section are all visible on
-  the same tab
+- **THEN** the import area and the log list are shown, with no filter panel and no Constantes section
 
 #### Scenario: Logs tab with nothing loaded
 - **WHEN** the user opens the Logs tab before importing anything
-- **THEN** the import area, the correction filter panel and the Constantes section are visible
+- **THEN** the import area and an empty-state message are shown
 
 ### Requirement: Gear signal from the trailing "0" column
 Importing a datalog CSV SHALL read the gear (Marcha) from the last column whose header is named `0`

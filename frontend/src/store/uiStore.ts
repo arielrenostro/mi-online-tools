@@ -1,14 +1,15 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import type { UIState, TuningAnalysisMode, DatalogTab, ChartLayout, ChartPanel, ChartSplit } from '@/types/ui'
+import type { UIState, MapaAnalysisMode, DatalogTab, MapaTab, ChartLayout, ChartPanel, ChartSplit } from '@/types/ui'
 import { lsSet } from '@/persistence/localStorage'
 import { buildDefaultChartLayout, findPanel, resizePanelHeight, resizePanelWidth } from '@/utils/chartLayoutSize'
 import { migrateChartLayout } from '@/utils/chartLayoutMigration'
 
 const initialState: UIState = {
   originalMapCollapsed: false,
-  tuningAnalysisMode:   've_lambda',
+  mapaAnalysisMode:     've_lambda',
   datalogTab:           'logs',
+  mapaTab:              've',
   columnVisibility:     {},
   chartLayout:          buildDefaultChartLayout(),
   chartSidebarOpen:     true,
@@ -16,8 +17,9 @@ const initialState: UIState = {
 
 interface UIActions {
   setOriginalMapCollapsed(v: boolean): void
-  setTuningAnalysisMode(mode: TuningAnalysisMode): void
+  setMapaAnalysisMode(mode: MapaAnalysisMode): void
   setDatalogTab(tab: DatalogTab): void
+  setMapaTab(tab: MapaTab): void
   setColumnVisibility(signal: string, visible: boolean): void
   setChartLayout(layout: ChartLayout): void
   addChartPanel(parentId: string, direction: 'horizontal' | 'vertical'): void
@@ -28,8 +30,8 @@ interface UIActions {
   /** `dir` 1 = aumentar, -1 = diminuir; toma do (ou devolve ao) vizinho lado a lado. */
   resizePanelWidth(panelId: string, dir: 1 | -1): void
   setChartSidebarOpen(v: boolean): void
-  /** `chartsHeight` só existe em estados salvos pela versão com arrasto — usado na migração. */
-  hydrate(state: Partial<UIState> & { chartsHeight?: number }): void
+  /** `chartsHeight` só existe em estados salvos pela versão com arrasto; `tuningAnalysisMode` é o nome antigo de `mapaAnalysisMode` — usados na migração. */
+  hydrate(state: Partial<UIState> & { chartsHeight?: number; tuningAnalysisMode?: MapaAnalysisMode }): void
 }
 
 export const useUIStore = create<UIState & UIActions>()(
@@ -37,8 +39,9 @@ export const useUIStore = create<UIState & UIActions>()(
     ...initialState,
 
     setOriginalMapCollapsed(v) { set({ originalMapCollapsed: v }); persist() },
-    setTuningAnalysisMode(mode) { set({ tuningAnalysisMode: mode }); persist() },
-    setDatalogTab(tab) { set({ datalogTab: tab }); persist() },
+    setMapaAnalysisMode(mode) { set({ mapaAnalysisMode: mode }); persist() },
+    setDatalogTab(tab) { if (get().datalogTab !== tab) { set({ datalogTab: tab }); persist() } },
+    setMapaTab(tab) { if (get().mapaTab !== tab) { set({ mapaTab: tab }); persist() } },
 
     setColumnVisibility(signal, visible) {
       set({ columnVisibility: { ...get().columnVisibility, [signal]: visible } })
@@ -81,9 +84,14 @@ export const useUIStore = create<UIState & UIActions>()(
     setChartSidebarOpen(v) { set({ chartSidebarOpen: v }); persist() },
 
     hydrate(savedState) {
-      const { chartsHeight, chartLayout, ...rest } = savedState
+      const { chartsHeight, chartLayout, tuningAnalysisMode, ...rest } = savedState
       const migratedLayout = chartLayout ? migrateChartLayout(chartLayout, chartsHeight) : null
-      set({ ...initialState, ...rest, ...(migratedLayout ? { chartLayout: migratedLayout } : {}) })
+      set({
+        ...initialState,
+        ...(tuningAnalysisMode ? { mapaAnalysisMode: tuningAnalysisMode } : {}),
+        ...rest,
+        ...(migratedLayout ? { chartLayout: migratedLayout } : {}),
+      })
     },
   }))
 )
@@ -92,8 +100,9 @@ function persist() {
   const s = useUIStore.getState()
   lsSet<UIState>('miot:ui', {
     originalMapCollapsed: s.originalMapCollapsed,
-    tuningAnalysisMode:   s.tuningAnalysisMode,
+    mapaAnalysisMode:     s.mapaAnalysisMode,
     datalogTab:           s.datalogTab,
+    mapaTab:              s.mapaTab,
     columnVisibility:     s.columnVisibility,
     chartLayout:          s.chartLayout,
     chartSidebarOpen:     s.chartSidebarOpen,

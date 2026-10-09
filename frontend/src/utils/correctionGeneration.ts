@@ -1,8 +1,9 @@
 import type { LogEntry, TimeSelection } from '@/types/datalog'
 import { MODE_TOLERANCE } from '@/types/correction'
-import type { CorrectionCell, CorrectionFilterConfig, CorrectionSnapshot } from '@/types/correction'
+import type { CorrectionCell, CorrectionRun, RunLogRecipe } from '@/types/correction'
+import { cloneFilter, type FilterConfig } from '@/types/filter'
 import { computeVeLambda } from '@/signals/veLambdaFormula'
-import { evaluateCorrectionFilters } from './correctionFilters'
+import { evaluateFilterCached } from './filter'
 import { flattenActiveRows } from '@/store/logStore'
 
 interface CellWeight { rowI: number; colJ: number; weight: number }
@@ -100,13 +101,17 @@ function makeGrid(rows: number, cols: number): number[][] {
   return Array.from({ length: rows }, () => new Array(cols).fill(0))
 }
 
-export function generateCorrectionSnapshot(
+/**
+ * Per-cell statistics of the VE Lambda values of every qualifying point: active logs, passing the
+ * filter, inside the time selection (when there is one, in the concatenated timeline).
+ */
+export function computeCorrectionCells(
   logs: LogEntry[],
-  filters: CorrectionFilterConfig,
+  filter: FilterConfig,
   timeSelection: TimeSelection | null,
   mapBreakpoints: number[],
   rpmBreakpoints: number[],
-): CorrectionSnapshot {
+): CorrectionCell[][] {
   const nRows = mapBreakpoints.length
   const nCols = rpmBreakpoints.length
   const weightSum        = makeGrid(nRows, nCols)
@@ -114,9 +119,8 @@ export function generateCorrectionSnapshot(
   const valuesPerCell: number[][][] =
     Array.from({ length: nRows }, () => Array.from({ length: nCols }, () => [] as number[]))
 
-  const activeLogs = logs.filter(l => l.enabled)
-  const rows       = flattenActiveRows(logs)
-  const passMask   = evaluateCorrectionFilters(logs, filters)
+  const rows     = flattenActiveRows(logs)
+  const passMask = evaluateFilterCached(logs, filter)
 
   for (let i = 0; i < rows.length; i++) {
     if (!passMask[i]) continue
@@ -132,7 +136,7 @@ export function generateCorrectionSnapshot(
     }
   }
 
-  const cells: CorrectionCell[][] = weightSum.map((row, rowI) =>
+  return weightSum.map((row, rowI) =>
     row.map((n, colJ) => {
       if (n === 0) return { n: 0, mean: null, median: null, mode: null }
       return {
@@ -143,14 +147,60 @@ export function generateCorrectionSnapshot(
       }
     })
   )
+}
 
+/**
+ * Turns the time selection (global ms over the concatenated active logs) into one entry per active
+ * log: used in full, not used, or an interval in that log's own milliseconds. Recorded in the run so
+ * reordering or deactivating logs later does not change what it says it used.
+ */
+export function toPerLogRanges(selection: TimeSelection | null, logs: LogEntry[]): RunLogRecipe[] {
+  const recipe: RunLogRecipe[] = []
+  let offset = 0
+  for (const log of logs) {
+    if (!log.enabled) continue
+    const start = offset
+    const end   = offset + log.duration_ms
+    offset = end
+    if (selection === null) { recipe.push({ hash: log.hash, filename: log.filename, range: 'full' }); continue }
+    const from = Math.max(selection.start_ms, start)
+    const to   = Math.min(selection.end_ms, end)
+    if (to <= from) recipe.push({ hash: log.hash, filename: log.filename, range: 'unused' })
+    else if (from <= start && to >= end) recipe.push({ hash: log.hash, filename: log.filename, range: 'full' })
+    else recipe.push({ hash: log.hash, filename: log.filename, range: { start_ms: from - start, end_ms: to - start } })
+  }
+  return recipe
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/** Default run name: creation date and time, e.g. `08/10/2026 14:32`. */
+export function defaultRunName(createdAt: number): string {
+  const d = new Date(createdAt)
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function newRunId(createdAt: number): string {
+  const rnd = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2)
+  return `run-${createdAt}-${rnd}`
+}
+
+export function generateCorrectionRun(
+  logs: LogEntry[],
+  filter: FilterConfig,
+  timeSelection: TimeSelection | null,
+  mapBreakpoints: number[],
+  rpmBreakpoints: number[],
+  createdAt = Date.now(),
+): CorrectionRun {
   return {
-    cells,
-    generatedAt: Date.now(),
-    provenance: {
-      logFilenames: activeLogs.map(l => l.filename),
-      timeRange:    timeSelection,
-      filters,
-    },
+    id:          newRunId(createdAt),
+    name:        defaultRunName(createdAt),
+    createdAt,
+    breakpoints: { map: [...mapBreakpoints], rpm: [...rpmBreakpoints] },
+    cells:       computeCorrectionCells(logs, filter, timeSelection, mapBreakpoints, rpmBreakpoints),
+    recipe:      { logs: toPerLogRanges(timeSelection, logs), filter: cloneFilter(filter) },
   }
 }

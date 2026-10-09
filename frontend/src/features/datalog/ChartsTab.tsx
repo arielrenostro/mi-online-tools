@@ -3,12 +3,13 @@ import { useUIStore } from '@/store/uiStore'
 import { useDisplayRows, useDisplaySignals } from '@/hooks/useDisplayRows'
 import { useTimeStore } from '@/store/timeStore'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
+import { signalOriginHint } from '@/signals/signalOrigin'
 import { findLastRow } from '@/utils/findLastRow'
 
-function SignalSidebar() {
+function SignalSidebar({ active }: { active: boolean }) {
   const open            = useUIStore(s => s.chartSidebarOpen)
   const setOpen         = useUIStore(s => s.setChartSidebarOpen)
-  const allRows         = useDisplayRows()
+  const allRows         = useDisplayRows(active)
   const allSignals      = useDisplaySignals()
   const cursor_ms       = useTimeStore(s => s.cursor_ms)
 
@@ -52,7 +53,7 @@ function SignalSidebar() {
                 ? (def ? def.format(raw) : raw.toFixed(3))
                 : '—'
               return (
-                <tr key={sig} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                <tr key={sig} title={signalOriginHint(sig)} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                   <td className="px-2 py-0.5 text-gray-300 truncate max-w-0 w-1/2">{sig}</td>
                   <td className="px-2 py-0.5 text-gray-100 text-right tabular-nums">{display}</td>
                 </tr>
@@ -65,15 +66,16 @@ function SignalSidebar() {
   )
 }
 
-export function ChartsTab() {
+/** `active`: a aba está à vista; escondida, os gráficos não se reconstroem (ver `SyncedChart`). */
+export function ChartsTab({ active = true }: { active?: boolean }) {
   return (
     <div className="h-full flex flex-col">
       <div className="flex flex-1 min-h-0">
         {/* A altura vem dos painéis (soma das linhas): rola na vertical, nunca na horizontal. */}
         <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
-          <SyncedChart />
+          <SyncedChart active={active} />
         </div>
-        <SignalSidebar />
+        <SignalSidebar active={active} />
       </div>
     </div>
   )

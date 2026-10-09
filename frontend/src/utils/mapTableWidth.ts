@@ -26,3 +26,26 @@ export function computeTableCellWidth(containerWidth: number, nCols: number, rat
   const tablePx = containerWidth * (1 - ratio) - DIVIDER_PX
   return tablePx > STICKY_COL_PX ? Math.max(24, (tablePx - STICKY_COL_PX) / nCols) : undefined
 }
+
+/**
+ * Real width the non-cell part of a heatmap table takes (sticky "MAP↓ / RPM→" column + borders).
+ * Measured, slightly rounded up: unlike `STICKY_COL_PX` (an estimate that the map's own table has
+ * room to absorb), two tables side by side have no slack, so an underestimate becomes a scrollbar.
+ */
+export const PAIR_FIXED_PX = 94
+/** Folga da conta "dois cabem": a tabela renderiza uns pixels acima do calculado (bordas, arredondamento). */
+export const PAIR_SLACK_PX = 12
+
+/**
+ * Per-cell width for two tables side by side with `gapPx` between them, so the pair never
+ * overflows `containerWidth`. Each table is the width of the editable map's table (see
+ * `computeTableCellWidth`) unless that would not fit twice, in which case each gets half of the
+ * space left after the gap and a small slack. Returns undefined when there is no room for even the fixed part.
+ */
+export function computePairCellWidth(containerWidth: number, nCols: number, gapPx: number, ratio = readMapChartRatio()): number | undefined {
+  if (nCols <= 0) return undefined
+  const aligned = containerWidth * (1 - ratio) - DIVIDER_PX
+  const fitsTwo = (containerWidth - gapPx - PAIR_SLACK_PX) / 2
+  const tablePx = Math.min(aligned, fitsTwo)
+  return tablePx > PAIR_FIXED_PX ? Math.max(24, (tablePx - PAIR_FIXED_PX) / nCols) : undefined
+}

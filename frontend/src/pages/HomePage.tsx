@@ -175,7 +175,7 @@ export default function HomePage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <FeatureCard
           icon={<MapIcon />}
-          title="Tuning"
+          title="Mapa"
           description="Analise e corrija o mapa de combustível (VE) com base em datalogs de estrada."
           statuses={[
             {
@@ -185,7 +185,7 @@ export default function HomePage() {
           ]}
           canOpen={hasMap}
           hint="Importar mapa CSV"
-          onClick={() => navigate('/tuning')}
+          onClick={() => navigate('/mapa')}
           onDrop={handleMapDrop}
         />
 

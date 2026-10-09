@@ -8,16 +8,17 @@ part of an imported log's stored data.
 
 ## Requirements
 
-### Requirement: Constants section on the Logs tab
-The Logs tab SHALL show a "Constantes" section with editable fields for engine displacement
-(default 1587 cc), stoichiometric air-fuel ratio (default 9), brake-specific fuel consumption
-(default 0.8) and the VE calibration value (default 1000), each labeled with its unit, and a control
-to restore all defaults. Edits SHALL take effect immediately, with no separate apply step.
+### Requirement: Constants section on the Configurações screen
+The Configurações screen (see `app-settings`) SHALL show a "Constantes" section with editable fields
+for engine displacement (default 1587 cc), stoichiometric air-fuel ratio (default 9), brake-specific
+fuel consumption (default 0.8) and the VE calibration value (default 1000), each labeled with its
+unit, and a control to restore all defaults. The brake-specific fuel consumption SHALL be labeled in
+lb/hp·h. Edits SHALL take effect immediately, with no separate apply step.
 
 #### Scenario: Opening with no prior configuration
-- **WHEN** the user opens the Logs tab for the first time
-- **THEN** the Constantes section shows 1587 cc, an air-fuel ratio of 9, a BSFC of 0.8 and a VE
-  calibration of 1000
+- **WHEN** the user opens the Configurações screen for the first time
+- **THEN** the Constantes section shows 1587 cc, an air-fuel ratio of 9, a BSFC of 0.8 (lb/hp·h) and a
+  VE calibration of 1000
 
 #### Scenario: Editing a constant
 - **WHEN** the user changes any constant to a valid value
@@ -47,7 +48,7 @@ entry SHALL be flagged as invalid and SHALL NOT replace the last valid value in 
 
 ### Requirement: VE calibration is expressed as the current VE where VE should be 100%
 The VE calibration field SHALL be labeled "Qual o valor de VE atual onde a VE deveria ser 100%?" and
-SHALL be expressed in the same scale as the map's VE table, where 100% is shown as 1000. The section
+SHALL be expressed in the same scale as the map's Eficiência Volumétrica table, where 100% is shown as 1000. The section
 SHALL display the resulting calibration factor `k = 1000 / informed value`. No MAP or RPM field is
 part of the calibration.
 
@@ -76,13 +77,14 @@ consumption as follows, using VE Lambda Corrigido as VE:
 - air mass flow [kg/s] = MAP[Pa] × VE × displacement[m³] × RPM ÷ (287 × IAT[K] × 2 × 60), with
   VE as a fraction (VE% ÷ 100) and IAT[K] = IAT[ºC] + 273
 - fuel mass flow [kg/s] = air mass flow ÷ (air-fuel ratio × Lambda 1)
-- Potência [cv] = fuel mass flow [kg/s] × 3600 × 2.20462 ÷ BSFC
-- Torque [kgf·m] = Potência × 716.2 ÷ RPM
+- Potência [hp] = fuel mass flow [kg/s] × 3600 × 2.20462 ÷ BSFC, with BSFC in lb/hp·h
+- Potência [cv] = Potência [hp] × 745.7 ÷ 735.5 (metric horsepower)
+- Torque [kgf·m] = Potência [cv] × 716.2 ÷ RPM
 
 #### Scenario: Reference sample from the legacy spreadsheet
 - **WHEN** a row has MAP 35 kPa, RPM 2567, IAT 50 ºC, Lambda 1 0.998, VE Lambda 59.225%, the default
   constants and a calibration factor of 1.18985849
-- **THEN** Potência is approximately 9.98 cv and Torque approximately 2.78 kgf·m
+- **THEN** Potência is approximately 10.11 cv and Torque approximately 2.82 kgf·m
 
 #### Scenario: Torque at zero RPM
 - **WHEN** a row has RPM 0
@@ -108,14 +110,36 @@ the signals read from the CSV. They SHALL NOT be written into an imported log's 
 - **THEN** the series is drawn like any other signal, in cv
 
 ### Requirement: Constants never affect the VE map correction
-The constants and the calibration factor SHALL NOT influence the correction filters, the visual
-filter or the generation of the VE correction snapshot; correction generation SHALL keep using VE
-Lambda without the calibration factor.
+The constants and the calibration factor SHALL NOT influence the applied filter or the generation of
+a correction run; correction generation SHALL keep using VE Lambda without the calibration factor.
 
 #### Scenario: Generating the correction with a non-default calibration
-- **WHEN** the user has set a VE calibration other than 1000 and runs "Gerar fator de correção"
-- **THEN** the generated snapshot is identical to the one generated with the default calibration
+- **WHEN** the user has set a VE calibration other than 1000 and generates a correction run
+- **THEN** the generated run is identical to the one generated with the default calibration
 
 #### Scenario: Changing the calibration after a snapshot exists
-- **WHEN** the user changes any constant after a correction snapshot was generated
-- **THEN** the snapshot is not marked as outdated
+- **WHEN** the user changes any constant after a correction run (the compiled snapshot) was generated
+- **THEN** the run is unchanged
+
+### Requirement: Signals computed from the constants say so on hover
+Wherever a signal that depends on the constants (VE Lambda Corrigido, Potência, Torque) is named —
+its card in the Dashboard, its entry in the Gráficos signal sidebar and signal picker, and its
+column header and column-menu entry in Dados — hovering it SHALL show a text saying the value is
+computed from the constants set on the Configurações screen. Signals that do not depend on the
+constants SHALL NOT show this text.
+
+#### Scenario: Hovering a dependent signal in the Dashboard
+- **WHEN** the user hovers the Potência card
+- **THEN** a hover text says Potência is calculated from the constants in Configurações
+
+#### Scenario: Hovering a dependent signal in Gráficos
+- **WHEN** the user hovers Torque in the signal sidebar or the signal picker
+- **THEN** the same kind of hover text is shown
+
+#### Scenario: Hovering a dependent column in Dados
+- **WHEN** the user hovers the VE Lambda Corrigido column header
+- **THEN** the hover text is shown
+
+#### Scenario: Hovering an ordinary signal
+- **WHEN** the user hovers RPM or any signal read from the CSV
+- **THEN** no such text is shown

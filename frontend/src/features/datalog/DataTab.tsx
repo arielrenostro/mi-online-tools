@@ -1,9 +1,10 @@
+import { signalOriginHint } from '@/signals/signalOrigin'
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { useTimeStore } from '@/store/timeStore'
 import { useUIStore } from '@/store/uiStore'
 import { useDisplayRows } from '@/hooks/useDisplayRows'
-import { useCorrectionStore } from '@/store/correctionStore'
-import { useCorrectionMask } from '@/hooks/useCorrectionMask'
+import { useFilterStore } from '@/store/filterStore'
+import { useFilterMask } from '@/hooks/useFilterMask'
 import { DISPLAY_SIGNAL_DEFS } from '@/signals/signalRegistry'
 import type { DatalogRow, TimeSelection } from '@/types/datalog'
 
@@ -129,7 +130,7 @@ function ColsDropdown({ visibility, onChange }: {
           {ALL_COLS.map(col => {
             const checked = visibility[col.id] ?? col.defaultVisible
             return (
-              <label key={col.id} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-700">
+              <label key={col.id} title={signalOriginHint(col.id)} className="flex items-center gap-2 px-3 py-1.5 cursor-pointer hover:bg-gray-700">
                 <input
                   type="checkbox"
                   checked={checked}
@@ -199,7 +200,7 @@ function VirtualTable({ rows, dimmed, cols, cursorIndex, onRowClick }: {
       >
         <div className="w-6 flex-shrink-0" />
         {cols.map(col => (
-          <div key={col.id} style={{ width: col.width, flexShrink: 0 }} className="px-2 py-1.5 truncate">
+          <div key={col.id} title={signalOriginHint(col.id)} style={{ width: col.width, flexShrink: 0 }} className="px-2 py-1.5 truncate">
             {col.label}
           </div>
         ))}
@@ -244,8 +245,8 @@ export function DataTab() {
   const columnVisibility = useUIStore(s => s.columnVisibility)
   const setColVisibility = useUIStore(s => s.setColumnVisibility)
   const allRows          = useDisplayRows()
-  const mask              = useCorrectionMask()
-  const showFilteredPoints = useCorrectionStore(s => s.showFilteredPoints)
+  const mask              = useFilterMask()
+  const showFilteredPoints = useFilterStore(s => s.showFilteredPoints)
 
   const { rows: displayRows, dimmed } = useMemo(
     () => buildDisplayRows(allRows, mask, selection, showFilteredPoints),

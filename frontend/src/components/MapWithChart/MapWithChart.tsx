@@ -14,6 +14,8 @@ interface MapWithChartProps {
   onBulkChange?:  (changes: { row: number; col: number; value: number }[]) => void
   modifiedCells?: Set<string>
   formatValue?:   (v: number | boolean | null) => string
+  /** Native tooltip text for a table cell (passed through to the table). */
+  cellTitle?:     (row: number, col: number) => string | undefined
   chartHeight?:   number
   onUndo?:        () => void
   onRedo?:        () => void
@@ -39,6 +41,7 @@ export default function MapWithChart({
   onBulkChange,
   modifiedCells,
   formatValue,
+  cellTitle,
   chartHeight,
   onUndo,
   onRedo,
@@ -145,6 +148,7 @@ export default function MapWithChart({
           onBulkChange={onBulkChange}
           modifiedCells={modifiedCells}
           formatValue={formatValue}
+          cellTitle={cellTitle}
           selection={selection}
           onSelectionChange={onSelectionChange}
           cellWidth={derivedCellWidth}
