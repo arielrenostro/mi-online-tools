@@ -62,4 +62,25 @@ describe('buildOption', () => {
     const fullValues = new Map(full.series.flatMap(s => s.data).map(([t, v]) => [t, v]))
     win.series.forEach(s => s.data.forEach(([t, v]) => expect(fullValues.get(t)).toBe(v)))
   })
+
+  describe('Y axis range', () => {
+    type YOpt = { yAxis: { min: number; max: number }[] }
+    const two = rows.map(r => ({ ...r, MAP: 100 }))
+
+    it('uses the default range of each signal when there is no override', () => {
+      const o = buildOption(['RPM', 'MAP'], two, mask, true) as YOpt
+      expect(o.yAxis.map(a => [a.min, a.max])).toEqual([[0, 7000], [0, 200]])
+    })
+
+    it('uses an override for that signal only', () => {
+      const o = buildOption(['RPM', 'MAP'], two, mask, true, undefined, { MAP: { min: 0, max: 400 } }) as YOpt
+      expect(o.yAxis.map(a => [a.min, a.max])).toEqual([[0, 7000], [0, 400]])
+    })
+
+    it('does not change the series data', () => {
+      const a = buildOption(['MAP'], two, mask, true) as Opt
+      const b = buildOption(['MAP'], two, mask, true, undefined, { MAP: { min: 0, max: 400 } }) as Opt
+      expect(b.series).toEqual(a.series)
+    })
+  })
 })

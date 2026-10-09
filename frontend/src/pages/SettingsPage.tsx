@@ -1,11 +1,13 @@
 import { ConstantsPanel } from '@/features/settings/ConstantsPanel'
 import { WeightingPanel } from '@/features/settings/WeightingPanel'
+import { SignalRangesPanel } from '@/features/settings/SignalRangesPanel'
 import { useSessionStore } from '@/store/sessionStore'
 import { SessionRestoringSpinner } from '@/components/guards/SessionRestoringSpinner'
 
 /**
  * Configurações: destino de topo, sem guard (não exige mapa nem log). Hospeda as Constantes que
- * alimentam os sinais VE Lambda Corrigido, Potência e Torque e a constante k do Ponderado da correção.
+ * alimentam os sinais VE Lambda Corrigido, Potência e Torque, a constante k do Ponderado da correção e a
+ * faixa (mín/máx) dos eixos de cada sinal nos gráficos.
  */
 export default function SettingsPage() {
   const isRestoring = useSessionStore(s => s.isRestoring)
@@ -17,6 +19,8 @@ export default function SettingsPage() {
       <ConstantsPanel />
       <div className="border-t border-gray-800" />
       <WeightingPanel />
+      <div className="border-t border-gray-800" />
+      <SignalRangesPanel />
     </div>
   )
 }

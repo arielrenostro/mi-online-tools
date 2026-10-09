@@ -13,7 +13,7 @@ describe('buildXYOption', () => {
   it('um eixo Y por sinal, com a faixa padrão do sinal e o nome com unidade', () => {
     const o = opt([S('MAP', [[1000, 50]]), S('Lambda 1', [[1000, 1]])])
     expect(o.yAxis).toHaveLength(2)
-    expect(o.yAxis[0]).toMatchObject({ min: 20, max: 250, name: 'MAP (kPa)' })
+    expect(o.yAxis[0]).toMatchObject({ min: 0, max: 200, name: 'MAP (kPa)' })
     expect(o.yAxis[1]).toMatchObject({ min: 0.7, max: 1.3, name: 'Lambda 1 (λ)' })
     expect(o.xAxis).toMatchObject({ min: 0, max: 7000, name: 'RPM' })
   })
@@ -226,6 +226,41 @@ describe('linha máxima e mínima', () => {
     const o = opt([S('MAP', col(1000, [1, 2, 3])), S('Pedal', col(1000, [1, 2, 3]))], 'RPM', false, true, false)
     expect(get(o, 'max-0').yAxisIndex).toBe(0)
     expect(get(o, 'max-1').yAxisIndex).toBe(1)
+  })
+})
+
+describe('faixa configurada', () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const build = (series: XYSeriesData[], ranges?: any, curves = { mean: false, max: false, min: false }) =>
+    buildXYOption(series, 'RPM', curves, ranges) as any
+
+  it('sem sobrescrita os eixos X e Y usam a faixa padrão', () => {
+    const o = build([S('MAP', [[1000, 50]])])
+    expect(o.xAxis).toMatchObject({ min: 0, max: 7000 })
+    expect(o.yAxis[0]).toMatchObject({ min: 0, max: 200 })
+  })
+
+  it('a sobrescrita vale para o eixo X e para o eixo Y daquele sinal, só dele', () => {
+    const o = build([S('MAP', [[1000, 50]]), S('Lambda 1', [[1000, 1]])], { RPM: { min: 800, max: 6000 }, MAP: { min: 0, max: 400 } })
+    expect(o.xAxis).toMatchObject({ min: 800, max: 6000 })
+    expect(o.yAxis[0]).toMatchObject({ min: 0, max: 400 })
+    expect(o.yAxis[1]).toMatchObject({ min: 0.7, max: 1.3 })
+  })
+
+  it('as curvas por faixa de X usam o intervalo configurado do eixo X', () => {
+    const pts: [number, number][] = [[1000, 40], [1001, 50], [1002, 60]]
+    const meanData = (o: any) => o.series.find((s: { id: string }) => s.id === 'mean-0')?.data
+    const all = { mean: true, max: false, min: false }
+    // padrão (0–7000, faixas de 100): os três caem na mesma faixa → há curva (prolongada até as pontas)
+    expect(meanData(build([S('MAP', pts)], undefined, all))).toEqual([[1000, 50], [1001, 50], [1002, 50]])
+    // 0–7 (faixas de 0,1): cada ponto numa faixa → nenhuma tem as 3 amostras mínimas → sem curva
+    expect(meanData(build([S('MAP', pts)], { RPM: { min: 0, max: 7 } }, all))).toBeUndefined()
+  })
+
+  it('não altera os dados das séries', () => {
+    const a = build([S('MAP', [[1000, 50]])])
+    const b = build([S('MAP', [[1000, 50]])], { MAP: { min: 0, max: 400 } })
+    expect(b.series).toEqual(a.series)
   })
 })
 

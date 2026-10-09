@@ -7,6 +7,7 @@ import { useDisplayRows, useDisplaySignals } from '@/hooks/useDisplayRows'
 import { useFilterStore } from '@/store/filterStore'
 import { useFilterMask } from '@/hooks/useFilterMask'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
+import { useSignalRangesStore, resolveRange, type SignalRangeOverrides } from '@/store/signalRangesStore'
 import { signalOriginHint } from '@/signals/signalOrigin'
 import { findLastRow } from '@/utils/findLastRow'
 import { sigColor, dimColor as dim } from '@/utils/signalColor'
@@ -52,7 +53,7 @@ export function computeRuns(mask: boolean[]): Run[] {
 /**
  * Quando as linhas são só um trecho do log (janelamento), `view` mantém o gráfico igual ao do log
  * inteiro: o eixo X cobre o log todo, não só o trecho carregado. (O eixo Y não precisa de nada:
- * todo sinal tem faixa fixa em `SIGNAL_MAP`.)
+ * todo sinal tem faixa fixa — a padrão de `SIGNAL_MAP` ou a sobrescrita em `ranges`.)
  */
 export interface ChartView {
   xDomain: [number, number]
@@ -60,6 +61,8 @@ export interface ChartView {
 
 export function buildOption(
   signals: string[], rows: DatalogRow[], mask: boolean[], showFilteredPoints: boolean, view?: ChartView,
+  /** Faixas que o usuário sobrescreveu (Configurações); sem entrada, vale a faixa padrão do sinal. */
+  ranges?: SignalRangeOverrides,
 ): object {
   if (signals.length === 0) return {}
 
@@ -69,11 +72,11 @@ export function buildOption(
 
   const rightCount = Math.max(0, signals.length - 1)
   const yAxes = signals.map((sig, i) => {
-    const def = SIGNAL_MAP.get(sig)
+    const range = resolveRange(sig, ranges)
     return {
       type:      'value',
-      min:       def?.min,
-      max:       def?.max,
+      min:       range?.min,
+      max:       range?.max,
       position:  i === 0 ? 'left' : 'right',
       offset:    i > 1 ? (i - 1) * 52 : 0,
       axisLabel: { color: sigColor(sig, i), fontSize: 9 },
@@ -266,6 +269,9 @@ const PanelView = memo(function PanelView({
   cursorRef.current = cursor_ms
 
   const syncCtx = useContext(ChartSyncContext)
+  // Vem do contexto (cópia congelada com o resto das entradas): editar uma faixa em Configurações não
+  // reconstrói os gráficos escondidos; a volta à aba aplica uma única vez.
+  const ranges = syncCtx?.ranges
 
   const updatePanelSignals = useUIStore(s => s.updatePanelSignals)
   const addChartPanel      = useUIStore(s => s.addChartPanel)
@@ -283,8 +289,8 @@ const PanelView = memo(function PanelView({
   const available = allSignals.filter(s => !panel.signals.includes(s))
 
   const option = useMemo(
-    () => buildOption(panel.signals, rows, mask, showFilteredPoints, view),
-    [panel.signals, rows, mask, showFilteredPoints, view],
+    () => buildOption(panel.signals, rows, mask, showFilteredPoints, view, ranges),
+    [panel.signals, rows, mask, showFilteredPoints, view, ranges],
   )
   // O ECharts processa o `option` de forma síncrona (centenas de ms por painel num log grande): aplica
   // só depois de pintar o "Carregando…", em vez de congelar a tela com o gráfico antigo.
@@ -499,6 +505,8 @@ const ChartSyncContext = React.createContext<{
   /** Painéis cujo zoom está esperando a vez (mostram o "Carregando…"). */
   zooming: ReadonlySet<string>
   instancesRef:    React.MutableRefObject<Map<string, echarts.ECharts>>
+  /** Faixas sobrescritas pelo usuário (Configurações), no mesmo instante congelado das demais entradas. */
+  ranges: SignalRangeOverrides
 } | null>(null)
 
 /**
@@ -514,12 +522,13 @@ export function SyncedChart({ active = true }: { active?: boolean }) {
     selection:          useTimeStore(s => s.selection),
     allRows:            useDisplayRows(active),
     allSignals:         useDisplaySignals(),
+    ranges:             useSignalRangesStore(s => s.overrides),
     mask:               useFilterMask(),
     showFilteredPoints: useFilterStore(s => s.showFilteredPoints),
   }
   const frozenRef = useRef(live)
   if (active) frozenRef.current = live
-  const { chartLayout, cursor_ms, selection, allRows, allSignals, mask, showFilteredPoints } = frozenRef.current
+  const { chartLayout, cursor_ms, selection, allRows, allSignals, mask, showFilteredPoints, ranges } = frozenRef.current
 
   const setCursor      = useTimeStore(s => s.setCursor)
   const setSelection   = useTimeStore(s => s.setSelection)
@@ -776,8 +785,8 @@ export function SyncedChart({ active = true }: { active?: boolean }) {
   }, [])
 
   const ctx = useMemo(
-    () => ({ registerChart, unregisterChart, applySelectionZoom, zooming, instancesRef }),
-    [registerChart, unregisterChart, applySelectionZoom, zooming],
+    () => ({ registerChart, unregisterChart, applySelectionZoom, zooming, instancesRef, ranges }),
+    [registerChart, unregisterChart, applySelectionZoom, zooming, ranges],
   )
 
   // ── Selection rectangle position ──────────────────────────────────────────────

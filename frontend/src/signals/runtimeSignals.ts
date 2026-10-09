@@ -24,17 +24,17 @@ export interface RuntimeSignalContext {
 
 export const RUNTIME_SIGNAL_DEFS: RuntimeSignalDef[] = [
   {
-    name: 'VE Lambda Corrigido', unit: '%', min: 0, max: 150,
+    name: 'VE Lambda Corrigido', unit: '%', min: 0, max: 125,
     defaultVisible: true, tableWidth: 130,
     format: v => `${v.toFixed(1)}%`,
   },
   {
-    name: 'Potência', unit: 'cv', min: 0, max: 300,
+    name: 'Potência', unit: 'cv', min: 0, max: 250,
     defaultVisible: true, tableWidth: 90,
     format: v => `${v.toFixed(1)} cv`,
   },
   {
-    name: 'Torque', unit: 'kgf·m', min: 0, max: 40,
+    name: 'Torque', unit: 'kgf·m', min: 0, max: 30,
     defaultVisible: true, tableWidth: 100,
     format: v => `${v.toFixed(2)} kgf·m`,
   },

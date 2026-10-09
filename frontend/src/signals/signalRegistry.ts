@@ -48,13 +48,13 @@ export const SIGNAL_DEFS: SignalDef[] = [
     format:  v   => String(Math.round(v)),
   },
   {
-    name: 'MAP', column: 'MAP', unit: 'kPa', min: 20, max: 250,
+    name: 'MAP', column: 'MAP', unit: 'kPa', min: 0, max: 200,
     defaultVisible: true, tableWidth: 80,
     convert: raw => parseInt(raw, 10),
     format:  v   => `${Math.round(v)} kPa`,
   },
   {
-    name: 'Boost', column: 'Boost', unit: 'kPa', min: 20, max: 250,
+    name: 'Boost', column: 'Boost', unit: 'kPa', min: 0, max: 200,
     defaultVisible: true, tableWidth: 72,
     convert: raw => parseInt(raw, 10),
     format:  v   => `${Math.round(v)} kPa`,
@@ -84,19 +84,19 @@ export const SIGNAL_DEFS: SignalDef[] = [
     format:  v   => v === 0 ? 'OL' : v === 1 ? 'CL' : 'CL+AC',
   },
   {
-    name: 'VE', column: 'VE Value', unit: '%', min: 0, max: 150,
+    name: 'VE', column: 'VE Value', unit: '%', min: 0, max: 125,
     defaultVisible: true, tableWidth: 72,
     convert: raw => parseFloat(raw) / 10,
     format:  v   => `${v.toFixed(1)}%`,
   },
   {
-    name: 'CLT', column: 'CLT', unit: 'ºC', min: -20, max: 120,
+    name: 'CLT', column: 'CLT', unit: 'ºC', min: 10, max: 120,
     defaultVisible: true, tableWidth: 72,
     convert: raw => parseInt(raw, 10) - 273,
     format:  v   => `${Math.round(v)} ºC`,
   },
   {
-    name: 'IAT', column: 'IAT', unit: 'ºC', min: -20, max: 80,
+    name: 'IAT', column: 'IAT', unit: 'ºC', min: 10, max: 120,
     defaultVisible: true, tableWidth: 72,
     convert: raw => parseInt(raw, 10) - 273,
     format:  v   => `${Math.round(v)} ºC`,
@@ -120,7 +120,7 @@ export const SIGNAL_DEFS: SignalDef[] = [
     format:  v   => `${Math.round(v)} km/h`,
   },
   {
-    name: 'Turbo Target', column: 'Turbo Target', unit: 'kPa', min: 20, max: 250,
+    name: 'Turbo Target', column: 'Turbo Target', unit: 'kPa', min: 0, max: 200,
     defaultVisible: true, tableWidth: 100,
     convert: raw => parseInt(raw, 10),
     format:  v   => `${Math.round(v)} kPa`,
@@ -180,7 +180,7 @@ export const SIGNAL_DEFS: SignalDef[] = [
     format:  v   => `${v.toFixed(2)} bar`,
   },
   {
-    name: 'VE Lambda', unit: '%', min: 0, max: 150,
+    name: 'VE Lambda', unit: '%', min: 0, max: 125,
     defaultVisible: true, tableWidth: 90,
     compute: computeVeLambda,
     format:  v => `${v.toFixed(1)}%`,

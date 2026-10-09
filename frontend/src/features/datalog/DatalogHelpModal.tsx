@@ -100,7 +100,7 @@ export default function DatalogHelpModal({ open, onClose }: Props) {
               <Item>Marque <strong>Linha média</strong> para traçar, em cada sinal do Y, a curva do valor médio dele em cada faixa de X (ex.: pressão de óleo média por RPM), só com os pontos que passam no filtro e estão na seleção de tempo; a linha cobre toda a extensão horizontal desses pontos, inclusive as pontas com poucos pontos.</Item>
               <Item><strong>Linha máxima</strong> e <strong>Linha mínima</strong> traçam, do mesmo jeito, o maior e o menor valor de cada sinal do Y em cada faixa de X — o envelope da nuvem. Cada linha liga e desliga sozinha.</Item>
               <Item>Remova um sinal do Y com o <span className="font-mono text-gray-400">×</span> do chip, inclusive o último; sem nenhum Y, o gráfico pede para adicionar um.</Item>
-              <Item>Os eixos seguem a faixa padrão de cada sinal, como nos Gráficos.</Item>
+              <Item>Os eixos seguem a faixa de cada sinal (a padrão ou a que você definiu em Configurações), como nos Gráficos.</Item>
             </ul>
           </Section>
 

@@ -4,6 +4,7 @@ import { useAfterPaint } from '@/hooks/useAfterPaint'
 import { LoadingOverlay } from '@/components/LoadingOverlay'
 import type { ECharts, EChartsOption } from 'echarts'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
+import { useSignalRangesStore, resolveRange, type SignalRangeOverrides } from '@/store/signalRangesStore'
 import { sigColor, dimColor, meanLineColor, ENVELOPE_LINE_COLOR } from '@/utils/signalColor'
 import { hasXYPoints, bandCurve, type BandStat, type XYPoint, type XYSeriesData } from '@/utils/xySeries'
 
@@ -15,7 +16,7 @@ const LARGE_THRESHOLD = 2000
 
 const cursorId = (i: number) => `cursor-${i}`
 
-/** Faixa de X das faixas da curva média: a padrão do sinal, ou (sem ela) a dos dados que passam. */
+/** Faixa de X das faixas da curva média: a configurada do sinal (padrão ou sobrescrita), ou (sem ela) a dos dados que passam. */
 function xRange(series: XYSeriesData[], min?: number, max?: number): [number, number] {
   if (min !== undefined && max !== undefined) return [min, max]
   let lo = Infinity, hi = -Infinity
@@ -37,7 +38,7 @@ function formatValue(signal: string, v: number): string {
 interface TooltipParam { seriesName?: string; seriesId?: string; value?: unknown; color?: string }
 
 /**
- * Opção do ECharts da nuvem de pontos. Cada Y tem seu eixo (faixa padrão do sinal, como nos Gráficos),
+ * Opção do ECharts da nuvem de pontos. Cada Y tem seu eixo (faixa configurada do sinal, como nos Gráficos),
  * alternando esquerda/direita; e até duas séries — a dos pontos que passam no filtro (cor cheia) e, se
  * houver, a dos que falham (esmaecida, desenhada por baixo). O marcador do cursor vai em séries à parte
  * (`cursor-<i>`, vazias aqui) atualizadas por `cursorUpdate`, para mover o cursor não reconstruir a nuvem.
@@ -51,18 +52,22 @@ export const NO_CURVES: XYCurves = { mean: false, max: false, min: false }
 
 const STAT_LABEL: Record<BandStat, string> = { mean: 'média', max: 'máximo', min: 'mínimo' }
 
-export function buildXYOption(series: XYSeriesData[], xSignal: string, curves: XYCurves = NO_CURVES): EChartsOption {
-  const xDef = SIGNAL_MAP.get(xSignal)
+export function buildXYOption(
+  series: XYSeriesData[], xSignal: string, curves: XYCurves = NO_CURVES,
+  /** Faixas que o usuário sobrescreveu (Configurações); sem entrada, vale a faixa padrão do sinal. */
+  ranges?: SignalRangeOverrides,
+): EChartsOption {
+  const xRng = resolveRange(xSignal, ranges)
   const leftCount  = Math.ceil(series.length / 2)
   const rightCount = Math.floor(series.length / 2)
 
   const yAxis = series.map((s, i) => {
-    const def   = SIGNAL_MAP.get(s.signal)
+    const rng   = resolveRange(s.signal, ranges)
     const color = sigColor(s.signal, i)
     return {
       type:     'value' as const,
-      min:      def?.min,
-      max:      def?.max,
+      min:      rng?.min,
+      max:      rng?.max,
       position: i % 2 === 0 ? 'left' as const : 'right' as const,
       offset:   Math.floor(i / 2) * AXIS_WIDTH,
       name:     axisLabel(s.signal),
@@ -98,7 +103,7 @@ export function buildXYOption(series: XYSeriesData[], xSignal: string, curves: X
   // Curvas por faixa de X (só dos pontos que passam). A nuvem tem a cor da série: a média é vermelha e
   // tracejada (marcadores na cor do sinal: com vários Y todas são vermelhas); máximo e mínimo são
   // pontilhadas em cinza-claro. Todas com halo escuro e `z` acima dos pontos.
-  const [lo, hi] = xRange(series, xDef?.min, xDef?.max)
+  const [lo, hi] = xRange(series, xRng?.min, xRng?.max)
   const curveSeries = (stat: BandStat, on: boolean) => !on ? [] : series.flatMap((s, i) => {
     const data = bandCurve(s.pass, lo, hi, stat)
     if (data.length === 0) return []
@@ -134,7 +139,7 @@ export function buildXYOption(series: XYSeriesData[], xSignal: string, curves: X
     animation: false,
     grid: { left: leftCount * AXIS_WIDTH + 4, right: rightCount > 0 ? rightCount * AXIS_WIDTH + 4 : 20, top: 16, bottom: 48 },
     xAxis: {
-      type: 'value', min: xDef?.min, max: xDef?.max,
+      type: 'value', min: xRng?.min, max: xRng?.max,
       name: axisLabel(xSignal), nameLocation: 'middle', nameGap: 28,
       nameTextStyle: { color: AXIS_TEXT, fontSize: 10 },
       axisLabel: { color: AXIS_TEXT, fontSize: 9 },
@@ -177,7 +182,8 @@ interface Props {
 }
 
 export function XYChart({ series, xSignal, curves, cursor }: Props) {
-  const option = useMemo(() => buildXYOption(series, xSignal, curves), [series, xSignal, curves])
+  const ranges = useSignalRangesStore(s => s.overrides)
+  const option = useMemo(() => buildXYOption(series, xSignal, curves, ranges), [series, xSignal, curves, ranges])
   // Aplicar a nuvem é síncrono e pesado: só depois de pintar o "Carregando…" (ver `useAfterPaint`).
   const { shown: shownOption, pending } = useAfterPaint(option)
   const instRef   = useRef<ECharts | null>(null)

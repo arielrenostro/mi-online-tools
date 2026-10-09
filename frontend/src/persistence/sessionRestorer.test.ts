@@ -31,6 +31,7 @@ import { useCorrectionStore } from '@/store/correctionStore'
 import { useFilterStore } from '@/store/filterStore'
 import { useCorrectionSettingsStore, DEFAULT_CORRECTION_SETTINGS } from '@/store/correctionSettingsStore'
 import { useMapStore } from '@/store/mapStore'
+import { useSignalRangesStore } from '@/store/signalRangesStore'
 import { cloneFilter, DEFAULT_FILTER, filtersEqual } from '@/types/filter'
 import type { CorrectionRun } from '@/types/correction'
 import type { MapModel } from '@/types/map'
@@ -65,6 +66,7 @@ beforeEach(() => {
   useFilterStore.getState().hydrate({})
   useMapStore.setState({ originalMap: null, editableMap: null })
   useCorrectionSettingsStore.setState({ values: DEFAULT_CORRECTION_SETTINGS })
+  useSignalRangesStore.setState({ overrides: {} })
 })
 
 describe('restoreCorrection — runs', () => {
@@ -228,5 +230,27 @@ describe('restoreSession — correction settings', () => {
     ls.set('miot:correction-settings', { confidenceK: 'abc' })
     await restoreSession()
     expect(useCorrectionSettingsStore.getState().values.confidenceK).toBe(100)
+  })
+})
+
+describe('restoreSession — signal ranges', () => {
+  it('restores the saved ranges', async () => {
+    ls.set('miot:signal-ranges', { MAP: { min: 0, max: 400 }, 'Lambda 1': { min: 0.9, max: 1.1 } })
+    await restoreSession()
+    expect(useSignalRangesStore.getState().overrides).toEqual({ MAP: { min: 0, max: 400 }, 'Lambda 1': { min: 0.9, max: 1.1 } })
+  })
+
+  it('keeps the valid entries and drops invalid or unknown ones without an error', async () => {
+    ls.set('miot:signal-ranges', { MAP: { min: 0, max: 400 }, RPM: { min: 9, max: 1 }, Fantasma: { min: 0, max: 1 } })
+    await restoreSession()
+    expect(useSignalRangesStore.getState().overrides).toEqual({ MAP: { min: 0, max: 400 } })
+  })
+
+  it('uses the defaults when nothing or garbage was saved', async () => {
+    await restoreSession()
+    expect(useSignalRangesStore.getState().overrides).toEqual({})
+    ls.set('miot:signal-ranges', 'lixo')
+    await restoreSession()
+    expect(useSignalRangesStore.getState().overrides).toEqual({})
   })
 })

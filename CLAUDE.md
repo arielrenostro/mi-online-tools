@@ -29,7 +29,7 @@ dependências e tipos TypeScript não são duplicados como spec — são derivá
 | `datalog-table` | Aba Dados: tabela, colunas, exportação CSV |
 | `datalog-filter` | Filtro único do Datalog (modal no cabeçalho): critérios ligáveis em AND, mesma máscara para destaque e para gerar run, padrão, rascunho/Aplicar, "Mostrar pontos filtrados", persistência |
 | `correction-runs` | Run de correção (compilado independente dos logs), histórico de 10, nome editável, compatibilidade por breakpoints, botão "Gerar Correção" no cabeçalho do Datalog, toast/indicador, seletor na aba Eficiência Volumétrica |
-| `app-settings` | Tela Configurações (TopBar, sem guard): Constantes do motor e a constante k de confiança do Ponderado |
+| `app-settings` | Tela Configurações (TopBar, sem guard): Constantes do motor, a constante k de confiança do Ponderado e a faixa (mín/máx) dos sinais nos gráficos |
 | `datalog-constants` | Constantes (tela Configurações): cilindrada/AFR/BSFC, calibração de VE (k), sinais de runtime VE Lambda Corrigido, Potência, Torque e o hover que indica a origem deles |
 | `datalog-dyno` | Aba Dinamômetro: curva potência/torque × RPM (Roda/Motor, Bruto/Suavizado, filtros próprios) |
 | `datalog-xy` | Aba XY: nuvem de pontos de um sinal X contra um ou mais Y (eixo por sinal), com o filtro único, a seleção da TimeRail e o cursor |

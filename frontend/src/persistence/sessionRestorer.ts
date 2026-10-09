@@ -17,6 +17,7 @@ export async function restoreSession(): Promise<void> {
     restoreUI(),
     restoreTime(),
     restoreConstants(),
+    restoreSignalRanges(),
     restoreCorrectionSettings(),
     restoreDyno(),
     restoreXY(),
@@ -133,6 +134,12 @@ async function restoreConstants(): Promise<void> {
   const { useConstantsStore } = await import('@/store/constantsStore')
   const saved = lsGet<unknown>('miot:constants')
   if (saved) useConstantsStore.getState().hydrate(saved)
+}
+
+async function restoreSignalRanges(): Promise<void> {
+  const { useSignalRangesStore, SIGNAL_RANGES_KEY } = await import('@/store/signalRangesStore')
+  const saved = lsGet<unknown>(SIGNAL_RANGES_KEY)
+  if (saved) useSignalRangesStore.getState().hydrate(saved)
 }
 
 async function restoreCorrectionSettings(): Promise<void> {
