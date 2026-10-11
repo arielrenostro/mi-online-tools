@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { lsSet } from '@/persistence/localStorage'
+import { canonicalSignalName } from '@/signals/signalRegistry'
 
 export interface XYSettings {
   /** Sinal do eixo X — sempre exatamente um. */
@@ -23,10 +24,10 @@ export function sanitizeXYSettings(saved: unknown): XYSettings {
   // Lista vazia salva é uma escolha (o usuário removeu todos os Y) e volta vazia; só dado ausente, que
   // não seja lista ou lista não vazia sem nenhum nome válido (corrompida) cai no padrão.
   const raw = Array.isArray(o.ySignals) ? o.ySignals : null
-  const ys  = raw ? [...new Set(raw.filter(isName))] : []
+  const ys  = raw ? [...new Set(raw.filter(isName).map(canonicalSignalName))] : []
   const ySignals = raw && (raw.length === 0 || ys.length > 0) ? ys : [...DEFAULT_XY_SETTINGS.ySignals]
   return {
-    xSignal:  isName(o.xSignal) ? o.xSignal : DEFAULT_XY_SETTINGS.xSignal,
+    xSignal:  isName(o.xSignal) ? canonicalSignalName(o.xSignal) : DEFAULT_XY_SETTINGS.xSignal,
     ySignals,
     showMean: o.showMean === true,
     showMax:  o.showMax === true,

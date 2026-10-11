@@ -32,6 +32,9 @@ import { useFilterStore } from '@/store/filterStore'
 import { useCorrectionSettingsStore, DEFAULT_CORRECTION_SETTINGS } from '@/store/correctionSettingsStore'
 import { useMapStore } from '@/store/mapStore'
 import { useSignalRangesStore } from '@/store/signalRangesStore'
+import { useXYStore } from '@/store/xyStore'
+import { useTimeStore } from '@/store/timeStore'
+import { useUIStore, flattenPanels } from '@/store/uiStore'
 import { cloneFilter, DEFAULT_FILTER, filtersEqual } from '@/types/filter'
 import type { CorrectionRun } from '@/types/correction'
 import type { MapModel } from '@/types/map'
@@ -252,5 +255,49 @@ describe('restoreSession — signal ranges', () => {
     ls.set('miot:signal-ranges', 'lixo')
     await restoreSession()
     expect(useSignalRangesStore.getState().overrides).toEqual({})
+  })
+})
+
+describe('restoreSession — nome antigo "Turbo Target" vira "Boost Target"', () => {
+  it('faixa de eixo personalizada', async () => {
+    ls.set('miot:signal-ranges', { 'Turbo Target': { min: 0, max: 300 } })
+    await restoreSession()
+    expect(useSignalRangesStore.getState().overrides).toEqual({ 'Boost Target': { min: 0, max: 300 } })
+  })
+
+  it('faixa salva com os dois nomes: a do nome atual vence', async () => {
+    ls.set('miot:signal-ranges', { 'Boost Target': { min: 0, max: 250 }, 'Turbo Target': { min: 0, max: 300 } })
+    await restoreSession()
+    expect(useSignalRangesStore.getState().overrides).toEqual({ 'Boost Target': { min: 0, max: 250 } })
+  })
+
+  it('escolha do XY, sem duplicar', async () => {
+    ls.set('miot:xy', { xSignal: 'Turbo Target', ySignals: ['MAP', 'Turbo Target', 'Boost Target'] })
+    await restoreSession()
+    expect(useXYStore.getState().xSignal).toBe('Boost Target')
+    expect(useXYStore.getState().ySignals).toEqual(['MAP', 'Boost Target'])
+  })
+
+  it('sinal do sparkline', async () => {
+    ls.set('miot:time', { sparklineSensor: 'Turbo Target' })
+    await restoreSession()
+    expect(useTimeStore.getState().sparklineSensor).toBe('Boost Target')
+  })
+
+  it('painéis dos Gráficos (mesma posição, sem duplicar) e visibilidade de colunas', async () => {
+    ls.set('miot:ui', {
+      chartLayout: { type: 'panel', panelId: 'a', signals: ['Boost', 'Turbo Target', 'Boost Target'], height: 400 },
+      columnVisibility: { 'Turbo Target': false, MAP: true },
+    })
+    await restoreSession()
+    const ui = useUIStore.getState()
+    expect(flattenPanels(ui.chartLayout)[0].signals).toEqual(['Boost', 'Boost Target'])
+    expect(ui.columnVisibility).toEqual({ 'Boost Target': false, MAP: true })
+  })
+
+  it('visibilidade salva com os dois nomes: a do nome atual vence', async () => {
+    ls.set('miot:ui', { columnVisibility: { 'Turbo Target': false, 'Boost Target': true } })
+    await restoreSession()
+    expect(useUIStore.getState().columnVisibility).toEqual({ 'Boost Target': true })
   })
 })

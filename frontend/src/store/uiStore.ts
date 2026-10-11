@@ -4,6 +4,7 @@ import type { UIState, MapaAnalysisMode, DatalogTab, MapaTab, ChartLayout, Chart
 import { lsSet } from '@/persistence/localStorage'
 import { buildDefaultChartLayout, findPanel, resizePanelHeight, resizePanelWidth } from '@/utils/chartLayoutSize'
 import { migrateChartLayout } from '@/utils/chartLayoutMigration'
+import { canonicalSignalName } from '@/signals/signalRegistry'
 
 const initialState: UIState = {
   originalMapCollapsed: false,
@@ -86,15 +87,28 @@ export const useUIStore = create<UIState & UIActions>()(
     hydrate(savedState) {
       const { chartsHeight, chartLayout, tuningAnalysisMode, ...rest } = savedState
       const migratedLayout = chartLayout ? migrateChartLayout(chartLayout, chartsHeight) : null
+      const columnVisibility = rest.columnVisibility ? canonicalizeVisibility(rest.columnVisibility) : undefined
       set({
         ...initialState,
         ...(tuningAnalysisMode ? { mapaAnalysisMode: tuningAnalysisMode } : {}),
         ...rest,
+        ...(columnVisibility ? { columnVisibility } : {}),
         ...(migratedLayout ? { chartLayout: migratedLayout } : {}),
       })
     },
   }))
 )
+
+/** Traduz nomes antigos de sinais (ex.: Turbo Target) nas chaves; a chave com o nome atual vence. */
+function canonicalizeVisibility(saved: Record<string, boolean>): Record<string, boolean> {
+  const out: Record<string, boolean> = {}
+  for (const [name, visible] of Object.entries(saved)) {
+    const canon = canonicalSignalName(name)
+    if (canon !== name && canon in saved) continue
+    out[canon] = visible
+  }
+  return out
+}
 
 function persist() {
   const s = useUIStore.getState()

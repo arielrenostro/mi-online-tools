@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { SIGNAL_DEFS, DISPLAY_SIGNAL_DEFS, SIGNAL_GROUPS, sortSignals } from './signalRegistry'
+import { SIGNAL_DEFS, DISPLAY_SIGNAL_DEFS, SIGNAL_GROUPS, sortSignals, canonicalSignalName, getSignalDef } from './signalRegistry'
 import { RUNTIME_SIGNAL_NAMES } from './runtimeSignals'
 
 const ALL = SIGNAL_DEFS.map(s => s.name).concat(RUNTIME_SIGNAL_NAMES)
@@ -21,11 +21,13 @@ describe('sortSignals', () => {
     expect(at('Inj. DT')).toBe(at('Inj. Pulse') + 1)
     expect(at('Inj. Efetivo')).toBe(at('Inj. DT') + 1)
     expect(at('Torque')).toBe(at('Potência') + 1)
+    expect(at('Delta Boost Target')).toBe(at('Boost Target') + 1)
+    expect(at('Delta Lambda 1 Target')).toBe(at('Lambda Target') + 1)
   })
 
   it('segue a ordem dos grupos', () => {
     const sorted = sortSignals([...ALL])
-    expect(sorted.slice(0, 4)).toEqual(['RPM', 'MAP', 'Boost', 'Turbo Target'])
+    expect(sorted.slice(0, 5)).toEqual(['RPM', 'MAP', 'Boost', 'Boost Target', 'Delta Boost Target'])
     expect(sorted.slice(-2)).toEqual(['Potência', 'Torque'])
   })
 
@@ -52,5 +54,27 @@ describe('DISPLAY_SIGNAL_DEFS', () => {
     const names = DISPLAY_SIGNAL_DEFS.map(d => d.name)
     expect(names).toEqual(sortSignals(names))
     expect(names.indexOf('VE Lambda Corrigido')).toBe(names.indexOf('VE Lambda') + 1)
+  })
+})
+
+describe('sinais de delta do alvo', () => {
+  it('formatam com sinal explícito e têm eixo simétrico em torno de zero', () => {
+    expect(getSignalDef('Delta Lambda 1 Target')!.format(0.0349)).toBe('+0.035')
+    expect(getSignalDef('Delta Lambda 1 Target')!.format(-0.05)).toBe('-0.050')
+    expect(getSignalDef('Delta Boost Target')!.format(12)).toBe('+12 kPa')
+    expect(getSignalDef('Delta Boost Target')!.format(-20)).toBe('-20 kPa')
+    for (const n of ['Delta Lambda 1 Target', 'Delta Boost Target']) {
+      const d = getSignalDef(n)!
+      expect(d.min).toBe(-d.max)
+    }
+  })
+})
+
+describe('canonicalSignalName', () => {
+  it('traduz o nome antigo e deixa os demais', () => {
+    expect(canonicalSignalName('Turbo Target')).toBe('Boost Target')
+    expect(canonicalSignalName('Boost Target')).toBe('Boost Target')
+    expect(canonicalSignalName('RPM')).toBe('RPM')
+    expect(canonicalSignalName('toString')).toBe('toString')
   })
 })

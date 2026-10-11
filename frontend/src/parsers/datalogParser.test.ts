@@ -20,6 +20,21 @@ describe('parseDatalogText', () => {
     }
   })
 
+  it('lê a coluna Turbo Target como o sinal Boost Target', () => {
+    expect(model.rows[0]['Boost Target']).toBe(100)
+    expect(model.signals).toContain('Boost Target')
+    expect(model.signals).not.toContain('Turbo Target')
+    expect(model.rows[0]).not.toHaveProperty('Turbo Target')
+  })
+
+  it('deriva os deltas do alvo (medido − alvo)', () => {
+    // Lambda 1 0.998, Lambda Target 1.000; Boost 103, alvo 100
+    expect(model.rows[0]['Delta Lambda 1 Target']).toBeCloseTo(-0.002, 6)
+    expect(model.rows[0]['Delta Boost Target']).toBe(3)
+    expect(model.signals).toContain('Delta Lambda 1 Target')
+    expect(model.signals).toContain('Delta Boost Target')
+  })
+
   it('grava a versão do leitor', () => {
     expect(model.parserVersion).toBe(PARSER_VERSION)
   })

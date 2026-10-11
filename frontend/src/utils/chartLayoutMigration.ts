@@ -1,4 +1,5 @@
 import type { ChartLayout } from '@/types/ui'
+import { canonicalSignalName } from '@/signals/signalRegistry'
 import { DEFAULT_HEIGHT, MIN_HEIGHT, MAX_HEIGHT } from './chartLayoutSize'
 
 function isNum(v: unknown): v is number {
@@ -33,7 +34,9 @@ function walk(raw: unknown, available: number): ChartLayout | null {
     return {
       type:    'panel',
       panelId: node.panelId,
-      signals: Array.isArray(node.signals) ? node.signals.filter((s): s is string => typeof s === 'string') : [],
+      signals: Array.isArray(node.signals)
+        ? [...new Set(node.signals.filter((s): s is string => typeof s === 'string').map(canonicalSignalName))]
+        : [],
       height:  clampHeight(isNum(node.height) ? node.height : available),
     }
   }

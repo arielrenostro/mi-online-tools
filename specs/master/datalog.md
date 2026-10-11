@@ -32,7 +32,7 @@ Colunas identificadas sempre pelo **nome** (header), nunca por índice.
 | `Lambda Loop` | Modo de controle de lambda | — | `int(raw)` → `0`=open, `1`=closed, `2`=closed + auto-correção |
 | `Lambda Target` | Lambda alvo da ECU | λ | `float(raw)/1000` |
 | `Lambda Corr` | Correção de combustível (fuel trim) | % | `(float(raw)-1000)/10` |
-| `Turbo Target` | Pressão de boost alvo | kPa | `int(raw)` |
+| `Turbo Target` | Pressão de boost alvo (no app o sinal se chama **Boost Target**; a coluna do CSV continua `Turbo Target`) | kPa | `int(raw)` |
 | `ACC %` | Posição do acelerador (pedal) | % | `min(100.0, float(raw)/990.0*100.0)` |
 | `Inj. Pulse` | Tempo de injeção (já inclui o dead time) | ms | `float(raw)/100` (1337 → 13,37 ms; 10 µs por unidade) |
 | `Inj. DT` | Dead time do injetor (varia com a tensão da bateria) | ms | `float(raw)/1000` (1100 → 1,1 ms) |
@@ -48,6 +48,7 @@ Colunas identificadas sempre pelo **nome** (header), nunca por índice.
 - **Lambda Corr**: offset 1000, escala ×10; `(raw-1000)/10`. raw=1020 → +2.0%; raw=980 → -2.0%
 - **ACC %**: raw 0–990; normalizar para 0–100%, clampar em 100%
 - **Inj. Pulse / Inj. DT**: escalas diferentes (10 µs e 1 µs por unidade). `Inj. Efetivo = Inj. Pulse − Inj. DT` é derivado no parse (só existe se as duas colunas existirem)
+- **Delta Lambda 1 Target / Delta Boost Target**: derivados no parse, sempre calculados (as entradas são colunas obrigatórias). `Lambda 1 − Lambda Target` (λ) e `Boost − Boost Target` (kPa); positivo = mais pobre / boost acima do alvo
 - **dACC %**: 5000 = pedal estável; o divisor 100 é a melhor leitura disponível, não calibrada — não usar em cálculo
 - **Lambda Loop**: `0`=open loop (ECU não corrige), `1`=closed loop (ECU corrige), `2`=closed loop com auto-correção de combustível ativa
 

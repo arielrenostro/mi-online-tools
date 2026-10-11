@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { SIGNAL_MAP } from '@/signals/signalRegistry'
+import { SIGNAL_MAP, canonicalSignalName } from '@/signals/signalRegistry'
 import { lsSet } from '@/persistence/localStorage'
 
 export const SIGNAL_RANGES_KEY = 'miot:signal-ranges'
@@ -40,7 +40,11 @@ export function resolveRange(name: string, overrides: SignalRangeOverrides = {})
 export function sanitizeSignalRanges(saved: unknown): SignalRangeOverrides {
   if (!saved || typeof saved !== 'object' || Array.isArray(saved)) return {}
   const result: SignalRangeOverrides = {}
-  for (const [name, value] of Object.entries(saved as Record<string, unknown>)) {
+  // Nome antigo primeiro: se o salvo tem os dois, a entrada com o nome atual vence.
+  const entries = Object.entries(saved as Record<string, unknown>)
+    .sort(([a], [b]) => Number(canonicalSignalName(a) === a) - Number(canonicalSignalName(b) === b))
+  for (const [savedName, value] of entries) {
+    const name = canonicalSignalName(savedName)
     if (!SIGNAL_MAP.has(name) || !value || typeof value !== 'object') continue
     const { min, max } = value as Record<string, unknown>
     if (isValidRange(min, max)) result[name] = { min: min as number, max: max as number }

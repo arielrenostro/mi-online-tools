@@ -28,6 +28,16 @@ describe('upgradeLogEntry', () => {
     expect(up.model.rows[0]['Marcha']).toBe(3)
   })
 
+  it('reconstrói um log da versão 3 (com "Turbo Target", sem os deltas)', async () => {
+    const old = entry(`${HEADER}\n${ROW}\n`, 3)
+    old.model.signals = ['RPM', 'Turbo Target']
+    const up = await upgradeLogEntry(old)
+    expect(up.model.parserVersion).toBe(PARSER_VERSION)
+    expect(up.model.signals).toEqual(expect.arrayContaining(['Boost Target', 'Delta Lambda 1 Target', 'Delta Boost Target']))
+    expect(up.model.signals).not.toContain('Turbo Target')
+    expect(up.model.rows[0]['Delta Boost Target']).toBe(3)
+  })
+
   it('log já na versão atual é usado como está', async () => {
     const cur = entry(`${HEADER}\n${ROW}\n`, PARSER_VERSION)
     expect(await upgradeLogEntry(cur)).toBe(cur)

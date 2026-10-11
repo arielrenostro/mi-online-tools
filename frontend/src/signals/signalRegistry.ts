@@ -1,6 +1,7 @@
 import type { DatalogRow } from '@/types/datalog'
 import { computeVeLambda } from './veLambdaFormula'
 import { computeInjEfetivo } from './injectionEffective'
+import { computeDeltaLambdaTarget, computeDeltaBoostTarget } from './targetDelta'
 import { RUNTIME_SIGNAL_DEFS } from './runtimeSignals'
 
 /**
@@ -120,7 +121,8 @@ export const SIGNAL_DEFS: SignalDef[] = [
     format:  v   => `${Math.round(v)} km/h`,
   },
   {
-    name: 'Turbo Target', column: 'Turbo Target', unit: 'kPa', min: 0, max: 200,
+    // A coluna do CSV da ECU se chama "Turbo Target"; o sinal no app é "Boost Target".
+    name: 'Boost Target', column: 'Turbo Target', unit: 'kPa', min: 0, max: 200,
     defaultVisible: true, tableWidth: 100,
     convert: raw => parseInt(raw, 10),
     format:  v   => `${Math.round(v)} kPa`,
@@ -192,6 +194,20 @@ export const SIGNAL_DEFS: SignalDef[] = [
     inputs:  ['Inj. Pulse', 'Inj. DT'],
     format:  v => `${v.toFixed(2)} ms`,
   },
+  {
+    // Medido − alvo: positivo = mais pobre que o alvo. Entradas são colunas obrigatórias (sem `inputs`).
+    name: 'Delta Lambda 1 Target', unit: 'λ', min: -0.3, max: 0.3,
+    defaultVisible: true, tableWidth: 150,
+    compute: computeDeltaLambdaTarget,
+    format:  v => `${v >= 0 ? '+' : ''}${v.toFixed(3)}`,
+  },
+  {
+    // Medido − alvo: positivo = boost acima do alvo.
+    name: 'Delta Boost Target', unit: 'kPa', min: -50, max: 50,
+    defaultVisible: true, tableWidth: 140,
+    compute: computeDeltaBoostTarget,
+    format:  v => `${v >= 0 ? '+' : ''}${Math.round(v)} kPa`,
+  },
 ]
 
 /** Metadados de exibição comuns a sinais do CSV, derivados no parse e de runtime. */
@@ -203,9 +219,9 @@ export type DisplaySignalDef = Pick<SignalDef, 'name' | 'unit' | 'min' | 'max' |
  * e da ordem gravada no model do log; sinal ausente some sem deixar buraco no grupo.
  */
 export const SIGNAL_GROUPS: string[][] = [
-  ['RPM', 'MAP', 'Boost', 'Turbo Target'],
+  ['RPM', 'MAP', 'Boost', 'Boost Target', 'Delta Boost Target'],
   ['Pedal', 'dACC'],
-  ['Lambda 1', 'Lambda Target', 'Lambda Corr', 'Lambda Loop'],
+  ['Lambda 1', 'Lambda Target', 'Delta Lambda 1 Target', 'Lambda Corr', 'Lambda Loop'],
   ['VE', 'VE Lambda', 'VE Lambda Corrigido'],
   ['Inj. Pulse', 'Inj. DT', 'Inj. Efetivo', 'Inj. Utiliz.'],
   ['Ign. Adv.'],
@@ -236,4 +252,14 @@ export const SIGNAL_MAP = new Map<string, DisplaySignalDef>(DISPLAY_SIGNAL_DEFS.
 
 export function getSignalDef(name: string): DisplaySignalDef | undefined {
   return SIGNAL_MAP.get(name)
+}
+
+/** Nomes antigos de sinais que o usuário pode ter salvo (layout, XY, faixas…) → nome atual. */
+export const LEGACY_SIGNAL_NAMES: Readonly<Record<string, string>> = {
+  'Turbo Target': 'Boost Target',
+}
+
+/** Nome atual do sinal: o antigo é traduzido, qualquer outro volta inalterado. */
+export function canonicalSignalName(name: string): string {
+  return Object.prototype.hasOwnProperty.call(LEGACY_SIGNAL_NAMES, name) ? LEGACY_SIGNAL_NAMES[name] : name
 }

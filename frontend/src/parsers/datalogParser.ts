@@ -7,7 +7,7 @@ const DERIVED_SIGNALS  = SIGNAL_DEFS.filter(s => s.compute !== undefined)
 const REQUIRED_COLUMNS = RAW_SIGNALS.filter(s => !s.optional).map(s => s.column!)
 
 /** Incrementar quando o parser passar a ler/gerar sinais novos: logs salvos com versão menor são reparseados ao restaurar. */
-export const PARSER_VERSION = 3
+export const PARSER_VERSION = 4
 
 export async function parseDatalogClient(file: File): Promise<DatalogModel> {
   const [text, hash] = await Promise.all([file.text(), computeHash(file)])

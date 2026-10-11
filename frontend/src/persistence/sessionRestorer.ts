@@ -8,6 +8,7 @@ import { legacySnapshotToRun } from './legacyMigration'
 import { isLegacyCorrectionFilters, migrateLegacyCorrectionFilters } from '@/utils/filterMigration'
 import type { CorrectionRun } from '@/types/correction'
 import type { LogEntry } from '@/types/datalog'
+import { canonicalSignalName } from '@/signals/signalRegistry'
 
 export async function restoreSession(): Promise<void> {
   await Promise.allSettled([
@@ -166,7 +167,7 @@ async function restoreTime(): Promise<void> {
   if (saved) useTimeStore.getState().hydrate({
     cursor_ms:       saved.cursor_ms ?? null,
     selection:       saved.selection ?? null,
-    sparklineSensor: saved.sparklineSensor ?? 'RPM',
+    sparklineSensor: canonicalSignalName(saved.sparklineSensor ?? 'RPM'),
   })
 }
 
