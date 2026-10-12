@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { isLegacyCorrectionFilters, migrateLegacyCorrectionFilters, type LegacyCorrectionFilters } from './filterMigration'
-import { DEFAULT_FILTER, filtersEqual } from '@/types/filter'
+import { DEFAULT_FILTER, cloneFilter, filtersEqual } from '@/types/filter'
 
 const OLD_DEFAULTS: LegacyCorrectionFilters = {
   lambdaLoop: [1, 2], minClt: 85, minLambda: 0.6, maxLambda: 1.1,
@@ -9,8 +9,22 @@ const OLD_DEFAULTS: LegacyCorrectionFilters = {
 }
 
 describe('migrateLegacyCorrectionFilters', () => {
-  it('maps the old defaults to exactly the new default filter', () => {
-    expect(filtersEqual(migrateLegacyCorrectionFilters(OLD_DEFAULTS), DEFAULT_FILTER)).toBe(true)
+  it('maps the old defaults to the filter with the same limits and no settling criteria', () => {
+    const expected = cloneFilter(DEFAULT_FILTER)
+    expected.ranges['CLT'] = { enabled: true, min: 85, max: null }
+    expected.ranges['Lambda 1'] = { enabled: true, min: 0.6, max: 1.1 }
+    expected.maxDeltaTps = { enabled: true, value: 5 }
+    expected.maxDeltaMap = { enabled: true, value: 5 }
+    expected.maxDeltaLambdaTarget = { enabled: true, value: 0.03 }
+    expected.skipClosed = { enabled: true, n: 5 }
+    expected.skipOpen = { enabled: true, n: 10 }
+    for (const key of ['holdPedal', 'holdMap', 'holdGear', 'stablePedal', 'stableMap'] as const) expected[key].enabled = false
+    expect(filtersEqual(migrateLegacyCorrectionFilters(OLD_DEFAULTS), expected)).toBe(true)
+  })
+
+  it('leaves the settling criteria off, even though the new default turns them on', () => {
+    const f = migrateLegacyCorrectionFilters(OLD_DEFAULTS)
+    for (const key of ['holdPedal', 'holdMap', 'holdGear', 'stablePedal', 'stableMap'] as const) expect(f[key].enabled).toBe(false)
   })
 
   it('leaves the "before" skips off', () => {

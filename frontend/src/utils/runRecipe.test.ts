@@ -5,8 +5,10 @@ import { cloneFilter, DEFAULT_FILTER } from '@/types/filter'
 describe('filterChips', () => {
   it('lists every enabled criterion of the default filter and nothing else', () => {
     expect(filterChips(DEFAULT_FILTER)).toEqual([
-      'Lambda 1 0.6–1.1', 'CLT ≥ 85', 'Loop: Fechado/Fechado+AC',
-      'ΔTPS ≤ 5', 'ΔMAP ≤ 5', '|Δλ×alvo| ≤ 0.03', 'pula 5 1ºs CL', 'pula 10 1ºs OL',
+      'Lambda 1 0.7–1.09', 'CLT ≥ 87', 'Loop: Fechado/Fechado+AC',
+      '|Δλ×alvo| ≤ 0.05',
+      'descarta 15 após degrau de Pedal > 5', 'descarta 15 após degrau de MAP > 5', 'descarta 15 após troca de marcha',
+      'Pedal estável ≤ 5 em 10 pts', 'pula 5 1ºs CL',
     ])
   })
 
@@ -31,6 +33,29 @@ describe('filterChips', () => {
     const f = cloneFilter(DEFAULT_FILTER) as unknown as { ranges: Record<string, unknown> }
     for (const sig of ['Batt Volt.', 'Inj. DT', 'Inj. Utiliz.', 'Inj. Pulse', 'Lambda Target', 'Boost', 'IAT'] as const) delete f.ranges[sig]
     expect(filterChips(f as never)).toEqual(filterChips(DEFAULT_FILTER))
+  })
+
+  it('lists each enabled settling criterion with its limit and points (the MAP stability is off by default)', () => {
+    expect(filterChips(DEFAULT_FILTER).some(c => /MAP estável/.test(c))).toBe(false)
+    const f = cloneFilter(DEFAULT_FILTER)
+    f.holdPedal = { enabled: true, value: 5, n: 25 }
+    f.holdMap = { enabled: true, value: 8, n: 20 }
+    f.holdGear = { enabled: true, n: 30 }
+    f.stablePedal = { enabled: true, value: 4, n: 15 }
+    f.stableMap = { enabled: true, value: 6, n: 12 }
+    const chips = filterChips(f)
+    expect(chips).toContain('descarta 25 após degrau de Pedal > 5')
+    expect(chips).toContain('descarta 20 após degrau de MAP > 8')
+    expect(chips).toContain('descarta 30 após troca de marcha')
+    expect(chips).toContain('Pedal estável ≤ 4 em 15 pts')
+    expect(chips).toContain('MAP estável ≤ 6 em 12 pts')
+  })
+
+  it('tolerates the filter of a run saved before the settling criteria existed', () => {
+    const old = cloneFilter(DEFAULT_FILTER) as unknown as Record<string, unknown>
+    for (const key of ['holdPedal', 'holdMap', 'holdGear', 'stablePedal', 'stableMap']) delete old[key]
+    expect(() => filterChips(old as unknown as typeof DEFAULT_FILTER)).not.toThrow()
+    expect(filterChips(old as unknown as typeof DEFAULT_FILTER).some(c => /descarta|estável/.test(c))).toBe(false)
   })
 
   it('lists the enabled "before" skips', () => {

@@ -28,6 +28,8 @@ export function isLegacyCorrectionFilters(raw: unknown): raw is LegacyCorrection
  */
 export function migrateLegacyCorrectionFilters(old: LegacyCorrectionFilters): FilterConfig {
   const f = makeDefaultFilter()
+  // O padrão novo liga a estabilização; o filtro antigo não a tinha, então ela fica desligada para passarem os mesmos pontos.
+  for (const key of ['holdPedal', 'holdMap', 'holdGear', 'stablePedal', 'stableMap'] as const) f[key].enabled = false
   const states = Array.isArray(old.lambdaLoop)
     ? ([...new Set(old.lambdaLoop.filter(s => s === 0 || s === 1 || s === 2))].sort() as LambdaLoopState[])
     : [1, 2] as LambdaLoopState[]

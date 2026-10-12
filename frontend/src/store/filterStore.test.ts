@@ -71,6 +71,18 @@ describe('filterStore', () => {
     expect(s.showFilteredPoints).toBe(true)
   })
 
+  it('hydrate with a filter saved without the settling criteria turns them off and keeps the rest', () => {
+    const saved = cloneFilter(DEFAULT_FILTER) as unknown as Record<string, unknown>
+    for (const key of ['holdPedal', 'holdMap', 'holdGear', 'stablePedal', 'stableMap']) delete saved[key]
+    saved.skipOpen = { enabled: false, n: 4 }
+    useFilterStore.getState().hydrate({ filter: saved, showFilteredPoints: true })
+    const f = useFilterStore.getState().filter
+    expect(f.holdPedal).toEqual({ ...DEFAULT_FILTER.holdPedal, enabled: false })
+    expect(f.holdGear).toEqual({ ...DEFAULT_FILTER.holdGear, enabled: false })
+    expect(f.stableMap).toEqual({ ...DEFAULT_FILTER.stableMap, enabled: false })
+    expect(f.skipOpen).toEqual({ enabled: false, n: 4 })
+  })
+
   it('hydrate restores a saved filter and toggle', () => {
     const f = cloneFilter(DEFAULT_FILTER)
     f.ranges['RPM'] = { enabled: true, min: 3000, max: null }

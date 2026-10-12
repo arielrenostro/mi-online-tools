@@ -44,11 +44,16 @@ their fields hold values):
 - the maximum absolute difference between Lambda 1 and Lambda Target;
 - skip the first N points after entering closed loop, skip the first N points after entering open
   loop, skip the N points before entering closed loop, and skip the N points before entering open
-  loop (all four defined by `mapa-ve-correction`).
+  loop (all four defined by `mapa-ve-correction`);
+- hold off for N points after a Pedal step, after a MAP step and after a gear change, the first two
+  with their own step limit (defined by `mapa-ve-correction`);
+- stability of Pedal and of MAP over a window of N points, each with its own limit (defined by
+  `mapa-ve-correction`).
 
 A point whose value for an enabled range's signal, or whose Lambda Loop value, is not a number SHALL
 fail that criterion. This includes the optional signals (Batt Volt., Inj. DT, Inj. Pulse) when a log
-has no such column.
+has no such column. The hold-off and stability criteria follow the rules of `mapa-ve-correction`
+instead (for example, a log without Marcha has no gear event).
 
 #### Scenario: Ranges follow the Gráficos signal order
 - **WHEN** the user opens the filter modal
@@ -74,8 +79,8 @@ has no such column.
 
 #### Scenario: Fields are locked while the criterion is off
 - **WHEN** a criterion's enable switch is unchecked
-- **THEN** every field of that criterion (bounds, limit, count or accepted Lambda Loop states) is
-  disabled and cannot be edited, and typing is not possible until the switch is checked again
+- **THEN** every field of that criterion (bounds, limit, count or accepted Lambda Loop states)
+  is disabled and cannot be edited, and typing is not possible until the switch is checked again
 
 #### Scenario: Enabling unlocks the fields
 - **WHEN** the user checks the criterion's enable switch
@@ -109,15 +114,21 @@ has no such column.
   than or equal to zero
 - **THEN** that criterion is shown as invalid and "Aplicar" is unavailable
 
+#### Scenario: Settling criteria combine with the others
+- **WHEN** the user enables the Pedal step hold-off and the MAP range
+- **THEN** a point passes only if it is outside the pedal hold-off and its MAP is inside the range
+
 ### Requirement: Default filter
 The default filter SHALL have enabled: Lambda Loop with closed and closed-with-auto-correção
-accepted, CLT with minimum 85, Lambda 1 with minimum 0.6 and maximum 1.1, maximum TPS delta 5,
-maximum MAP delta 5, maximum |Lambda 1 − Lambda Target| 0.03, skip 5 points after entering closed
-loop and skip 10 after entering open loop; and disabled: the MAP, RPM, Pedal and Lambda Corr ranges,
-the IAT, Batt Volt., Inj. DT, Inj. Utiliz., Inj. Pulse, Lambda Target and Boost ranges, and the skips of
-points before entering closed loop (count 5) and before entering open loop (count 10). The MAP, RPM,
-Pedal, Lambda Corr, IAT, Batt Volt., Inj. DT, Inj. Utiliz., Inj. Pulse, Lambda Target and Boost ranges
-SHALL have empty minimum and maximum (no default value).
+accepted, CLT with minimum 87, Lambda 1 with minimum 0.70 and maximum 1.09, maximum |Lambda 1 − Lambda
+Target| 0.05, skip 5 points after entering closed loop, the hold-offs after a Pedal step and after a MAP
+step (step limit 5, 15 points each) and after a gear change (15 points), and the stability of Pedal
+(limit 5, window 10 points); and disabled: the MAP, RPM, Pedal and Lambda Corr ranges, the IAT, Batt
+Volt., Inj. DT, Inj. Utiliz., Inj. Pulse, Lambda Target and Boost ranges, the maximum TPS delta (5) and
+maximum MAP delta (5), the skip after entering open loop (count 10), the skips of points before entering
+closed loop (count 5) and before entering open loop (count 10), and the stability of MAP (limit 5,
+window 10 points). The MAP, RPM, Pedal, Lambda Corr, IAT, Batt Volt., Inj. DT, Inj. Utiliz., Inj. Pulse,
+Lambda Target and Boost ranges SHALL have empty minimum and maximum (no default value).
 
 #### Scenario: First use
 - **WHEN** the app starts with no saved filter
@@ -131,6 +142,18 @@ SHALL have empty minimum and maximum (no default value).
 - **WHEN** the filter is the default and the user opens the modal
 - **THEN** the IAT, Batt Volt., Inj. DT, Inj. Utiliz., Inj. Pulse, Lambda Target and Boost ranges are each
   unchecked, with empty "mín" and "máx" fields, and the "Filtro" button count is unchanged by them
+
+#### Scenario: Settling criteria in the default
+- **WHEN** the filter is the default and the user opens the modal
+- **THEN** the Pedal and MAP "Descartar após degrau" rows are checked with step limit 5 and 15 points, the
+  gear change row is checked with 15 points, the Pedal stability row is checked with amplitude 5 and window
+  10 points, and the MAP stability row is unchecked, showing 5 and 10 points in its locked fields
+
+#### Scenario: Skip after open loop and the TPS/MAP deltas are off by default
+- **WHEN** the filter is the default
+- **THEN** the "Depois" skip of the Open Loop row is unchecked, keeping its count of 10, the "Depois" skip
+  of the Closed Loop row is checked with 5, and the Máx Delta TPS and Máx Delta MAP are unchecked, keeping
+  their limit of 5
 
 ### Requirement: Edits are local to the modal until applied
 Editing a field SHALL change only the modal's draft; the applied filter, the highlight in the tabs and
@@ -230,7 +253,7 @@ default without showing an error.
 #### Scenario: Filter saved by the previous version
 - **WHEN** the app restores a saved correction filter in the old format
 - **THEN** the restored filter has the same limits enabled as before, with the MAP, RPM, Pedal and
-  Lambda Corr ranges disabled
+  Lambda Corr ranges and the settling criteria disabled
 
 #### Scenario: Unreadable saved filter
 - **WHEN** the stored filter cannot be read
@@ -304,3 +327,65 @@ shown until the recalculation is finished, instead of the dialog staying on scre
 - **WHEN** the user toggles "Mostrar pontos filtrados" on a large log
 - **THEN** the checkbox changes immediately and an indicator is shown while the charts and tables
   are redrawn
+
+### Requirement: "Estabilização" section in the filter modal
+The modal SHALL have a section "Estabilização" with one row per settling criterion, each with its own
+enable switch, laid out as: "Descartar após degrau de Pedal" (step limit in %, points), "Descartar após
+degrau de MAP" (step limit in kPa, points), "Descartar após troca de marcha" (points), "Estabilidade do
+Pedal" (maximum amplitude in %, window in points) and "Estabilidade do MAP" (maximum amplitude in kPa,
+window in points). The step limit and the amplitude SHALL be numbers greater than or equal to zero, the
+hold points SHALL be an integer greater than or equal to zero and the stability window an integer
+greater than or equal to 2; an enabled row violating this is shown as invalid and "Aplicar" is
+unavailable. The section SHALL open with a short explanation of the criteria: that "Descartar após" excludes
+the point where a Pedal or MAP step (variation above the limit within 200 ms) or a gear change happens
+and the following N points, and that a slow ramp is not a step; and that "Estabilidade" excludes a point
+whose signal varied more than the limit over the last N points. It SHALL also say that the 200 ms step
+detection is separate from the maximum TPS/MAP delta criteria.
+
+#### Scenario: Rows and fields
+- **WHEN** the user opens the filter modal
+- **THEN** the "Estabilização" section shows the five rows above, each with the fields listed
+
+#### Scenario: Fields locked while off
+- **WHEN** a row's switch is unchecked
+- **THEN** its limit and points fields are disabled and keep their values
+
+#### Scenario: Invalid points
+- **WHEN** an enabled hold row has a negative, fractional or non-numeric point count, or an enabled
+  stability row has a window below 2 or not an integer
+- **THEN** that row is flagged as invalid and "Aplicar" is unavailable until it is fixed
+
+#### Scenario: Invalid limit
+- **WHEN** an enabled row has a negative or non-numeric limit
+- **THEN** that row is flagged as invalid and "Aplicar" is unavailable until it is fixed
+
+#### Scenario: Preview counts the settling criteria
+- **WHEN** the user enables the gear change hold-off in the draft
+- **THEN** the modal's preview of how many points would pass reflects the points that criterion removes
+
+### Requirement: Filters saved before the settling criteria still load
+A filter saved without the settling criteria (an older session, or a correction run's recipe) SHALL be
+read with the three hold-offs and the two stability criteria disabled and at their default limits and
+point counts, and every other saved criterion SHALL keep its saved value. A saved filter that includes them
+SHALL restore their enable state, limits and point counts. These criteria stay disabled for such a
+filter even though the default filter has some of them enabled, because a filter saved before them SHALL
+let the same points pass as before. A saved settling criterion with unreadable values SHALL be read as
+disabled, at its default limits, without an error.
+
+#### Scenario: Reload with an old saved filter
+- **WHEN** the app restores a saved filter that has none of the settling criteria
+- **THEN** the applied filter equals the saved one with those criteria disabled, so the same points
+  pass as before the upgrade
+
+#### Scenario: Reload with settling criteria applied
+- **WHEN** the user applies the gear change hold-off at 30 points and reloads the page
+- **THEN** it is restored enabled with 30 points
+
+#### Scenario: Run recipe from an older run
+- **WHEN** a correction run saved before this change is shown
+- **THEN** its recipe chips list the criteria it did store, none for the settling criteria, and nothing
+  fails to render
+
+#### Scenario: Run recipe lists an enabled settling criterion
+- **WHEN** a run is generated with the gear change hold-off enabled at 30 points
+- **THEN** its recipe shows a chip for that criterion with its point count

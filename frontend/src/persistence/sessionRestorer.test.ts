@@ -196,6 +196,29 @@ describe('restoreCorrection — filter', () => {
     expect(f.skipClosed).toEqual(DEFAULT_FILTER.skipClosed)
   })
 
+  it('restores a filter saved without the settling criteria with them off and the rest intact', async () => {
+    const saved = cloneFilter(DEFAULT_FILTER) as unknown as Record<string, unknown>
+    for (const key of ['holdPedal', 'holdMap', 'holdGear', 'stablePedal', 'stableMap']) delete saved[key]
+    saved.ranges = { ...(saved.ranges as object), MAP: { enabled: true, min: 80, max: 120 } }
+    ls.set('miot:correction-filter', saved)
+    await restoreCorrection()
+    const f = useFilterStore.getState().filter
+    for (const key of ['holdPedal', 'holdMap', 'holdGear', 'stablePedal', 'stableMap'] as const) expect(f[key]).toEqual({ ...DEFAULT_FILTER[key], enabled: false })
+    expect(f.ranges['MAP']).toEqual({ enabled: true, min: 80, max: 120 })
+    expect(f.skipClosed).toEqual(DEFAULT_FILTER.skipClosed)
+  })
+
+  it('restores a filter saved with settling criteria enabled', async () => {
+    const f0 = cloneFilter(DEFAULT_FILTER)
+    f0.holdGear = { enabled: true, n: 30 }
+    f0.stableMap = { enabled: true, value: 3, n: 40 }
+    ls.set('miot:correction-filter', f0)
+    await restoreCorrection()
+    const f = useFilterStore.getState().filter
+    expect(f.holdGear).toEqual({ enabled: true, n: 30 })
+    expect(f.stableMap).toEqual({ enabled: true, value: 3, n: 40 })
+  })
+
   it('converts a filter saved in the old format, writes the new key and removes the old one', async () => {
     ls.set('miot:correction-filters', LEGACY_FILTERS)
     await restoreCorrection()

@@ -1,11 +1,11 @@
-import { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { Fragment, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { SIGNAL_MAP } from '@/signals/signalRegistry'
 import { useLogStore } from '@/store/logStore'
 import { useFilterStore } from '@/store/filterStore'
 import { useFilterMask } from '@/hooks/useFilterMask'
 import { evaluateFilter } from '@/utils/filter'
 import { runWithBusy } from '@/utils/runWithBusy'
-import { draftErrors, draftToFilter, toDraft, type DraftErrorKey, type DraftNumber, type FilterDraft } from '@/utils/filterDraft'
+import { draftErrors, draftToFilter, toDraft, type DraftCount, type DraftErrorKey, type DraftNumber, type DraftWindow, type FilterDraft } from '@/utils/filterDraft'
 import { DEFAULT_FILTER, FILTER_RANGE_SIGNALS, filtersEqual, type FilterRangeSignal } from '@/types/filter'
 import type { LambdaLoopState } from '@/types/correction'
 
@@ -40,6 +40,24 @@ const SKIP_ROWS: { label: string; before: { key: SkipKey; label: string }; after
     after:  { key: 'skipOpen',       label: 'Pular 1ºs pontos após Open Loop' },
   },
 ]
+
+type WindowKey = 'holdPedal' | 'holdMap' | 'stablePedal' | 'stableMap'
+
+interface WindowRow { key: WindowKey; label: string; unit: string }
+
+/** "Descartar após": limite = degrau em 200 ms, pontos = quantos descartar depois. */
+const HOLD_ROWS: WindowRow[] = [
+  { key: 'holdPedal', label: 'Descartar após degrau de Pedal', unit: '%' },
+  { key: 'holdMap',   label: 'Descartar após degrau de MAP',   unit: 'kPa' },
+]
+/** Estabilidade: limite = amplitude máxima, pontos = tamanho da janela. */
+const STABLE_ROWS: WindowRow[] = [
+  { key: 'stablePedal', label: 'Estabilidade do Pedal', unit: '%' },
+  { key: 'stableMap',   label: 'Estabilidade do MAP',   unit: 'kPa' },
+]
+
+/** Colunas da seção Estabilização: rótulo | limite | pontos — mesma largura em todas as linhas. */
+const STAB_GRID = 'text-xs text-gray-300 grid grid-cols-[minmax(0,1fr)_7.5rem_7.5rem] gap-x-3 gap-y-2 items-center'
 
 const INPUT = 'bg-gray-950 border border-gray-700 rounded px-2 py-1 text-gray-200 text-xs disabled:opacity-40 disabled:cursor-not-allowed'
 
@@ -112,6 +130,12 @@ function FilterModalBody({ onClose }: { onClose: () => void }) {
   function patchNumber(key: 'maxDeltaTps' | 'maxDeltaMap' | 'maxDeltaLambdaTarget' | SkipKey, p: Partial<DraftNumber>) {
     setDraft(d => ({ ...d, [key]: { ...d[key], ...p } }))
   }
+  function patchWindow(key: WindowKey, p: Partial<DraftWindow>) {
+    setDraft(d => ({ ...d, [key]: { ...d[key], ...p } }))
+  }
+  function patchCount(key: 'holdGear', p: Partial<DraftCount>) {
+    setDraft(d => ({ ...d, [key]: { ...d[key], ...p } }))
+  }
   function toggleLoopState(state: LambdaLoopState, checked: boolean) {
     const states = checked
       ? [...draft.lambdaLoop.states.filter(s => s !== state), state]
@@ -128,6 +152,38 @@ function FilterModalBody({ onClose }: { onClose: () => void }) {
   }
 
   function err(key: DraftErrorKey) { return errors[key] }
+
+  /**
+   * Uma linha da grade de Estabilização: interruptor + rótulo | limite + unidade | pontos. É função (não
+   * componente): um componente definido aqui seria recriado a cada render e o campo perderia o foco a cada tecla.
+   */
+  function windowRow({ key, label, unit }: WindowRow, limitName: string) {
+    return (
+      <Fragment key={key}>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" aria-label={label} checked={draft[key].enabled} onChange={e => patchWindow(key, { enabled: e.target.checked })} />
+          <span>{label}</span>
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            type="text" inputMode="decimal" aria-label={`${label} (${limitName})`}
+            value={draft[key].valueText} disabled={!draft[key].enabled} onChange={e => patchWindow(key, { valueText: e.target.value })}
+            className={`w-16 ${INPUT}`}
+          />
+          <span className="text-gray-500">{unit}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="text" inputMode="numeric" aria-label={`${label} (pontos)`}
+            value={draft[key].nText} disabled={!draft[key].enabled} onChange={e => patchWindow(key, { nText: e.target.value })}
+            className={`w-16 ${INPUT}`}
+          />
+          <span className="text-gray-500">pontos</span>
+        </div>
+        {err(key) && <p className="col-span-3 text-xs text-red-400">{err(key)}</p>}
+      </Fragment>
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -242,6 +298,50 @@ function FilterModalBody({ onClose }: { onClose: () => void }) {
                 <ErrorLine message={err(after.key)} />
               </div>
             ))}
+          </Section>
+
+          <Section title="Estabilização">
+            <div className="text-xs text-gray-500 leading-relaxed space-y-1">
+              <p>
+                Tiram do filtro os pontos em que o lambda ainda está assentando depois de uma mudança brusca.
+              </p>
+              <p>
+                <strong className="text-gray-400">Descartar após degrau ou troca</strong>: quando o Pedal ou o MAP varia mais que o limite em 200 ms
+                (ou a marcha muda), o ponto é excluído e também os N pontos seguintes ao fim da variação. Uma rampa lenta não conta como degrau.
+                O degrau é medido à parte do Máx Delta TPS/MAP.
+              </p>
+            </div>
+            <div className={STAB_GRID}>
+              <span />
+              <span className="text-xs text-gray-500">Degrau em 200 ms</span>
+              <span className="text-xs text-gray-500">Descartar depois</span>
+              {HOLD_ROWS.map(row => windowRow(row, 'degrau'))}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" aria-label="Descartar após troca de marcha" checked={draft.holdGear.enabled} onChange={e => patchCount('holdGear', { enabled: e.target.checked })} />
+                <span>Descartar após troca de marcha</span>
+              </label>
+              <span className="text-gray-600">—</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text" inputMode="numeric" aria-label="Descartar após troca de marcha (pontos)"
+                  value={draft.holdGear.nText} disabled={!draft.holdGear.enabled} onChange={e => patchCount('holdGear', { nText: e.target.value })}
+                  className={`w-16 ${INPUT}`}
+                />
+                <span className="text-gray-500">pontos</span>
+              </div>
+              {err('holdGear') && <p className="col-span-3 text-xs text-red-400">{err('holdGear')}</p>}
+            </div>
+
+            <p className="text-xs text-gray-500 leading-relaxed pt-2">
+              <strong className="text-gray-400">Estabilidade</strong>: exclui o ponto se o sinal variou (máximo − mínimo) mais que o limite nos
+              últimos N pontos, o que pega também variações lentas.
+            </p>
+            <div className={STAB_GRID}>
+              <span />
+              <span className="text-xs text-gray-500">Amplitude máx.</span>
+              <span className="text-xs text-gray-500">Janela</span>
+              {STABLE_ROWS.map(row => windowRow(row, 'amplitude'))}
+            </div>
           </Section>
 
           <Section title="Exibição">

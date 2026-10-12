@@ -30,6 +30,23 @@ export interface FilterSkip {
 }
 
 /**
+ * Critério de estabilização com limite e contagem de pontos: no hold-off, `value` é o degrau (Pedal %/MAP kPa
+ * em 200 ms) e `n` os pontos descartados após o último ponto do degrau; na estabilidade, `value` é a amplitude
+ * máxima e `n` o tamanho da janela, em pontos do log.
+ */
+export interface FilterWindow {
+  enabled: boolean
+  value:   number
+  n:       number
+}
+
+/** Hold-off de N pontos após uma troca de marcha (sem limite: qualquer mudança de Marcha é evento). */
+export interface FilterHold {
+  enabled: boolean
+  n:       number
+}
+
+/**
  * Filtro único do Datalog: cada critério tem seu liga/desliga; ligados combinam em AND.
  * É a mesma máscara para destaque (Dashboard/Gráficos/Dados) e para gerar um run de correção.
  */
@@ -43,11 +60,19 @@ export interface FilterConfig {
   skipOpen:             FilterSkip
   skipBeforeClosed:     FilterSkip
   skipBeforeOpen:       FilterSkip
+  holdPedal:            FilterWindow
+  holdMap:              FilterWindow
+  holdGear:             FilterHold
+  stablePedal:          FilterWindow
+  stableMap:            FilterWindow
 }
+
+/** Menor janela de estabilidade que mede alguma variação (1 ponto tem amplitude sempre 0). */
+export const MIN_STABILITY_WINDOW = 2
 
 const range = (enabled: boolean, min: number | null, max: number | null): FilterRange => ({ enabled, min, max })
 
-/** Padrão = os antigos filtros de correção ligados; as demais faixas (MAP, RPM, Pedal, Lambda Corr, IAT, bateria/injeção, Lambda Target, Boost) desligadas e vazias. */
+/** Padrão: Lambda 1/CLT/Loop/alvo, descartar 5 após closed loop, descartar após degrau de Pedal/MAP e troca de marcha e a estabilidade do Pedal ligados; as demais faixas (MAP, RPM, Pedal, Lambda Corr, IAT, bateria/injeção, Lambda Target, Boost) desligadas e vazias. */
 export function makeDefaultFilter(): FilterConfig {
   return {
     ranges: {
@@ -55,24 +80,29 @@ export function makeDefaultFilter(): FilterConfig {
       'MAP':           range(false, null, null),
       'Boost':         range(false, null, null),
       'Pedal':         range(false, null, null),
-      'Lambda 1':      range(true, 0.6, 1.1),
+      'Lambda 1':      range(true, 0.7, 1.09),
       'Lambda Target': range(false, null, null),
       'Lambda Corr':   range(false, null, null),
       'Inj. Pulse':    range(false, null, null),
       'Inj. DT':       range(false, null, null),
       'Inj. Utiliz.':  range(false, null, null),
-      'CLT':           range(true, 85, null),
+      'CLT':           range(true, 87, null),
       'IAT':           range(false, null, null),
       'Batt Volt.':    range(false, null, null),
     },
     lambdaLoop:           { enabled: true, states: [1, 2] },
-    maxDeltaTps:          { enabled: true, value: 5 },
-    maxDeltaMap:          { enabled: true, value: 5 },
-    maxDeltaLambdaTarget: { enabled: true, value: 0.03 },
+    maxDeltaTps:          { enabled: false, value: 5 },
+    maxDeltaMap:          { enabled: false, value: 5 },
+    maxDeltaLambdaTarget: { enabled: true, value: 0.05 },
     skipClosed:           { enabled: true, n: 5 },
-    skipOpen:             { enabled: true, n: 10 },
+    skipOpen:             { enabled: false, n: 10 },
     skipBeforeClosed:     { enabled: false, n: 5 },
     skipBeforeOpen:       { enabled: false, n: 10 },
+    holdPedal:            { enabled: true, value: 5, n: 15 },
+    holdMap:              { enabled: true, value: 5, n: 15 },
+    holdGear:             { enabled: true, n: 15 },
+    stablePedal:          { enabled: true, value: 5, n: 10 },
+    stableMap:            { enabled: false, value: 5, n: 10 },
   }
 }
 
@@ -91,6 +121,11 @@ export function cloneFilter(f: FilterConfig): FilterConfig {
     skipOpen:             { ...f.skipOpen },
     skipBeforeClosed:     { ...f.skipBeforeClosed },
     skipBeforeOpen:       { ...f.skipBeforeOpen },
+    holdPedal:            { ...f.holdPedal },
+    holdMap:              { ...f.holdMap },
+    holdGear:             { ...f.holdGear },
+    stablePedal:          { ...f.stablePedal },
+    stableMap:            { ...f.stableMap },
   }
 }
 
@@ -121,6 +156,11 @@ export function countEnabled(f: FilterConfig): number {
   if (f.skipOpen.enabled) n++
   if (f.skipBeforeClosed.enabled) n++
   if (f.skipBeforeOpen.enabled) n++
+  if (f.holdPedal.enabled) n++
+  if (f.holdMap.enabled) n++
+  if (f.holdGear.enabled) n++
+  if (f.stablePedal.enabled) n++
+  if (f.stableMap.enabled) n++
   return n
 }
 
@@ -143,14 +183,30 @@ export function filterError(f: FilterConfig): string | null {
   ] as const) {
     if (s.enabled && !(Number.isInteger(s.n) && s.n >= 0)) return `${label}: valor inválido`
   }
+  for (const [label, w, minN] of [
+    ['Descartar após degrau de Pedal', f.holdPedal, 0], ['Descartar após degrau de MAP', f.holdMap, 0],
+    ['Estabilidade do Pedal', f.stablePedal, MIN_STABILITY_WINDOW], ['Estabilidade do MAP', f.stableMap, MIN_STABILITY_WINDOW],
+  ] as const) {
+    if (w.enabled && !(Number.isFinite(w.value) && w.value >= 0 && Number.isInteger(w.n) && w.n >= minN)) return `${label}: valor inválido`
+  }
+  if (f.holdGear.enabled && !(Number.isInteger(f.holdGear.n) && f.holdGear.n >= 0)) return 'Descartar após troca de marcha: valor inválido'
   return null
 }
+
+/** Chaves de primeiro nível de um filtro salvo (para reconhecer um objeto que é, de fato, um filtro). */
+const FILTER_KEYS = [
+  'ranges', 'lambdaLoop', 'maxDeltaTps', 'maxDeltaMap', 'maxDeltaLambdaTarget',
+  'skipClosed', 'skipOpen', 'skipBeforeClosed', 'skipBeforeOpen',
+  'holdPedal', 'holdMap', 'holdGear', 'stablePedal', 'stableMap',
+] as const
 
 /** Lê um valor persistido; qualquer coisa ilegível ou incompleta volta ao padrão. */
 export function sanitizeFilter(raw: unknown): FilterConfig {
   const base = makeDefaultFilter()
   if (!raw || typeof raw !== 'object') return base
   const r = raw as Record<string, unknown>
+  // Um objeto sem cara de filtro salvo (ex.: `{}`) é ilegível: vale o padrão inteiro.
+  if (!FILTER_KEYS.some(k => k in r)) return base
   const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null)
   const rawRanges = (r.ranges && typeof r.ranges === 'object' ? r.ranges : {}) as Record<string, unknown>
   for (const sig of FILTER_RANGE_SIGNALS) {
@@ -174,5 +230,19 @@ export function sanitizeFilter(raw: unknown): FilterConfig {
     const n = v && typeof v === 'object' ? num(v.n) : null
     if (n !== null) base[key] = { enabled: v!.enabled === true, n }
   }
+  // Campos de estabilização: ausentes (filtro salvo antes deles) ou ilegíveis ficam DESLIGADOS, com os limites padrão —
+  // o padrão novo os liga, mas um filtro salvo antes deles tem de continuar deixando passar os mesmos pontos.
+  const count = (v: unknown, min: number): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= min ? v : null)
+  for (const [key, minN] of [['holdPedal', 0], ['holdMap', 0], ['stablePedal', MIN_STABILITY_WINDOW], ['stableMap', MIN_STABILITY_WINDOW]] as const) {
+    const v = r[key] as Record<string, unknown> | undefined
+    const value = v && typeof v === 'object' ? num(v.value) : null
+    const n = v && typeof v === 'object' ? count(v.n, minN) : null
+    base[key] = value !== null && value >= 0 && n !== null
+      ? { enabled: v!.enabled === true, value, n }
+      : { ...base[key], enabled: false }
+  }
+  const gear = r.holdGear as Record<string, unknown> | undefined
+  const gearN = gear && typeof gear === 'object' ? count(gear.n, 0) : null
+  base.holdGear = gearN !== null ? { enabled: gear!.enabled === true, n: gearN } : { ...base.holdGear, enabled: false }
   return base
 }

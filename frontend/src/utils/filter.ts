@@ -4,18 +4,17 @@ import { FILTER_RANGE_SIGNALS, type FilterConfig } from '@/types/filter'
 export const DELTA_WINDOW_MS = 200
 
 /**
- * For each row, the amplitude (max - min) of the given signal within the
- * trailing `windowMs` ending at that row's timestamp. `rows` must be sorted
- * ascending by `timestamp_ms` and belong to a single log (log-local
- * timestamps, not the globally-offset concatenation). Shared by the TPS
- * delta and MAP delta filters — same windowed-amplitude mechanism, different
- * signal.
- *
- * Returns `null` for a row that doesn't yet have a full trailing window
- * (near the start of the log) — such a row is never excluded by a delta
- * filter using this function, regardless of its partial-window amplitude.
+ * Sliding-window amplitude (max - min) of `signal`, one value per row. `rows` is a single log's rows,
+ * sorted ascending. `evicts(left, right)` says whether row `left` has left the window ending at row
+ * `right`; `hasFullWindow(right)` says whether that window is complete — rows without a full window
+ * get `null` (never excluded by a criterion built on this). NaN values are ignored.
  */
-export function computeDeltaAmplitude(rows: DatalogRow[], signal: string, windowMs = DELTA_WINDOW_MS): (number | null)[] {
+function slidingAmplitude(
+  rows: DatalogRow[],
+  signal: string,
+  evicts: (left: number, right: number) => boolean,
+  hasFullWindow: (right: number) => boolean,
+): (number | null)[] {
   const n = rows.length
   const result: (number | null)[] = new Array(n).fill(null)
   const maxDeque: number[] = []
@@ -23,10 +22,9 @@ export function computeDeltaAmplitude(rows: DatalogRow[], signal: string, window
   let left = 0
 
   for (let right = 0; right < n; right++) {
-    const t = rows[right].timestamp_ms
     const v = rows[right][signal]
 
-    while (rows[left].timestamp_ms < t - windowMs) {
+    while (evicts(left, right)) {
       if (maxDeque[0] === left) maxDeque.shift()
       if (minDeque[0] === left) minDeque.shift()
       left++
@@ -39,13 +37,77 @@ export function computeDeltaAmplitude(rows: DatalogRow[], signal: string, window
       minDeque.push(right)
     }
 
-    const hasFullWindow = t - rows[0].timestamp_ms >= windowMs
-    if (hasFullWindow && maxDeque.length && minDeque.length) {
+    if (hasFullWindow(right) && maxDeque.length && minDeque.length) {
       result[right] = rows[maxDeque[0]][signal] - rows[minDeque[0]][signal]
     }
   }
 
   return result
+}
+
+/**
+ * For each row, the amplitude (max - min) of the given signal within the
+ * trailing `windowMs` ending at that row's timestamp. `rows` must be sorted
+ * ascending by `timestamp_ms` and belong to a single log (log-local
+ * timestamps, not the globally-offset concatenation). Shared by the TPS
+ * delta and MAP delta filters — same windowed-amplitude mechanism, different
+ * signal — and by the step detection of the Pedal/MAP hold-offs.
+ *
+ * Returns `null` for a row that doesn't yet have a full trailing window
+ * (near the start of the log) — such a row is never excluded by a delta
+ * filter using this function, regardless of its partial-window amplitude.
+ */
+export function computeDeltaAmplitude(rows: DatalogRow[], signal: string, windowMs = DELTA_WINDOW_MS): (number | null)[] {
+  return slidingAmplitude(
+    rows, signal,
+    (left, right) => rows[left].timestamp_ms < rows[right].timestamp_ms - windowMs,
+    right => rows[right].timestamp_ms - rows[0].timestamp_ms >= windowMs,
+  )
+}
+
+/**
+ * For each row, the amplitude (max - min) of `signal` over the trailing window of `n` points (the row
+ * itself and the n - 1 before it). `null` for the first n - 1 rows (no full window) and for any
+ * `n < 2`. Used by the Pedal/MAP stability criteria.
+ */
+export function computeCountAmplitude(rows: DatalogRow[], signal: string, n: number): (number | null)[] {
+  if (!Number.isInteger(n) || n < 2) return new Array(rows.length).fill(null)
+  return slidingAmplitude(rows, signal, (left, right) => right - left >= n, right => right >= n - 1)
+}
+
+/**
+ * Hold-off: excludes each event row and the `n` rows after the LAST event row, so a transient lasting
+ * several rows starts counting its `n` only when it ends, and a new event inside a hold extends it.
+ */
+export function computeHoldMask(isEvent: boolean[], n: number): boolean[] {
+  const excluded = new Array<boolean>(isEvent.length).fill(false)
+  let lastEventIdx = -1
+  for (let i = 0; i < isEvent.length; i++) {
+    if (isEvent[i]) lastEventIdx = i
+    if (lastEventIdx >= 0 && i - lastEventIdx <= n) excluded[i] = true
+  }
+  return excluded
+}
+
+/** Rows where the 200 ms amplitude of `signal` is above `step` — the start (and body) of a pedal/MAP step. */
+export function computeStepEvents(rows: DatalogRow[], signal: string, step: number): boolean[] {
+  return computeDeltaAmplitude(rows, signal).map(a => a !== null && a > step)
+}
+
+/**
+ * Rows where Marcha differs from the last numeric Marcha before them. A row without a number (or a log
+ * without the Marcha column) is never an event and does not reset the reference.
+ */
+export function computeGearChangeEvents(rows: DatalogRow[]): boolean[] {
+  const events = new Array<boolean>(rows.length).fill(false)
+  let prev: number | undefined
+  for (let i = 0; i < rows.length; i++) {
+    const gear = rows[i]['Marcha']
+    if (typeof gear !== 'number' || Number.isNaN(gear)) continue
+    if (prev !== undefined && gear !== prev) events[i] = true
+    prev = gear
+  }
+  return events
 }
 
 /** Lambda Loop is "closed" for 1 (closed) and 2 (closed + auto-correção); 0 is open. */
@@ -146,8 +208,8 @@ function isNum(v: unknown): v is number {
 /**
  * Evaluates the filter for one log's rows (sorted ascending, log-local timestamps). Enabled criteria
  * combine with AND; a row without a numeric value for an enabled range's signal (or for Lambda Loop,
- * or for Lambda 1 / Lambda Target when the |Δλ×alvo| limit is enabled) fails. The windowed and
- * transition criteria are only computed when enabled.
+ * or for Lambda 1 / Lambda Target when the |Δλ×alvo| limit is enabled) fails. The windowed,
+ * transition, hold-off and stability criteria are only computed when enabled.
  */
 export function evaluateFilterForLog(rows: DatalogRow[], filter: FilterConfig): boolean[] {
   if (rows.length === 0) return []
@@ -164,12 +226,18 @@ export function evaluateFilterForLog(rows: DatalogRow[], filter: FilterConfig): 
   const olSkip   = filter.skipOpen.enabled ? computeOpenLoopSkipMask(rows, filter.skipOpen.n) : null
   const clBefore = filter.skipBeforeClosed.enabled ? computeClosedLoopSkipBeforeMask(rows, filter.skipBeforeClosed.n) : null
   const olBefore = filter.skipBeforeOpen.enabled ? computeOpenLoopSkipBeforeMask(rows, filter.skipBeforeOpen.n) : null
+  const pedalHold = filter.holdPedal.enabled ? computeHoldMask(computeStepEvents(rows, 'Pedal', filter.holdPedal.value), filter.holdPedal.n) : null
+  const mapHold   = filter.holdMap.enabled ? computeHoldMask(computeStepEvents(rows, 'MAP', filter.holdMap.value), filter.holdMap.n) : null
+  const gearHold  = filter.holdGear.enabled ? computeHoldMask(computeGearChangeEvents(rows), filter.holdGear.n) : null
+  const pedalWin  = filter.stablePedal.enabled ? computeCountAmplitude(rows, 'Pedal', filter.stablePedal.n) : null
+  const mapWin    = filter.stableMap.enabled ? computeCountAmplitude(rows, 'MAP', filter.stableMap.n) : null
 
   return rows.map((row, i) => {
     if (clSkip?.[i]) return false
     if (olSkip?.[i]) return false
     if (clBefore?.[i]) return false
     if (olBefore?.[i]) return false
+    if (pedalHold?.[i] || mapHold?.[i] || gearHold?.[i]) return false
     if (loopStates && !loopStates.includes(row['Lambda Loop'] as 0 | 1 | 2)) return false
     for (const { sig, min, max } of ranges) {
       const v = row[sig]
@@ -187,6 +255,10 @@ export function evaluateFilterForLog(rows: DatalogRow[], filter: FilterConfig): 
     if (tpsD != null && tpsD > filter.maxDeltaTps.value) return false
     const mapD = mapDelta?.[i]
     if (mapD != null && mapD > filter.maxDeltaMap.value) return false
+    const pedalW = pedalWin?.[i]
+    if (pedalW != null && pedalW > filter.stablePedal.value) return false
+    const mapW = mapWin?.[i]
+    if (mapW != null && mapW > filter.stableMap.value) return false
     return true
   })
 }

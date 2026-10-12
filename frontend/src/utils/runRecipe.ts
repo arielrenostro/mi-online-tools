@@ -32,6 +32,12 @@ export function filterChips(filter: FilterConfig | null): string[] {
   // Receitas de runs salvos antes dos "antes" não têm estes campos.
   if (filter.skipBeforeClosed?.enabled) chips.push(`pula ${filter.skipBeforeClosed.n} últimos antes de CL`)
   if (filter.skipBeforeOpen?.enabled) chips.push(`pula ${filter.skipBeforeOpen.n} últimos antes de OL`)
+  // Receitas de runs salvos antes dos critérios de estabilização não têm estes campos.
+  if (filter.holdPedal?.enabled) chips.push(`descarta ${filter.holdPedal.n} após degrau de Pedal > ${filter.holdPedal.value}`)
+  if (filter.holdMap?.enabled) chips.push(`descarta ${filter.holdMap.n} após degrau de MAP > ${filter.holdMap.value}`)
+  if (filter.holdGear?.enabled) chips.push(`descarta ${filter.holdGear.n} após troca de marcha`)
+  if (filter.stablePedal?.enabled) chips.push(`Pedal estável ≤ ${filter.stablePedal.value} em ${filter.stablePedal.n} pts`)
+  if (filter.stableMap?.enabled) chips.push(`MAP estável ≤ ${filter.stableMap.value} em ${filter.stableMap.n} pts`)
   if (filter.skipClosed.enabled) chips.push(`pula ${filter.skipClosed.n} 1ºs CL`)
   if (filter.skipOpen.enabled) chips.push(`pula ${filter.skipOpen.n} 1ºs OL`)
   return chips

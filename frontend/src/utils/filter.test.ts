@@ -199,6 +199,7 @@ function allOff(): FilterConfig {
   f.maxDeltaLambdaTarget.enabled = false
   f.skipClosed.enabled = false
   f.skipOpen.enabled = false
+  for (const key of ['holdPedal', 'holdMap', 'holdGear', 'stablePedal', 'stableMap'] as const) f[key].enabled = false
   return f
 }
 
@@ -452,5 +453,186 @@ describe('evaluateFilter', () => {
     const mask = evaluateFilter([makeLog('big', rows)], allOff())
     expect(mask).toHaveLength(300_000)
     expect(mask.every(Boolean)).toBe(true)
+  })
+})
+
+// ── Settling criteria: hold-off after events and stability window (points, 100 ms apart) ──────────
+
+function rowsOf(n: number, over: (i: number) => Partial<DatalogRow>): DatalogRow[] {
+  return Array.from({ length: n }, (_, i) => row(i * 100, over(i)))
+}
+
+function logOf(hash: string, rows: DatalogRow[]): LogEntry {
+  return {
+    hash, filename: `${hash}.csv`, enabled: true,
+    duration_ms: rows[rows.length - 1]?.timestamp_ms ?? 0,
+    model: { hash, filename: `${hash}.csv`, rows, duration_ms: 0, signals: [] },
+  }
+}
+
+const T = true
+const F = false
+
+describe('evaluateFilterForLog — hold-off after a Pedal/MAP step', () => {
+  it('holds N points counted from the LAST row of the step', () => {
+    // Pedal 0 -> 50 at row 3: the 200 ms amplitude exceeds 5 at rows 3 and 4 (last event = row 4).
+    const rows = rowsOf(12, i => ({ Pedal: i < 3 ? 0 : 50 }))
+    const f = allOff()
+    f.holdPedal = { enabled: true, value: 5, n: 3 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, T, F, F, F, F, F, T, T, T, T])
+  })
+
+  it('does not hold on a slow MAP ramp whose 200 ms amplitude stays under the limit', () => {
+    const rows = rowsOf(30, i => ({ MAP: 40 + 2 * i }))
+    const f = allOff()
+    f.holdMap = { enabled: true, value: 5, n: 25 }
+    expect(evaluateFilterForLog(rows, f).every(Boolean)).toBe(true)
+  })
+
+  it('holds after a MAP step with its own limit', () => {
+    const rows = rowsOf(10, i => ({ MAP: i < 3 ? 40 : 100 }))
+    const f = allOff()
+    f.holdMap = { enabled: true, value: 5, n: 2 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, T, F, F, F, F, T, T, T])
+  })
+
+  it('a second step inside the hold extends it', () => {
+    // Step up at row 3 (events 3,4) and back down at row 10 (events 10,11), n = 3.
+    const rows = rowsOf(16, i => ({ Pedal: i >= 3 && i < 10 ? 50 : 0 }))
+    const f = allOff()
+    f.holdPedal = { enabled: true, value: 5, n: 3 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, T, F, F, F, F, F, T, T, F, F, F, F, F, T])
+  })
+
+  it('works with the maximum TPS delta disabled, using its own step limit', () => {
+    const rows = rowsOf(8, i => ({ Pedal: i < 3 ? 0 : 50 }))
+    const f = allOff()
+    expect(f.maxDeltaTps.enabled).toBe(false)
+    f.holdPedal = { enabled: true, value: 5, n: 0 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, T, F, F, T, T, T])
+  })
+
+  it('is ignored when disabled', () => {
+    const rows = rowsOf(8, i => ({ Pedal: i < 3 ? 0 : 50 }))
+    const f = allOff()
+    f.holdPedal = { enabled: false, value: 5, n: 3 }
+    expect(evaluateFilterForLog(rows, f).every(Boolean)).toBe(true)
+  })
+
+  it('does not reach from one log into the next', () => {
+    const logA = logOf('a', rowsOf(5, i => ({ Pedal: i < 3 ? 0 : 50 })))   // step at the very end
+    const logB = logOf('b', rowsOf(6, () => ({ Pedal: 50 })))
+    const f = allOff()
+    f.holdPedal = { enabled: true, value: 5, n: 5 }
+    expect(evaluateFilter([logA, logB], f)).toEqual([T, T, T, F, F, T, T, T, T, T, T])
+  })
+})
+
+describe('evaluateFilterForLog — hold-off after a gear change', () => {
+  it('holds the change row and the N points after it', () => {
+    const rows = rowsOf(8, i => ({ Marcha: i < 2 ? 2 : 3 }))
+    const f = allOff()
+    f.holdGear = { enabled: true, n: 2 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, F, F, F, T, T, T])
+  })
+
+  it('counts every change when passing through neutral (2, 0, 0, 3)', () => {
+    const gears = [2, 0, 0, 3, 3, 3, 3, 3, 3, 3]
+    const rows = rowsOf(10, i => ({ Marcha: gears[i] }))
+    const f = allOff()
+    f.holdGear = { enabled: true, n: 2 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, F, F, F, F, F, T, T, T, T])
+  })
+
+  it('a row without a numeric Marcha is not an event; the next one is compared with the last number', () => {
+    const gears = [2, NaN, 3, 3, 3, 3]
+    const rows = rowsOf(6, i => ({ Marcha: gears[i] }))
+    const f = allOff()
+    f.holdGear = { enabled: true, n: 1 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, F, F, T, T])
+  })
+
+  it('a steady gear never holds', () => {
+    const rows = rowsOf(6, () => ({ Marcha: 3 }))
+    const f = allOff()
+    f.holdGear = { enabled: true, n: 5 }
+    expect(evaluateFilterForLog(rows, f).every(Boolean)).toBe(true)
+  })
+
+  it('a log without the Marcha column has no gear event and excludes nothing', () => {
+    const rows = rowsOf(6, () => ({}))
+    const f = allOff()
+    f.holdGear = { enabled: true, n: 5 }
+    expect(evaluateFilterForLog(rows, f).every(Boolean)).toBe(true)
+  })
+
+  it('does not reach from one log into the next', () => {
+    const logA = logOf('a', rowsOf(3, i => ({ Marcha: i < 2 ? 2 : 3 })))   // change on the last row
+    const logB = logOf('b', rowsOf(4, () => ({ Marcha: 3 })))
+    const f = allOff()
+    f.holdGear = { enabled: true, n: 5 }
+    expect(evaluateFilter([logA, logB], f)).toEqual([T, T, F, T, T, T, T])
+  })
+})
+
+describe('evaluateFilterForLog — stability window', () => {
+  it('passes a steady signal', () => {
+    const rows = rowsOf(10, () => ({ MAP: 80 }))
+    const f = allOff()
+    f.stableMap = { enabled: true, value: 5, n: 4 }
+    expect(evaluateFilterForLog(rows, f).every(Boolean)).toBe(true)
+  })
+
+  it('excludes slow drift whose N-point amplitude exceeds the limit, but not the short history at the start', () => {
+    // Pedal +3 per row: no 200 ms step, but a 4-point window spans 9 > 5. Rows 0-2 have < 4 points of history.
+    const rows = rowsOf(6, i => ({ Pedal: 3 * i }))
+    const f = allOff()
+    f.stablePedal = { enabled: true, value: 5, n: 4 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, T, F, F, F])
+  })
+
+  it('a drift under the step limit in 200 ms does not trip the hold-off, but the stability window catches it', () => {
+    const rows = rowsOf(6, i => ({ Pedal: 2 * i }))   // 4 in 200 ms (<= 5), 6 over 4 points (> 5)
+    const f = allOff()
+    f.holdPedal = { enabled: true, value: 5, n: 25 }
+    expect(evaluateFilterForLog(rows, f).every(Boolean)).toBe(true)
+    f.holdPedal.enabled = false
+    f.stablePedal = { enabled: true, value: 5, n: 4 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, T, F, F, F])
+  })
+
+  it('measures each signal over its own window', () => {
+    const rows = rowsOf(6, i => ({ Pedal: 3 * i, MAP: 3 * i }))
+    const f = allOff()
+    f.stablePedal = { enabled: true, value: 5, n: 2 }   // 2-point amplitude = 3 <= 5: never excludes
+    f.stableMap   = { enabled: true, value: 5, n: 4 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, T, F, F, F])
+    f.stableMap.enabled = false
+    expect(evaluateFilterForLog(rows, f).every(Boolean)).toBe(true)
+  })
+
+  it('a window larger than the log never excludes', () => {
+    const rows = rowsOf(5, i => ({ MAP: 40 * i }))
+    const f = allOff()
+    f.stableMap = { enabled: true, value: 5, n: 50 }
+    expect(evaluateFilterForLog(rows, f).every(Boolean)).toBe(true)
+  })
+
+  it('does not look into the previous log', () => {
+    const logA = logOf('a', rowsOf(6, () => ({ MAP: 200 })))
+    const logB = logOf('b', rowsOf(6, () => ({ MAP: 40 })))
+    const f = allOff()
+    f.stableMap = { enabled: true, value: 5, n: 4 }
+    expect(evaluateFilter([logA, logB], f).every(Boolean)).toBe(true)
+  })
+
+  it('combines with the other criteria in AND', () => {
+    const rows = rowsOf(6, i => ({ Pedal: 3 * i, MAP: i === 5 ? 500 : 80 }))
+    const f = allOff()
+    f.stablePedal = { enabled: true, value: 5, n: 4 }
+    f.ranges['MAP'] = { enabled: true, min: 0, max: 120 }
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, T, F, F, F])
+    f.stablePedal.enabled = false
+    expect(evaluateFilterForLog(rows, f)).toEqual([T, T, T, T, T, F])
   })
 })

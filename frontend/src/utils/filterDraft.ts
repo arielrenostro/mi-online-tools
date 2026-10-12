@@ -1,5 +1,5 @@
 import {
-  FILTER_RANGE_SIGNALS, makeDefaultFilter,
+  FILTER_RANGE_SIGNALS, MIN_STABILITY_WINDOW, makeDefaultFilter,
   type FilterConfig, type FilterRangeSignal,
 } from '@/types/filter'
 import type { LambdaLoopState } from '@/types/correction'
@@ -7,6 +7,9 @@ import type { LambdaLoopState } from '@/types/correction'
 /** Rascunho do modal: campos como texto, para permitir digitação parcial ("-", "0."). */
 export interface DraftRange { enabled: boolean; min: string; max: string }
 export interface DraftNumber { enabled: boolean; text: string }
+/** Limite + pontos (hold-off de degrau e estabilidade) e só pontos (hold-off de marcha), como texto. */
+export interface DraftWindow { enabled: boolean; valueText: string; nText: string }
+export interface DraftCount { enabled: boolean; nText: string }
 
 export interface FilterDraft {
   ranges:               Record<FilterRangeSignal, DraftRange>
@@ -18,16 +21,27 @@ export interface FilterDraft {
   skipOpen:             DraftNumber
   skipBeforeClosed:     DraftNumber
   skipBeforeOpen:       DraftNumber
+  holdPedal:            DraftWindow
+  holdMap:              DraftWindow
+  holdGear:             DraftCount
+  stablePedal:          DraftWindow
+  stableMap:            DraftWindow
 }
 
 /** Chaves de critério, para ligar mensagem de erro ↔ linha do modal. */
 export type DraftErrorKey =
   | `range:${FilterRangeSignal}` | 'lambdaLoop'
   | 'maxDeltaTps' | 'maxDeltaMap' | 'maxDeltaLambdaTarget' | 'skipClosed' | 'skipOpen' | 'skipBeforeClosed' | 'skipBeforeOpen'
+  | 'holdPedal' | 'holdMap' | 'holdGear' | 'stablePedal' | 'stableMap'
 
 const SKIP_KEYS = ['skipClosed', 'skipOpen', 'skipBeforeClosed', 'skipBeforeOpen'] as const
+/** Critérios de estabilização com limite + pontos, e o menor número de pontos aceito em cada um. */
+const WINDOW_KEYS = [['holdPedal', 0], ['holdMap', 0], ['stablePedal', MIN_STABILITY_WINDOW], ['stableMap', MIN_STABILITY_WINDOW]] as const
 
 const str = (n: number | null): string => (n === null ? '' : String(n))
+
+const toDraftWindow = (w: { enabled: boolean; value: number; n: number }): DraftWindow =>
+  ({ enabled: w.enabled, valueText: String(w.value), nText: String(w.n) })
 
 export function toDraft(filter: FilterConfig): FilterDraft {
   const ranges = {} as FilterDraft['ranges']
@@ -45,6 +59,11 @@ export function toDraft(filter: FilterConfig): FilterDraft {
     skipOpen:             { enabled: filter.skipOpen.enabled, text: String(filter.skipOpen.n) },
     skipBeforeClosed:     { enabled: filter.skipBeforeClosed.enabled, text: String(filter.skipBeforeClosed.n) },
     skipBeforeOpen:       { enabled: filter.skipBeforeOpen.enabled, text: String(filter.skipBeforeOpen.n) },
+    holdPedal:            toDraftWindow(filter.holdPedal),
+    holdMap:              toDraftWindow(filter.holdMap),
+    holdGear:             { enabled: filter.holdGear.enabled, nText: String(filter.holdGear.n) },
+    stablePedal:          toDraftWindow(filter.stablePedal),
+    stableMap:            toDraftWindow(filter.stableMap),
   }
 }
 
@@ -66,6 +85,11 @@ function parseCount(text: string): number | undefined {
   return n === undefined || !Number.isInteger(n) ? undefined : n
 }
 
+function parseCountFrom(text: string, min: number): number | undefined {
+  const n = parseCount(text)
+  return n === undefined || n < min ? undefined : n
+}
+
 /** Mensagens de erro dos critérios LIGADOS (desligados nunca são erro). Vazio = rascunho válido. */
 export function draftErrors(draft: FilterDraft): Partial<Record<DraftErrorKey, string>> {
   const errors: Partial<Record<DraftErrorKey, string>> = {}
@@ -84,6 +108,13 @@ export function draftErrors(draft: FilterDraft): Partial<Record<DraftErrorKey, s
   for (const key of SKIP_KEYS) {
     if (draft[key].enabled && parseCount(draft[key].text) === undefined) errors[key] = 'Informe um inteiro maior ou igual a zero'
   }
+  for (const [key, minN] of WINDOW_KEYS) {
+    const row = draft[key]
+    if (!row.enabled) continue
+    if (parseLimit(row.valueText) === undefined) errors[key] = 'Informe um limite maior ou igual a zero'
+    else if (parseCountFrom(row.nText, minN) === undefined) errors[key] = `Informe um número inteiro de pontos maior ou igual a ${minN}`
+  }
+  if (draft.holdGear.enabled && parseCount(draft.holdGear.nText) === undefined) errors.holdGear = 'Informe um número inteiro de pontos maior ou igual a 0'
   return errors
 }
 
@@ -105,5 +136,10 @@ export function draftToFilter(draft: FilterDraft): FilterConfig {
   for (const key of SKIP_KEYS) {
     base[key] = { enabled: draft[key].enabled, n: parseCount(draft[key].text) ?? base[key].n }
   }
+  for (const [key, minN] of WINDOW_KEYS) {
+    const row = draft[key]
+    base[key] = { enabled: row.enabled, value: parseLimit(row.valueText) ?? base[key].value, n: parseCountFrom(row.nText, minN) ?? base[key].n }
+  }
+  base.holdGear = { enabled: draft.holdGear.enabled, n: parseCount(draft.holdGear.nText) ?? base.holdGear.n }
   return base
 }
