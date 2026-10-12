@@ -9,7 +9,9 @@ import { filterChips, logChips } from '@/utils/runRecipe'
 import { useMapTableCellWidth } from '@/hooks/useMapTableCellWidth'
 import HeatmapTable from '@/components/HeatmapTable'
 import ConfirmDialog from '@/components/ConfirmDialog'
-import { computeFactorGrid, computeDirectFactor, computeWeightedFactor, computeApplyChanges, confidenceWeightGrid, factorToPercent, formatPercentDelta, percentGrid, snapshotHasMode } from '@/utils/correctionDisplay'
+import { computeFactorGrid, computeDirectFactor, computeWeightedFactor, computeApplyChanges, confidenceWeightGrid, factorToPercent, formatPercentDelta, percentGrid } from '@/utils/correctionDisplay'
+import { deriveCells } from '@/utils/correctionGeneration'
+import { runHasSamples } from '@/types/correction'
 import type { StatMode, ValueMode } from '@/utils/correctionDisplay'
 import type { Selection } from '@/utils/mapEditOps'
 
@@ -82,21 +84,15 @@ export default function CorrectionSection({ selection, onSelectionChange, onKeyD
   const { ref: widthRef, cellWidth } = useMapTableCellWidth(nCols, PAIR_GAP_PX)
 
   const compatible = run !== null && isRunCompatible(run, originalMap)
-  const usable     = compatible ? run : null
+  const hasSamples = run !== null && runHasSamples(run)
+  const usable     = compatible && hasSamples ? run : null
 
-  const modeAvailable = useMemo(() => (usable ? snapshotHasMode(usable) : false), [usable])
-  // An older run has no mode: fall back to the median rather than showing empty factors.
-  const statMode: StatMode = selectedStat === 'mode' && !modeAvailable ? 'median' : selectedStat
+  // Estatísticas por célula: razão de cada amostra contra o mapa carregado agora (refeita a cada edição do mapa).
+  const cells = useMemo(() => (usable && editableMap ? deriveCells(usable, editableMap) : null), [usable, editableMap])
+  const statMode: StatMode = selectedStat
 
-  const directGrid = useMemo(() => {
-    if (!usable || !editableMap) return null
-    return computeFactorGrid(usable, editableMap, statMode, 'direct')
-  }, [usable, editableMap, statMode])
-
-  const weightedGrid = useMemo(() => {
-    if (!usable || !editableMap) return null
-    return computeFactorGrid(usable, editableMap, statMode, 'weighted', confidenceK)
-  }, [usable, editableMap, statMode, confidenceK])
+  const directGrid = useMemo(() => (cells ? computeFactorGrid(cells, statMode, 'direct') : null), [cells, statMode])
+  const weightedGrid = useMemo(() => (cells ? computeFactorGrid(cells, statMode, 'weighted', confidenceK) : null), [cells, statMode, confidenceK])
 
   if (!originalMap || !editableMap) return null
 
@@ -144,7 +140,22 @@ export default function CorrectionSection({ selection, onSelectionChange, onKeyD
     )
   }
 
-  if (!compatible || !directGrid || !weightedGrid) {
+  if (!hasSamples) {
+    return (
+      <section className="px-5 pb-4">
+        <div className="mb-2">{header}</div>
+        <div className="mb-3"><RunSelector /></div>
+        {recipeLine}
+        <div role="alert" className="rounded-lg border border-yellow-800 bg-yellow-950/30 px-4 py-3 text-sm text-yellow-500">
+          Este run foi gerado com um <strong>método anterior</strong> e não guarda as amostras necessárias para calcular
+          os fatores contra o mapa carregado: não há fatores a exibir nem correção a aplicar. Gere o run novamente no
+          Datalog (a receita acima mostra os logs e o filtro usados).
+        </div>
+      </section>
+    )
+  }
+
+  if (!compatible || !cells || !directGrid || !weightedGrid) {
     return (
       <section className="px-5 pb-4">
         <div className="mb-2">{header}</div>
@@ -166,20 +177,21 @@ export default function CorrectionSection({ selection, onSelectionChange, onKeyD
   }
 
   // Cores por amostras: a cor segue o valor da correção; a confiança n/(n+k) só mexe na opacidade.
-  const opacityGrid = confidenceWeightGrid(run.cells, confidenceK).map(row => row.map(w => (w === null ? null : confidenceOpacity(w))))
-  const sampleGrid = run.cells.map(row => row.map(c => (c.n === 0 ? null : c.n)))
+  const opacityGrid = confidenceWeightGrid(cells, confidenceK).map(row => row.map(w => (w === null ? null : confidenceOpacity(w))))
+  const sampleGrid = cells.map(row => row.map(c => (c.n === 0 ? null : c.n)))
   const maxSamples = Math.max(1, ...sampleGrid.flat().filter((v): v is number => v !== null))
 
   function cellTitle(rowI: number, colJ: number): string | undefined {
-    const cell = run!.cells[rowI][colJ]
+    const cell = cells![rowI][colJ]
     if (cell.n === 0 || cell.mean === null || cell.median === null) return 'Sem dados'
-    const directMean   = computeDirectFactor(cell, editableMap![rowI][colJ], 'mean')!
-    const weightedMean = computeWeightedFactor(cell, editableMap![rowI][colJ], 'mean', confidenceK)!
+    const directMean   = computeDirectFactor(cell, 'mean')!
+    const weightedMean = computeWeightedFactor(cell, 'mean', confidenceK)!
+    const pct = (ratio: number | null | undefined) => formatPercentDelta(factorToPercent(ratio ?? null))
     return [
       `n=${cell.n.toFixed(1)}`,
-      `média=${cell.mean.toFixed(1)}`,
-      `mediana=${cell.median.toFixed(1)}`,
-      `moda=${typeof cell.mode === 'number' ? cell.mode.toFixed(1) : '—'}`,
+      `média=${pct(cell.mean)}`,
+      `mediana=${pct(cell.median)}`,
+      `moda=${pct(cell.mode)}`,
       `direto=${formatPercentDelta(factorToPercent(directMean))}`,
       `ponderado=${formatPercentDelta(factorToPercent(weightedMean))}`,
     ].join(' · ')
@@ -206,8 +218,7 @@ export default function CorrectionSection({ selection, onSelectionChange, onKeyD
             <ToggleGroup value={statMode} onChange={setStatMode} options={[
               { value: 'mean',   label: 'Média' },
               { value: 'median', label: 'Mediana' },
-              { value: 'mode',   label: 'Moda', disabled: !modeAvailable,
-                title: modeAvailable ? undefined : 'Este run foi gerado antes da Moda existir — só runs gerados a partir de agora têm Moda' },
+              { value: 'mode',   label: 'Moda' },
             ]} />
           </div>
           <div>

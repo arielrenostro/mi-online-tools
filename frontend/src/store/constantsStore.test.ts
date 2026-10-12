@@ -60,7 +60,7 @@ describe('constantsStore', () => {
   })
 
   it('alterar uma constante não altera os runs de correção', () => {
-    const run = { id: 'r1', name: 'x', createdAt: 0, breakpoints: { map: [1], rpm: [1] }, cells: [], recipe: { logs: [], filter: null } }
+    const run = { id: 'r1', name: 'x', createdAt: 0, breakpoints: { map: [1], rpm: [1] }, samples: new Float64Array([1, 1, 50]), recipe: { logs: [], filter: null } }
     useCorrectionStore.setState({ runs: [run], selectedRunId: 'r1' })
     useConstantsStore.getState().set({ veAtFull: 873 })
     expect(useCorrectionStore.getState().runs).toEqual([run])

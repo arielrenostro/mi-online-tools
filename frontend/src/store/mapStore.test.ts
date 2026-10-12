@@ -115,20 +115,20 @@ describe('bulkUpdateCells (VE)', () => {
 })
 
 describe('applying a correction run to the map', () => {
-  // Map cells are raw VE (%×10); the run holds VE Lambda in real %: 10 → 100 raw.
+  // Run cells hold ratios against the loaded map (already factors): 2 = +100%, 1.5 = +50%.
   const run = {
     cells: [
-      [{ n: 50, mean: 20, median: 20, mode: 20 }, { n: 0, mean: null, median: null, mode: null }, { n: 50, mean: 30, median: 30, mode: 30 }],
+      [{ n: 50, mean: 2, median: 2, mode: 2 }, { n: 0, mean: null, median: null, mode: null }, { n: 50, mean: 1.5, median: 1.5, mode: 1.5 }],
       [{ n: 0, mean: null, median: null, mode: null }, { n: 0, mean: null, median: null, mode: null }, { n: 0, mean: null, median: null, mode: null }],
     ],
   }
 
   it('multiplies the cells with data by the selected factor, in one undo step, leaving the others alone', () => {
-    const grid = computeFactorGrid(run, useMapStore.getState().editableMap!, 'mean', 'direct')
+    const grid = computeFactorGrid(run.cells, 'mean', 'direct')
     useMapStore.getState().bulkUpdateCells(computeApplyChanges(grid, useMapStore.getState().editableMap!))
     const map = useMapStore.getState().editableMap!
-    expect(map[0][0]).toBe(200) // 100 raw (10%) × (20 / 10) = 200
-    expect(map[0][2]).toBe(300) // 200 raw (20%) × (30 / 20) = 300
+    expect(map[0][0]).toBe(200) // 100 raw × 2 = 200
+    expect(map[0][2]).toBe(300) // 200 raw × 1.5 = 300
     expect(map[0][1]).toBe(150) // no data → unchanged
     expect(map[1]).toEqual([300, 350, 400])
     expect(useMapStore.getState().history.length).toBe(1)
@@ -138,7 +138,7 @@ describe('applying a correction run to the map', () => {
 
   it('a run with no data produces no changes', () => {
     const empty = { cells: run.cells.map(r => r.map(() => ({ n: 0, mean: null, median: null, mode: null }))) }
-    const grid = computeFactorGrid(empty, useMapStore.getState().editableMap!, 'mean', 'direct')
+    const grid = computeFactorGrid(empty.cells, 'mean', 'direct')
     expect(computeApplyChanges(grid, useMapStore.getState().editableMap!)).toEqual([])
   })
 })

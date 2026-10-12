@@ -56,7 +56,7 @@ const LEGACY_SNAPSHOT = {
 }
 
 function aRun(id: string, createdAt: number): CorrectionRun {
-  return { id, name: id, createdAt, breakpoints: { map: [90, 80], rpm: [3200, 3600] }, cells: [], recipe: { logs: [], filter: null } }
+  return { id, name: id, createdAt, breakpoints: { map: [90, 80], rpm: [3200, 3600] }, samples: new Float64Array([90, 3200, 55]), recipe: { logs: [], filter: null } }
 }
 
 beforeEach(() => {
@@ -82,6 +82,16 @@ describe('restoreCorrection — runs', () => {
     expect(s.selectedRunId).toBe('a')
   })
 
+  it('keeps a restored run without samples in the history, selected and not discarded', async () => {
+    vi.mocked(runPersistence.loadAllRuns).mockResolvedValue([{ ...aRun('old', 1), samples: null }])
+    ls.set('miot:correction-selected-run', 'old')
+    await restoreCorrection()
+    const s = useCorrectionStore.getState()
+    expect(s.runs.map(r => r.id)).toEqual(['old'])
+    expect(s.runs[0].samples).toBeNull()
+    expect(s.selectedRunId).toBe('old')
+  })
+
   it('an unreadable run store leaves the history empty without throwing', async () => {
     vi.mocked(runPersistence.loadAllRuns).mockRejectedValue(new Error('boom'))
     await expect(restoreCorrection()).resolves.toBeUndefined()
@@ -102,6 +112,7 @@ describe('restoreCorrection — migrating the former single snapshot', () => {
     expect(s.selectedRunId).toBe(run.id)
     expect(run.breakpoints).toEqual({ map: [90, 80], rpm: [3200, 3600] })
     expect(run.cells).toEqual(LEGACY_SNAPSHOT.cells)
+    expect(run.samples).toBeNull() // the old snapshot has no samples: listed, but not usable until generated again
     expect(run.createdAt).toBe(LEGACY_SNAPSHOT.generatedAt)
     expect(run.recipe.logs.map(l => [l.filename, l.hash])).toEqual([['a.csv', null], ['b.csv', null]])
     expect(run.recipe.globalTimeRange).toEqual({ start_ms: 1000, end_ms: 5000 })

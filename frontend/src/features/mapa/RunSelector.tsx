@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useCorrectionStore, isRunCompatible } from '@/store/correctionStore'
 import { useMapStore } from '@/store/mapStore'
 import ConfirmDialog from '@/components/ConfirmDialog'
+import { runHasSamples } from '@/types/correction'
 import type { CorrectionRun } from '@/types/correction'
 import { defaultRunName } from '@/utils/correctionGeneration'
 
@@ -10,8 +11,11 @@ function runLabel(run: CorrectionRun, compatible: boolean): string {
   const renamed = run.name !== defaultRunName(run.createdAt)
   const when    = new Date(run.createdAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })
   const logs    = run.recipe.logs.length
-  return [run.name, renamed ? when : null, `${logs} log${logs === 1 ? '' : 's'}`, compatible ? null : 'incompatível com o mapa']
-    .filter(Boolean).join(' · ')
+  return [
+    run.name, renamed ? when : null, `${logs} log${logs === 1 ? '' : 's'}`,
+    runHasSamples(run) ? null : 'sem amostras — gerar novamente',
+    compatible ? null : 'incompatível com o mapa',
+  ].filter(Boolean).join(' · ')
 }
 
 /** Seletor do histórico de runs da seção de correção: escolher, renomear e excluir. */

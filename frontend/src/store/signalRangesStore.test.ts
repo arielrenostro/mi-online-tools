@@ -90,7 +90,7 @@ describe('signalRangesStore', () => {
   })
 
   it('alterar uma faixa não altera os runs de correção', () => {
-    const run = { id: 'r1', name: 'x', createdAt: 0, breakpoints: { map: [1], rpm: [1] }, cells: [], recipe: { logs: [], filter: null } }
+    const run = { id: 'r1', name: 'x', createdAt: 0, breakpoints: { map: [1], rpm: [1] }, samples: new Float64Array([1, 1, 50]), recipe: { logs: [], filter: null } }
     useCorrectionStore.setState({ runs: [run], selectedRunId: 'r1' })
     st().setRange('MAP', 0, 400)
     expect(useCorrectionStore.getState().runs).toEqual([run])

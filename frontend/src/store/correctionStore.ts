@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import type { CorrectionRun } from '@/types/correction'
-import { breakpointsEqual } from '@/types/correction'
+import { breakpointsEqual, runHasSamples } from '@/types/correction'
 import type { MapModel } from '@/types/map'
 import { defaultRunName, generateCorrectionRun } from '@/utils/correctionGeneration'
 import * as runPersistence from '@/persistence/runPersistence'
@@ -39,6 +39,11 @@ export function isRunCompatible(run: CorrectionRun, map: Pick<MapModel, 'mapBrea
   return map !== null && breakpointsEqual(run.breakpoints, { map: map.mapBreakpoints, rpm: map.rpmBreakpoints })
 }
 
+/** O run só mostra fatores se for compatível com o mapa e guardar amostras (runs antigos não guardam). */
+export function isRunUsable(run: CorrectionRun, map: Pick<MapModel, 'mapBreakpoints' | 'rpmBreakpoints'> | null): boolean {
+  return runHasSamples(run) && isRunCompatible(run, map)
+}
+
 export const selectSelectedRun = (s: CorrectionState): CorrectionRun | null =>
   s.runs.find(r => r.id === s.selectedRunId) ?? null
 
@@ -63,7 +68,7 @@ export const useCorrectionStore = create<CorrectionState & CorrectionActions>()(
         originalMap.mapBreakpoints,
         originalMap.rpmBreakpoints,
       )
-      if (!run.cells.some(row => row.some(c => c.n > 0))) return null
+      if (!runHasSamples(run)) return null
 
       const all      = [run, ...get().runs]
       const kept     = all.slice(0, MAX_RUNS)
@@ -97,7 +102,7 @@ export const useCorrectionStore = create<CorrectionState & CorrectionActions>()(
       let nextSelected = selectedRunId
       if (selectedRunId === id) {
         const map = useMapStore.getState().originalMap
-        nextSelected = remaining.find(r => isRunCompatible(r, map))?.id ?? null
+        nextSelected = remaining.find(r => isRunUsable(r, map))?.id ?? null
       }
       set({ runs: remaining, selectedRunId: nextSelected })
       if (nextSelected !== selectedRunId) persistSelected(nextSelected)

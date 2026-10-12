@@ -11,7 +11,7 @@ vi.mock('@/persistence/localStorage', () => ({
   lsClear: vi.fn(),
 }))
 
-import { useCorrectionStore, isRunCompatible, selectSelectedRun, MAX_RUNS } from './correctionStore'
+import { useCorrectionStore, isRunCompatible, isRunUsable, selectSelectedRun, MAX_RUNS } from './correctionStore'
 import { useLogStore } from './logStore'
 import { useMapStore } from './mapStore'
 import { useTimeStore } from './timeStore'
@@ -89,7 +89,7 @@ describe('generate', () => {
     expect(s.runs).toHaveLength(1)
     expect(s.selectedRunId).toBe(run.id)
     expect(s.hasUnseenRun).toBe(true)
-    expect(run.cells[0][0].n).toBeCloseTo(2, 6)
+    expect(run.samples!.length / 3).toBe(2)
     expect(run.recipe.logs.map(l => l.filename)).toEqual(['h.csv'])
     expect(run.breakpoints).toEqual({ map: [90, 80], rpm: [3200, 3600] })
     expect(runPersistence.saveRun).toHaveBeenCalledWith(run)
@@ -110,7 +110,7 @@ describe('generate', () => {
     useLogStore.setState({ logs: [makeLog()] })
     useTimeStore.setState({ selection: { start_ms: 50, end_ms: 200 } })
     const run = useCorrectionStore.getState().generate()!
-    expect(run.cells[0][0].n).toBeCloseTo(1, 6)
+    expect(run.samples!.length / 3).toBe(1)
     expect(run.recipe.logs[0].range).toEqual({ start_ms: 50, end_ms: 100 })
   })
 
@@ -119,7 +119,7 @@ describe('generate', () => {
     useLogStore.setState({ logs: [makeLog()] })
     useTimeStore.setState({ selection: { start_ms: 50, end_ms: 200 } })
     const run = useCorrectionStore.getState().generate({ useTimeSelection: false })!
-    expect(run.cells[0][0].n).toBeCloseTo(2, 6)
+    expect(run.samples!.length / 3).toBe(2)
     expect(run.recipe.logs[0].range).toBe('full')
   })
 
@@ -191,6 +191,18 @@ describe('isRunCompatible', () => {
   })
 })
 
+describe('isRunUsable', () => {
+  it('needs both a compatible grid and samples: a run without samples is never usable', () => {
+    useMapStore.setState({ originalMap: makeMap() })
+    useLogStore.setState({ logs: [makeLog()] })
+    const run = useCorrectionStore.getState().generate()!
+    expect(isRunUsable(run, makeMap())).toBe(true)
+    expect(isRunUsable({ ...run, samples: null }, makeMap())).toBe(false)
+    expect(isRunUsable({ ...run, samples: undefined as unknown as null }, makeMap())).toBe(false)
+    expect(isRunUsable(run, makeMap({ rpmBreakpoints: [3200, 3700] }))).toBe(false)
+  })
+})
+
 describe('rename', () => {
   it('stores the new name and persists it', () => {
     useMapStore.setState({ originalMap: makeMap() })
@@ -240,6 +252,30 @@ describe('remove / select', () => {
     useCorrectionStore.setState({ runs: [c, { ...b, breakpoints: { map: [1], rpm: [1] } }, { ...a, breakpoints: { map: [1], rpm: [1] } }] })
     useCorrectionStore.getState().remove(c.id)
     expect(useCorrectionStore.getState().selectedRunId).toBeNull()
+  })
+
+  it('deleting the selected run skips runs without samples and picks the newest usable one', () => {
+    const [a, b, c] = threeRuns()
+    // b (newer than a) was generated before runs held samples; a is usable
+    useCorrectionStore.setState({ runs: [c, { ...b, samples: null }, a] })
+    useCorrectionStore.getState().remove(c.id)
+    expect(useCorrectionStore.getState().selectedRunId).toBe(a.id)
+  })
+
+  it('deleting the selected run with only runs without samples left selects none', () => {
+    const [a, b, c] = threeRuns()
+    useCorrectionStore.setState({ runs: [c, { ...b, samples: null }, { ...a, samples: null }] })
+    useCorrectionStore.getState().remove(c.id)
+    expect(useCorrectionStore.getState().selectedRunId).toBeNull()
+  })
+
+  it('a run without samples can still be renamed and deleted', () => {
+    const [a] = threeRuns()
+    useCorrectionStore.setState({ runs: [{ ...a, samples: null }], selectedRunId: a.id })
+    useCorrectionStore.getState().rename(a.id, 'Antigo')
+    expect(useCorrectionStore.getState().runs[0].name).toBe('Antigo')
+    useCorrectionStore.getState().remove(a.id)
+    expect(useCorrectionStore.getState().runs).toEqual([])
   })
 
   it('select ignores an unknown id and accepts null', () => {

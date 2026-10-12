@@ -119,21 +119,22 @@ range SHALL be discarded from the snapshot entirely.
 - **THEN** it is discarded and contributes to no cell
 
 ### Requirement: Per-cell sample count and central values
-For each cell, the snapshot SHALL record an effective sample count (the sum of the bilinear weights
-of every point touching it) and a mean, a median, and a mode of the per-point VE Lambda values of
-the points touching it, so that switching between mean, median, and mode on the Eficiência Volumétrica tab requires no
-regeneration. The mode is the approximate most frequent value: the center of the densest cluster of
-values, found with a fixed tolerance of ±0.5 VE percentage points.
+For each cell, the correction SHALL provide an effective sample count (the sum of the bilinear
+weights of every point touching it) and a mean, a median, and a mode of the per-point ratios (see
+"Per-point ratio against the loaded map") of the points touching it, so that switching between mean,
+median, and mode on the Eficiência Volumétrica tab requires no regeneration. The mode is the
+approximate most frequent value: the center of the densest cluster of values, found with a fixed
+tolerance of ±0.5 percentage points of factor (±0.005 in ratio).
 
 #### Scenario: Mean is weighted, median is not
-- **WHEN** the snapshot is generated
-- **THEN** each cell's mean is the bilinear-weight-weighted average of its points' VE Lambda values,
-  and its median and mode are computed over the unweighted set of the same values
+- **WHEN** the cell values are computed
+- **THEN** each cell's mean is the bilinear-weight-weighted average of its points' ratios, and its
+  median and mode are computed over the unweighted set of the same ratios
 
 #### Scenario: Mode is the densest cluster
-- **WHEN** a cell's points' VE Lambda values are 58.1, 59.0, 59.2, 59.3, 59.4, 59.6, 61.5 and 64.0
-- **THEN** the cell's mode is the average of the values inside the ±0.5 window holding the most
-  points (59.0 through 59.6), approximately 59.3, not the mean or median of the whole set
+- **WHEN** a cell's points' ratios are 0.981, 0.990, 0.992, 0.993, 0.994, 0.996, 1.015 and 1.040
+- **THEN** the cell's mode is the average of the values inside the ±0.005 window holding the most
+  points (0.990 through 0.996), approximately 0.993, not the mean or median of the whole set
 
 #### Scenario: Tie between clusters
 - **WHEN** two or more windows hold the same maximum number of points
@@ -141,7 +142,7 @@ values, found with a fixed tolerance of ±0.5 VE percentage points.
 
 #### Scenario: Single point
 - **WHEN** exactly one point touches a cell
-- **THEN** that cell's mean, median, and mode all equal that point's VE Lambda value
+- **THEN** that cell's mean, median, and mode all equal that point's ratio
 
 #### Scenario: Cell with zero effective samples
 - **WHEN** no qualifying point touches a cell
@@ -158,8 +159,9 @@ percentage variation relative to the current map value — the factor 1.05 shown
 #### Scenario: Direct factor heatmap
 - **WHEN** a run is displayed
 - **THEN** the "Direta" heatmap shows, for each cell with data, the percentage
-  `(factor − 1) × 100` where `factor = cell value (mean, median, or mode, per the selected
-  statistic) ÷ current editable-map value for that cell`
+  `(factor − 1) × 100` where `factor` is the cell's value for the selected statistic (mean, median,
+  or mode of the per-point ratios), which is already a factor against the loaded map and is not
+  divided by the cell's own map value
 
 #### Scenario: Weighted factor heatmap
 - **WHEN** a run is displayed
@@ -193,7 +195,7 @@ percentage variation relative to the current map value — the factor 1.05 shown
 #### Scenario: Factors update live with map edits
 - **WHEN** the user edits the editable map's cells after a run exists
 - **THEN** every displayed percentage in both the Direct and Weighted heatmaps recomputes
-  immediately from the run's stored values and the new map values, without needing to regenerate
+  immediately from the run's stored samples and the new map values, without needing to regenerate
 
 #### Scenario: Switching Mean/Median recomputes both factor heatmaps
 - **WHEN** the user switches the Mean/Median/Mode toggle to any of its options
@@ -212,6 +214,33 @@ section").
 #### Scenario: Displaying provenance
 - **WHEN** a run is displayed
 - **THEN** the panel shows the filenames of every log used at generation time, the time range used
+### Requirement: Per-point ratio against the loaded map
+Each qualifying datalog point SHALL contribute to the correction the ratio between the VE the engine
+needed at that point (its VE Lambda) and the VE the loaded map gives at the point's own MAP and RPM,
+that is, the editable map's value interpolated bilinearly between the four surrounding cells, exactly
+as the ECU reads the table. The ratio SHALL NOT depend on the map that was in the ECU when the log was
+recorded, nor on the value of the cell the point is later attributed to. A point whose interpolated
+map value is not greater than zero SHALL be discarded and SHALL NOT count toward any cell's sample
+count.
+
+#### Scenario: Ratio on a sloped region of the map
+- **WHEN** a point has VE Lambda 55.9 and the loaded map interpolated at its MAP and RPM gives 57.0
+- **THEN** the point's ratio is approximately 0.981, whatever the values of the cell centres around it
+
+#### Scenario: Slope of the map does not leak into the factor
+- **WHEN** two points, one at MAP 50 and one at MAP 40, both need 2% less VE than the loaded map gives
+  at their own positions, and both are attributed to the MAP 40 cell
+- **THEN** both ratios are 0.98 and the cell's mean is 0.98 (a factor of −2.0%), even though their
+  absolute VE Lambda values differ by 10%
+
+#### Scenario: Map edited after the run exists
+- **WHEN** the user edits the editable map's cells
+- **THEN** every point's ratio is recomputed against the edited map
+
+#### Scenario: Interpolated map value not usable
+- **WHEN** the interpolated map value at a point is zero or negative
+- **THEN** that point is discarded and is not counted in any cell's effective sample count
+
   per log (or an indication that the logs were used in full), and every enabled filter criterion with
   its limits
 
@@ -259,13 +288,15 @@ always acting on the editable map.
 ### Requirement: Tooltip shows full cell context
 Hovering any cell in any of the three correction heatmaps SHALL show a tooltip with every available
 field for that cell (effective sample count, mean, median, mode, Direct correction, Weighted
-correction — the last two as signed percentages), independent of which heatmap is hovered or which
-statistic (mean/median/mode) is currently selected.
+correction), independent of which heatmap is hovered or which statistic (mean/median/mode) is
+currently selected. Mean, median and mode, being ratios against the loaded map, and the Direct and
+Weighted corrections SHALL all be shown as signed percentages.
 
 #### Scenario: Hovering any of the three heatmaps
 - **WHEN** the user hovers a cell in the Direct, Weighted, or Amostras heatmap
 - **THEN** the tooltip lists all available fields for that cell, including the mode, not only the
-  one that heatmap itself displays, with the Direct and Weighted corrections as percentages
+  one that heatmap itself displays, with the mean, median, mode and the Direct and Weighted
+  corrections as signed percentages
 
 ### Requirement: Direct and Weighted heatmaps fit side by side
 The Direct and Weighted correction heatmaps SHALL be shown side by side, sized together so that the

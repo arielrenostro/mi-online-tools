@@ -19,6 +19,8 @@ export function legacySnapshotToRun(
     name:        defaultRunName(legacy.generatedAt),
     createdAt:   legacy.generatedAt,
     breakpoints: { map: [...map.mapBreakpoints], rpm: [...map.rpmBreakpoints] },
+    // O snapshot antigo só tem estatísticas do VE Lambda absoluto: sem amostras, não dá fatores (ver `correction-runs`).
+    samples:     null,
     cells:       legacy.cells,
     recipe: {
       logs:   provenance.logFilenames.map(filename => ({ hash: null, filename, range: 'full' as const })),

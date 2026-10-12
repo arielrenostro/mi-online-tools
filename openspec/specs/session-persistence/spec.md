@@ -19,7 +19,7 @@ map, imported logs, or any manual edits made to them.
 ### Requirement: What persists across a session
 The app SHALL persist, across reloads: the imported map (original and current edits), imported logs
 (content, active/inactive state, and order), the history of correction runs (see `correction-runs`:
-compiled cells, breakpoints, name, creation instant and recipe) and which run is selected, the applied
+samples, breakpoints, name, creation instant and recipe) and which run is selected, the applied
 Datalog filter and its "Mostrar pontos filtrados" setting (see `datalog-filter`), the timeline's
 cursor/selection/sparkline choice, the Configurações screen's values (displacement, air-fuel ratio,
 BSFC, VE calibration, and the Ponderado confidence constant k), the Dinamômetro tab's settings (filters, Roda/Motor choice, loss percentage,
@@ -45,8 +45,9 @@ state, table column visibility).
 
 #### Scenario: Restoring the last tuning result
 - **WHEN** the user reloads after generating correction runs and selecting one of them
-- **THEN** the whole history, each run's name and recipe, and the selected run are available again
-  without regenerating
+- **THEN** the whole history, each run's name, samples and recipe, and the selected run are
+  available again without regenerating, and the selected run shows the same factors against the
+  loaded map
 
 #### Scenario: Restoring the applied filter
 - **WHEN** the user reloads after applying a filter and changing "Mostrar pontos filtrados"
@@ -129,13 +130,15 @@ does not contain a signal SHALL NOT be rebuilt again on every restore.
 A correction snapshot saved by a version of the app that kept only one ("last") snapshot SHALL be
 converted, on the first restore, into the first correction run of the history, named after its
 generation date and time, with the logs, time range and filter settings it recorded, and SHALL be
-selected. The former saved correction filter SHALL be converted to the unified filter (see
-`datalog-filter`). Nothing is lost and no error is shown.
+selected. Such a snapshot holds no samples, so the resulting run is one without samples (see
+`correction-runs`): listed with its recipe, but not usable until generated again. The former saved
+correction filter SHALL be converted to the unified filter (see `datalog-filter`). Nothing is lost and
+no error is shown.
 
 #### Scenario: Upgrading with an existing snapshot
 - **WHEN** the app starts after the update with a snapshot saved by the previous version
-- **THEN** the history holds one run built from it, it is selected, and its factors show against the
-  loaded map if the breakpoints match
+- **THEN** the history holds one run built from it, it is selected, and it is shown as a run without
+  samples that must be generated again
 
 #### Scenario: Upgrading without a snapshot
 - **WHEN** the app starts after the update with no saved snapshot
@@ -171,24 +174,24 @@ removes one.
 - **THEN** no run changes; the displayed factors of the selected run are recomputed from the new
   cells
 
-### Requirement: Restored run without a mode
-A correction run restored from a session saved before the Mode statistic existed — including the run
-migrated from the former single snapshot — SHALL remain displayable and usable with Mean and Median,
-and the Mode option SHALL be unavailable for it, since a run is never regenerated.
+### Requirement: Restored run without samples
+A correction run restored from a session saved before runs stored samples SHALL remain in the history
+with its name, creation time and recipe and SHALL NOT be discarded or converted, but SHALL be shown as
+unusable until generated again (see `correction-runs`). The Média / Mediana / Moda choice SHALL keep
+its value and SHALL NOT be changed because such a run is selected.
 
 #### Scenario: Restoring an older run
-- **WHEN** the user reloads and the restored run's cells have no mode value
-- **THEN** the run is shown normally with Mean and Median working, the Mode option is disabled with a
-  hint that only runs generated from now on carry a mode, and the run is not discarded
+- **WHEN** the user reloads and a restored run has no samples
+- **THEN** the run is in the history with its recipe, shown as generated with a previous method, with
+  no factors, and is not discarded
 
-#### Scenario: Generating a new run enables Mode
-- **WHEN** the user generates a new run
-- **THEN** it carries a mode for every cell with data and the Mode option is enabled while it is
-  selected
+#### Scenario: Statistic choice unaffected
+- **WHEN** Moda was the selected statistic and a run without samples is selected
+- **THEN** the Moda choice is kept and applies again as soon as a run with samples is selected
 
-#### Scenario: Selected statistic no longer available
-- **WHEN** Mode was the selected statistic and a run without mode is selected
-- **THEN** the selection falls back to Median instead of showing empty factors
+#### Scenario: Generating a new run after restoring
+- **WHEN** the user generates a run in a session that restored only runs without samples
+- **THEN** the new run has samples, is selected and displays factors normally
 
 ### Requirement: The last open tab of Mapa and Datalog persists
 The app SHALL persist, across reloads, the tab the user last had open in the Mapa section and in the
